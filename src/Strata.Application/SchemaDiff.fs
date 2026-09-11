@@ -1,5 +1,6 @@
 namespace Strata.Application
 
+open System
 open Strata.Semantic.Identity
 open Strata.Semantic.Schema
 open Strata.Semantic.AnalysisScope
@@ -285,6 +286,22 @@ module SchemaDiff =
         | CreateView name
         | CreateRoutine name -> declaredText name
 
+        // The declaring file says CREATE VIEW; replacing needs CREATE OR
+        // REPLACE VIEW. Rewriting only the leading keyword keeps the author's
+        // body byte-for-byte, which is the whole reason the file is used.
+        | ReplaceView name ->
+            declaredText name
+            |> Option.bind (fun text ->
+                let trimmed = text.TrimStart()
+
+                if trimmed.StartsWith("CREATE VIEW", StringComparison.OrdinalIgnoreCase) then
+                    Some("CREATE OR REPLACE VIEW" + trimmed.Substring("CREATE VIEW".Length))
+                else
+                    // A materialized view cannot be replaced in place, and
+                    // anything else is a shape this did not expect. Emitting
+                    // nothing stops the apply rather than guessing.
+                    None)
+
         // The declaring file holds exactly the DDL the author wrote, defaults
         // and check expressions included. Reconstruction below is the fallback
         // for a snapshot built without files, and it still refuses whatever it
@@ -374,6 +391,7 @@ module SchemaDiff =
         // Views and routines reference tables and columns, so they come after
         // every table change that might create what they read.
         | CreateView _ -> 4
+        | ReplaceView _ -> 4
         | CreateRoutine _ -> 4
         | TruncateTable _ -> 5
         | DropColumn _ -> 6
@@ -591,6 +609,13 @@ module SchemaDiff =
         (allowDrops: bool)
         (managedSchemas: string list)
         (desiredComplete: bool)
+        /// Declared view definitions as the SERVER renders them, keyed by
+        /// display name. Produced by executing the declared DDL in a
+        /// rolled-back transaction, which is the only way to compare a view
+        /// faithfully. A view missing from this list could not be normalised —
+        /// no privilege, a read-only target, DDL the server rejected — and is
+        /// disclosed rather than assumed equal.
+        (normalisedViews: (string * string) list)
         (desired: SchemaObject list)
         (actual: SchemaObject list)
         =
@@ -667,20 +692,53 @@ module SchemaDiff =
                                 (kindOf a)
                                 (QualifiedName.display name))))
 
-        // Present on both sides. Definitions were NOT compared, and saying so
-        // is the difference between a bounded result and a false clean.
-        let notCompared =
+        let onBothSides =
             desiredOther
-            |> List.filter (fun d -> actualOther |> List.exists (fun a -> identity a = identity d))
-            |> List.map (fun d ->
-                { Object = SchemaObject.name d
-                  Reason = NotCompared
-                  Detail =
-                    sprintf
-                        "%s exists on both sides; its definition was NOT compared, so the bodies may differ"
-                        (kindOf d) })
+            |> List.choose (fun d ->
+                actualOther
+                |> List.tryFind (fun a -> identity a = identity d)
+                |> Option.map (fun a -> d, a))
 
-        created @ removed, notCompared
+        // A view whose declared DDL the server normalised can be compared
+        // exactly: both sides now carry PostgreSQL's own rendering.
+        let redefinitions =
+            onBothSides
+            |> List.choose (fun (d, a) ->
+                match d, a with
+                | ViewObject dv, ViewObject av when not dv.IsMaterialized ->
+                    normalisedViews
+                    |> List.tryPick (fun (name, definition) ->
+                        if name = QualifiedName.display dv.Name then Some definition else None)
+                    |> Option.bind (fun declaredDefinition ->
+                        if declaredDefinition.Trim() <> av.Definition.Trim() then
+                            Some(Ok(ReplaceView dv.Name))
+                        else
+                            None)
+                | _ -> None)
+
+        // Everything on both sides that could NOT be compared. A view that
+        // normalised and matched produces nothing here — silence is correct
+        // once the comparison actually happened.
+        let notCompared =
+            onBothSides
+            |> List.choose (fun (d, _) ->
+                let comparedExactly =
+                    match d with
+                    | ViewObject dv when not dv.IsMaterialized ->
+                        normalisedViews |> List.exists (fun (name, _) -> name = QualifiedName.display dv.Name)
+                    | _ -> false
+
+                if comparedExactly then None
+                else
+                    Some
+                        { Object = SchemaObject.name d
+                          Reason = NotCompared
+                          Detail =
+                            sprintf
+                                "%s exists on both sides; its definition was NOT compared, so the bodies may differ"
+                                (kindOf d) })
+
+        created @ removed @ redefinitions, notCompared
 
     /// Compare desired state against actual state.
     ///
@@ -697,6 +755,7 @@ module SchemaDiff =
         (allowDrops: bool)
         (managedSchemas: string list)
         (declarations: (QualifiedName * string) list)
+        (normalisedViews: (string * string) list)
         (desired: SchemaSnapshot)
         (actual: SchemaSnapshot)
         : DiffResult =
@@ -736,7 +795,13 @@ module SchemaDiff =
         let notCompared = constraintResults |> List.collect snd
 
         let otherChangeResults, otherNotCompared =
-            otherObjectChanges allowDrops managedSchemas desiredComplete desired.Objects actual.Objects
+            otherObjectChanges
+                allowDrops
+                managedSchemas
+                desiredComplete
+                normalisedViews
+                desired.Objects
+                actual.Objects
 
         let unmodelled = otherNotCompared
 
@@ -777,6 +842,7 @@ module SchemaDiff =
         | DropTable table -> sprintf "drop-table         %s" (QualifiedName.display table)
         | CreateTable table -> sprintf "create-table       %s" (QualifiedName.display table)
         | CreateView view -> sprintf "create-view        %s" (QualifiedName.display view)
+        | ReplaceView view -> sprintf "replace-view       %s" (QualifiedName.display view)
         | CreateRoutine routine -> sprintf "create-routine     %s" (QualifiedName.display routine)
         | TruncateTable table -> sprintf "truncate-table     %s" (QualifiedName.display table)
 

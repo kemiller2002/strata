@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 46,
+  "nextSeq": 47,
   "items": [
     {
       "id": "WI-0001",
@@ -767,6 +767,23 @@
       "attachments": [],
       "createdAt": "2026-09-11T22:45:50Z",
       "updatedAt": "2026-09-11T22:45:50Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0046",
+      "title": "Compare view definitions by normalising declared DDL through the server",
+      "description": "A view's declared text never matches its catalog form, so view definitions could only be disclosed as not-compared and an edited view file went unnoticed. Execute the declared DDL in a rolled-back transaction, read it back through pg_get_viewdef, and compare renderings.",
+      "tags": [
+        "strata",
+        "diff"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:06:59Z",
+      "updatedAt": "2026-09-11T23:06:59Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null

@@ -51,7 +51,7 @@ let private managed = [ "sales" ]
 /// These tests build snapshots directly and have no files, so they pass none
 /// and exercise the reconstruction path deliberately.
 let private run allowDrops managedSchemas desired actual =
-    Strata.Application.SchemaDiff.run allowDrops managedSchemas [] desired actual
+    Strata.Application.SchemaDiff.run allowDrops managedSchemas [] [] desired actual
 
 /// Existing guard tests pass allowDrops=true deliberately: a test that left
 /// drops globally disabled would pass even if the guard it names were deleted.
@@ -577,3 +577,89 @@ let ``a view in the database and not in desired state is guarded like a table`` 
 
     Assert.Empty result.Changes
     Assert.Contains(result.Suppressed, fun s -> s.Reason = DropsNotEnabled)
+
+// ---- view redefinition ----------------------------------------------------
+//
+// A view's declared text and its catalog form never match: PostgreSQL stores a
+// rewritten tree and pg_get_viewdef deparses it schema-qualified, reformatted
+// and with ::text casts. Comparison is only possible once the DECLARED side has
+// been through the same renderer, which ShadowNormalisation does by executing
+// it in a rolled-back transaction. These tests take that rendering as given.
+
+let private viewDefined name definition =
+    ViewObject
+        { Name = qn "sales" name
+          Columns = []
+          IsMaterialized = false
+          Definition = definition
+          Scope = Managed }
+
+let private runWithViews normalised desired actual =
+    Strata.Application.SchemaDiff.run true managed [] normalised desired actual
+
+[<Fact>]
+let ``a view whose normalised definition differs is redefined`` () =
+    let result =
+        runWithViews
+            [ "sales.v", " SELECT id FROM sales.orders WHERE total > 0;" ]
+            (complete [ viewDefined "v" "" ])
+            (complete [ viewDefined "v" " SELECT id FROM sales.orders;" ])
+
+    Assert.Contains(result.Changes, fun c -> c = ReplaceView(qn "sales" "v"))
+
+[<Fact>]
+let ``a view whose normalised definition matches produces nothing AND no disclosure`` () =
+    // Once the comparison actually happened, silence is correct. Continuing to
+    // disclose it would train people to ignore the disclosures that matter.
+    let definition = " SELECT id FROM sales.orders;"
+
+    let result =
+        runWithViews
+            [ "sales.v", definition ]
+            (complete [ viewDefined "v" "" ])
+            (complete [ viewDefined "v" definition ])
+
+    Assert.Empty result.Changes
+    Assert.DoesNotContain(result.Suppressed, fun s -> s.Reason = NotCompared)
+
+[<Fact>]
+let ``a view that could not be normalised is still disclosed, never assumed equal`` () =
+    // No CREATE privilege, a read-only target, or DDL the server rejected. The
+    // fallback must be "I could not check", not "it matches".
+    let result =
+        runWithViews
+            []
+            (complete [ viewDefined "v" "" ])
+            (complete [ viewDefined "v" " SELECT id FROM sales.orders;" ])
+
+    Assert.Empty result.Changes
+    Assert.Contains(result.Suppressed, fun s ->
+        s.Reason = NotCompared && s.Detail.Contains "definition was NOT compared")
+
+[<Fact>]
+let ``redefining a view is destructive, so the gate weighs its dependents`` () =
+    // CREATE OR REPLACE VIEW fails outright if the column list changes. The
+    // dangerous case is the one that SUCCEEDS: a narrowed filter changes what
+    // every reader gets and nothing errors.
+    Assert.True(Change.isPotentiallyDestructive (ReplaceView(qn "sales" "v")))
+
+[<Fact>]
+let ``a materialized view is never proposed for replacement`` () =
+    // CREATE OR REPLACE does not exist for a materialized view; it needs DROP
+    // and CREATE, which is a different and destructive plan.
+    let matview name definition =
+        ViewObject
+            { Name = qn "sales" name
+              Columns = []
+              IsMaterialized = true
+              Definition = definition
+              Scope = Managed }
+
+    let result =
+        runWithViews
+            [ "sales.m", " SELECT id FROM sales.orders WHERE total > 0;" ]
+            (complete [ matview "m" "" ])
+            (complete [ matview "m" " SELECT id FROM sales.orders;" ])
+
+    Assert.DoesNotContain(result.Changes, fun c -> c = ReplaceView(qn "sales" "m"))
+    Assert.Contains(result.Suppressed, fun s -> s.Reason = NotCompared)

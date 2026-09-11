@@ -3,6 +3,7 @@ module Strata.Cli.Program
 open System
 open System.IO
 open Strata.Semantic.Identity
+open Strata.Semantic.Schema
 open Strata.Semantic.AnalysisScope
 open Strata.Analysis.Graph
 open Strata.Analysis.Corpus
@@ -267,7 +268,44 @@ let main argv =
                 let scope = CorpusPipeline.toScope parser actual analysis
 
                 let allowDrops = List.contains "--allow-drops" args
-                let diff = SchemaDiff.run allowDrops project.Manifest.ManagedSchemas declared.Declarations desired actual
+
+                // Declared view DDL rendered the way the catalog renders it, so
+                // the two sides can be compared at all. Executed in a
+                // transaction that is always rolled back — the database is
+                // unchanged either way. If it cannot run (no CREATE privilege,
+                // a read-only target), views fall back to being disclosed as
+                // not-compared, which is what happened before this existed.
+                let normalisedViews =
+                    let declaredViews =
+                        declared.Snapshot.Objects
+                        |> List.choose (fun o ->
+                            match o with
+                            | ViewObject v when not v.IsMaterialized ->
+                                declared.Declarations
+                                |> List.tryPick (fun (name, text) ->
+                                    if QualifiedName.display name = QualifiedName.display v.Name then
+                                        Some(QualifiedName.display v.Name, text)
+                                    else
+                                        None)
+                            | _ -> None)
+
+                    match ShadowNormalisation.normaliseViews connectionString declaredViews with
+                    | Ok normalised -> normalised
+                    | Microsoft.FSharp.Core.Error message ->
+                        if not (List.isEmpty declaredViews) then
+                            eprintfn "warning: could not normalise declared views (%s)." message
+                            eprintfn "         View definitions will be reported as not-compared."
+
+                        []
+
+                let diff =
+                    SchemaDiff.run
+                        allowDrops
+                        project.Manifest.ManagedSchemas
+                        declared.Declarations
+                        normalisedViews
+                        desired
+                        actual
                 let gate = DeploymentGate.run graph scope diff.Changes
 
                 if List.contains "--json" args then

@@ -18,6 +18,7 @@
     <Compile Include="CatalogQueries.fs" />
     <Compile Include="CatalogIntrospection.fs" />
     <Compile Include="Execution.fs" />
+    <Compile Include="ShadowNormalisation.fs" />
   </ItemGroup>
 
   <ItemGroup>

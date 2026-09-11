@@ -132,6 +132,29 @@ module DeploymentGate =
               AffectedSources = []
               NextSafeMove = "Proceed." }
 
+        | ReplaceView view ->
+            let dependents =
+                graph.Dependencies
+                |> List.filter (fun d -> QualifiedName.display d.Target = QualifiedName.display view)
+                |> List.map (fun d -> d.SourceId)
+                |> List.distinct
+
+            { Change = change
+              Verdict = if List.isEmpty dependents && scopeSupportsAbsence then Allow else RequiresApproval
+              Detected =
+                sprintf "redefines view %s, which %d source(s) depend on" (QualifiedName.display view) (List.length dependents)
+              Rationale =
+                // CREATE OR REPLACE VIEW fails outright if the column list
+                // changes. The dangerous case is the one that SUCCEEDS: a
+                // narrowed filter or altered join changes what every reader
+                // gets, and nothing errors.
+                if List.isEmpty dependents then cleanResultRationale
+                else "Redefining a view changes what every reader of it receives, and a successful replace reports nothing."
+              AffectedSources = dependents
+              NextSafeMove =
+                if List.isEmpty dependents then cleanResultNextMove
+                else "Confirm the new definition returns what the listed sources expect, then approve explicitly." }
+
         | CreateRoutine routine ->
             { Change = change
               Verdict = Allow

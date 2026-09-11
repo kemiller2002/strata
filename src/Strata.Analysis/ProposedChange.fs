@@ -30,6 +30,13 @@ module ProposedChange =
         /// Creates a view. Additive: nothing can already depend on an object
         /// that does not yet exist.
         | CreateView of view: QualifiedName
+        /// Redefines an existing view.
+        ///
+        /// NOT additive. `CREATE OR REPLACE VIEW` fails outright if the column
+        /// list changes, and succeeds while breaking readers if the SEMANTICS
+        /// change — a filter narrowed, a join changed — which no error reports.
+        /// It is judged for dependents like any other destructive change.
+        | ReplaceView of view: QualifiedName
         /// Creates a function or procedure. Additive for the same reason.
         ///
         /// This does NOT mean the routine's BODY is safe — its body may read
@@ -57,6 +64,7 @@ module ProposedChange =
             | AddColumn _ -> "add-column"
             | CreateTable _ -> "create-table"
             | CreateView _ -> "create-view"
+            | ReplaceView _ -> "replace-view"
             | CreateRoutine _ -> "create-routine"
             | AddConstraint _ -> "add-constraint"
             | TruncateTable _ -> "truncate-table"
@@ -71,6 +79,7 @@ module ProposedChange =
             | AddColumn (table, _)
             | CreateTable table
             | CreateView table
+            | ReplaceView table
             | CreateRoutine table
             | AddConstraint (table, _)
             | TruncateTable table -> Some table
@@ -86,6 +95,7 @@ module ProposedChange =
             match change with
             | DropColumn _
             | DropTable _
+            | ReplaceView _
             | AlterColumnType _
             | TruncateTable _
             | UnclassifiedChange _ -> true
