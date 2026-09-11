@@ -1,6 +1,24 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 1,
-  "items": []
+  "nextSeq": 2,
+  "items": [
+    {
+      "id": "WI-0001",
+      "title": "Install State-Directed Engineering (SDE) v1.1.1 methodology inputs",
+      "description": "Run npx @echelon-foundry/sde init to add the .sde/ methodology tree (18 managed files) alongside the ROS install.",
+      "tags": [
+        "tooling",
+        "methodology"
+      ],
+      "priority": "medium",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T13:36:49.000Z",
+      "updatedAt": "2026-09-11T13:36:54.000Z",
+      "createdBy": "claude",
+      "source": "user-request",
+      "sourceReference": null
+    }
+  ]
 }

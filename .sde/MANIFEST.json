@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "sdeVersion": "1.1.1",
+  "methodVersion": "0.2",
+  "sourceRevision": "7844e6ae81f06dc34568ac54a4b55eded2d04bab",
+  "packageName": "@echelon-foundry/sde",
+  "files": [
+    {
+      "path": "README.md",
+      "sha256": "0c79759429dc369ce60fa229d53d78024960916ead7096a21083469d9aec7c79"
+    },
+    {
+      "path": "VERSION",
+      "sha256": "cc52f678848b814373757b460383bf61960e4943c203735adde0a350b3e50989"
+    },
+    {
+      "path": "architecture/BOUNDARY-PRESERVATION.md",
+      "sha256": "f7089e07c8d0a5dacf47b5561f8d20acff08debfb3c59c07fc1184506c6eaf97"
+    },
+    {
+      "path": "architecture/FOUR-TIER-ARCHITECTURE.md",
+      "sha256": "43fa34f12eadc0fbb82b650adb1fff179122ce9ed728f862fb7afc9ca5a07134"
+    },
+    {
+      "path": "architecture/STRUCTURAL-LOCALITY.md",
+      "sha256": "3070df329e45fe1b91fa57703277f73cc4e96ed3c80c7bb2bec0e93b6b232918"
+    },
+    {
+      "path": "method/AGENT-EXECUTION-RULES.md",
+      "sha256": "6164f48233fd62e381deff7a65438e41112e2cb6eb972bcbc5a2bc39a14570f9"
+    },
+    {
+      "path": "method/CHANGE-CLASSIFICATION.md",
+      "sha256": "57b094163be3aa66af1909544a813e73cde6afb889e20bffbe59520d654008cf"
+    },
+    {
+      "path": "method/CONSTRUCTION-METHOD.md",
+      "sha256": "452121967ddc5c5d50692d0e61a008fbce510d74ba3bada9671f07307a46023f"
+    },
+    {
+      "path": "method/FEATURE-MANIFESTS.md",
+      "sha256": "9172e135820341dfa91637759623e6423e8aae231190e357e941404a74a39ddb"
+    },
+    {
+      "path": "method/NAVIGATION-AND-CONTEXT.md",
+      "sha256": "11a0c4b13dd97d108617e2c0c6727ca65851298bed96e4ab310494e6f8aeb098"
+    },
+    {
+      "path": "method/VERIFICATION-METHOD.md",
+      "sha256": "5883e5fd4e656d10423d0531fa0889419bd01e1096ccb2db7892d66bddc27c1c"
+    },
+    {
+      "path": "reference/ENGINEERING-METRICS.md",
+      "sha256": "0e749fbd86ef9fb81f6c8820ea927f0b543c878e6a87f804e337d099d42f8d00"
+    },
+    {
+      "path": "reference/GLOSSARY.md",
+      "sha256": "5e506a0bd5e0603e7227ddcacb2c05f4b9ab89f6a9fdb6e2c1f8275ba5c3ae6e"
+    },
+    {
+      "path": "templates/completion-report.md",
+      "sha256": "bb8e9c2bc37ff5d92705c2f8297faa3629ce9a18be76b62bdf59d96bd8f2526e"
+    },
+    {
+      "path": "templates/execution-log.md",
+      "sha256": "29fd8946e8438116470e1da70193e5200d686a420dcf9cd0491b39e1a5261e8c"
+    },
+    {
+      "path": "templates/feature-manifest.md",
+      "sha256": "74552069e11c1ba8e79b764a9ebc22ef17f90ffaa482aa4b695c8c4871a47fd6"
+    },
+    {
+      "path": "templates/repository-semantic-map.md",
+      "sha256": "8d528240eadc4d15f428cfca3759eb5a381a66bd12e40da9c134007ce688c8f8"
+    },
+    {
+      "path": "templates/work-item.md",
+      "sha256": "a7a0f0109207cd2eea9f80fdbfc4a54083de59bb59a32463a6717dcfa7c4f258"
+    }
+  ]
+}
