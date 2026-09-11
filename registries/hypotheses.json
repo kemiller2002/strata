@@ -110,5 +110,25 @@
     ],
     "title": "Deployment-safety value is independent of agent-leverage value",
     "updated": "2026-09-11"
+  },
+  {
+    "confidence": "medium",
+    "created": "2026-09-11",
+    "created_by_agent": "claude",
+    "id": "HY-STRATA-2026-D5B8",
+    "path": "research/hypotheses/HY-STRATA-2026-D5B8--validation-catches-what-reasoning-does-not.md",
+    "research_area": "strata-agent-leverage",
+    "status": "proposed",
+    "superseded_by": [],
+    "supersedes": [],
+    "tags": [
+      "strata",
+      "validation",
+      "agent-leverage",
+      "hypothesis"
+    ],
+    "tests": [],
+    "title": "Deterministic validation against the catalog catches agent SQL errors that reading and reasoning do not",
+    "updated": "2026-09-11"
   }
 ]

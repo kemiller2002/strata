@@ -45,6 +45,29 @@
     "updated": "2026-09-11"
   },
   {
+    "confidence": "medium",
+    "created": "2026-09-11",
+    "created_by_agent": "claude",
+    "decision_type": "product-architecture",
+    "evidence": [
+      "EV-STRATA-2026-C2F5"
+    ],
+    "id": "DF-STRATA-2026-A4D9",
+    "path": "research/decisions/DF-STRATA-2026-A4D9--project-file-and-layout.md",
+    "status": "accepted",
+    "superseded_by": [],
+    "supersedes": [],
+    "tags": [
+      "strata",
+      "project-file",
+      "desired-state",
+      "layout",
+      "q-003"
+    ],
+    "title": "A Strata project is a strata.json manifest plus per-object SQL files under schema/, and both validation and deployment read it",
+    "updated": "2026-09-11"
+  },
+  {
     "confidence": "high",
     "created": "2026-09-11",
     "created_by_agent": "claude",

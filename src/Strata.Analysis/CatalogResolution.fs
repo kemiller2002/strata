@@ -179,6 +179,65 @@ module CatalogResolution =
         | [] -> Unresolved(AnalyzabilityLimit "no relation in scope declares this column")
         | many -> Ambiguous(ColumnNotAttributable many)
 
+    /// Resolve a column that names its own qualifier.
+    ///
+    /// The qualifier is an alias, a bare relation name, or a CTE name. Only the
+    /// first two can yield a catalog column; a CTE-qualified column refers to a
+    /// query-local result, not a database object (RK-001), and returning a
+    /// catalog column for one would be a fabricated dependency.
+    let resolveQualifiedColumn
+        (snapshot: SchemaSnapshot)
+        (searchPath: Identifier list)
+        (extraction: StatementExtraction)
+        (relations: QualifiedName list)
+        (qualifier: Identifier)
+        (column: Identifier)
+        : Resolution<ResolvedColumn> =
+
+        let chain = ScopeChain.ofExtraction extraction
+
+        let target =
+            match ScopeChain.tryResolveLocally qualifier 0 chain with
+            | Some (AliasBinding (_, target, _)) -> Some target
+            // Query-local. Never a catalog column.
+            | Some (CteBinding _)
+            | Some (TempRelationBinding _) -> None
+            | None ->
+                // Not a local binding, so the qualifier is a relation name in
+                // its own right: `SELECT orders.id FROM orders`.
+                relations
+                |> List.tryFind (fun r -> Identifier.sameName r.Name qualifier)
+                |> Option.orElseWith (fun () ->
+                    match resolveRelationName snapshot searchPath (QualifiedName.unqualified qualifier) with
+                    | Resolved resolved -> Some resolved
+                    | PartiallyResolved _
+                    | Ambiguous _
+                    | Unsupported _
+                    | Unresolved _ -> None)
+
+        match target with
+        | None ->
+            Unresolved(
+                AnalyzabilityLimit(
+                    sprintf "qualifier '%s' is query-local or did not resolve to a relation" qualifier.Text))
+        | Some relation ->
+            match resolveRelationName snapshot searchPath relation with
+            | Resolved resolved ->
+                let declaresColumn =
+                    indexSnapshot snapshot
+                    |> List.exists (fun i ->
+                        i.Qualified = resolved
+                        && i.Columns |> List.exists (fun c -> Identifier.sameName c column))
+
+                if declaresColumn then
+                    Resolved { Relation = resolved; Column = column; FromWildcard = false }
+                else
+                    Unresolved(AnalyzabilityLimit "no relation in scope declares this column")
+            | PartiallyResolved (_, gap)
+            | Ambiguous gap
+            | Unsupported gap
+            | Unresolved gap -> Unresolved gap
+
     /// Every column a statement depends on, wildcards expanded.
     ///
     /// Returns the resolved set plus the gaps encountered. A caller must report
@@ -247,9 +306,19 @@ module CatalogResolution =
                 | None -> gaps.Add(AnalyzabilityLimit "column reference carried no name")
                 | Some column ->
                     match mention.Qualifier with
-                    | Some _ ->
-                        // Scope resolution already handles alias-qualified columns.
-                        match resolveUnqualifiedColumn snapshot searchPath relations column with
+                    | Some qualifier ->
+                        // An alias-qualified column names exactly one relation,
+                        // so it must be resolved against THAT relation and not
+                        // against everything in scope.
+                        //
+                        // This previously fell through to the unqualified path
+                        // with a comment claiming scope resolution had handled
+                        // it. It had not: the qualifier was discarded, so
+                        // `a.id = b.id` searched both relations, found `id` in
+                        // each, and returned Ambiguous for a reference that is
+                        // not ambiguous at all. Every join on a shared column
+                        // name produced a spurious gap.
+                        match resolveQualifiedColumn snapshot searchPath extraction relations qualifier column with
                         | Resolved resolved -> resolvedColumns.Add resolved
                         | PartiallyResolved (resolved, gap) ->
                             resolvedColumns.Add resolved

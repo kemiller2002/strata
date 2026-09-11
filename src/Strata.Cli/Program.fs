@@ -21,6 +21,10 @@ USAGE
   strata <command> [args] --connection <connection-string> [--json]
 
 COMMANDS
+  validate <file.sql>              Check every relation and column in a SQL file
+                                   against the live schema. Exit 0 valid,
+                                   1 a reference provably does not exist,
+                                   2 something could not be verified.
   check <proposed.sql>             Gate a proposed migration. Exit 0 allow,
                                    1 block, 2 requires approval.
   scope                            Print the analysis scope alone, once
@@ -45,6 +49,12 @@ NOTES
 
   Without --corpus, no SQL is indexed, so readers/writers are necessarily
   empty and every answer says so.
+
+  `validate` distinguishes "does not exist" from "could not be verified" and
+  never merges them. An incomplete catalog snapshot yields exit 2, not exit 1:
+  Strata does not claim absence it cannot support, because an author who
+  "fixes" working SQL to satisfy a false error is worse off than with no
+  validator at all.
 
   For a multi-query session: run `strata scope` once, then pass --brief on
   each answer. The scope is identical across queries against one snapshot, so
@@ -117,6 +127,11 @@ let main argv =
         | "check" :: path :: _ -> Some path
         | _ -> None
 
+    let validateFile =
+        match positional with
+        | "validate" :: path :: _ -> Some path
+        | _ -> None
+
     let query =
         match positional with
         | "scope" :: _ -> Ok Retrieval.ScopeOnly
@@ -136,8 +151,37 @@ let main argv =
             | _ -> Error "impact needs a fully qualified schema.table.column"
         | "readers" :: name :: _ -> Ok(Retrieval.Readers(parseName name))
         | "writers" :: name :: _ -> Ok(Retrieval.Writers(parseName name))
+        | "validate" :: _ -> Error "validate needs a path to a .sql file"
         | command :: _ -> Error(sprintf "unknown or incomplete command: %s" command)
         | [] -> Error "no command given"
+
+    match validateFile with
+    | Some path when not (IO.File.Exists path) ->
+        eprintfn "error: file not found: %s" path
+        2
+    | Some path ->
+        try
+            let snapshot = CatalogIntrospection.introspect connectionString
+
+            let searchPath =
+                match CatalogIntrospection.readSearchPath connectionString with
+                | Ok p -> p
+                | Error _ -> []
+
+            let parser = PgParserAdapter.PostgresParser() :> Strata.Analysis.DialectPort.IDialectParser
+            let report = Validation.validate parser snapshot searchPath (IO.File.ReadAllText path)
+
+            if List.contains "--json" args then
+                printfn "%s" (Validation.toJson path report)
+            else
+                printfn "%s" (Validation.toText path report)
+
+            Validation.Report.exitCode report
+        with ex ->
+            eprintfn "error: %s" ex.Message
+            2
+
+    | None ->
 
     match gateFile with
     | Some path when not (IO.File.Exists path) ->

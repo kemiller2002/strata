@@ -18,6 +18,7 @@
     <Compile Include="CorpusPipelineTests.fs" />
     <Compile Include="DeploymentGateTests.fs" />
     <Compile Include="ParserAdapterTests.fs" />
+    <Compile Include="ValidationTests.fs" />
     <Compile Include="CatalogIntrospectionTests.fs" />
     <Compile Include="Main.fs" />
   </ItemGroup>

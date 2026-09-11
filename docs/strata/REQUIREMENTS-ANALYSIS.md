@@ -66,13 +66,14 @@ if deployment execution never ships (§144.15).
 | PR-015 | Classify statement effects by consequence, not statement type | C-008, §10 | yes |
 | PR-016 | Answer targeted retrieval queries over the semantic model | C-010, §14 | yes |
 | PR-017 | Emit machine-readable (JSON) and human-readable output | C-024, §14 | yes |
-| PR-018 | Validate candidate SQL against the current schema | C-011, §12 | yes |
+| PR-018 | Validate candidate SQL against the current schema | C-011, §12 | **yes — ACTIVE, slice V** |
 | PR-019 | Evaluate consequence-based policy over classified effects | C-009, §11 | yes |
 | PR-020 | Explain every finding: what, why, severity, certainty, next safe move | §130, P-020 | yes |
 | PR-021 | Bound every impact claim by declared analysis scope | §129 | yes |
-| PR-022 | Compare desired schema against actual schema | C-012, §17 | deferred to P4 |
-| PR-023 | Detect drift between environments | C-013, §27 | deferred to P4 |
-| PR-024 | Plan, execute and verify deployments | C-014/018/019, §18, §28 | deferred to P5+ |
+| PR-022 | Compare desired schema against actual schema | C-012, §17 | **ACTIVE, slice D** |
+| PR-023 | Detect drift between environments | C-013, §27 | **ACTIVE, slice D** |
+| PR-024 | Plan, execute and verify deployments | C-014/018/019, §18, §28 | **ACTIVE, slice X** |
+| PR-025 | Read desired state from a project manifest and per-object SQL files | DF-STRATA-2026-B1E7, DF-STRATA-2026-A4D9 | **ACTIVE, slice P** |
 
 Capabilities `C-015`–`C-023` map onto PR-022..PR-024 and the deferred list;
 they are not separate first-version requirements.
@@ -224,8 +225,13 @@ The notebook's `Q-001`–`Q-030` (§131) are preserved in full. Status:
 
 **Blocking for their phase, unresolved:**
 
-`Q-003`, `Q-004`, `Q-010`, `Q-011`, `Q-012`, `Q-020` block the desired-schema
-and persistence work (P4). `Q-006`, `Q-027` block deep validation (P2).
+`Q-003` is **ANSWERED** by `DF-STRATA-2026-B1E7` (desired state is per-object
+declarative files, DACPAC-shaped) and `DF-STRATA-2026-A4D9` (a `strata.json`
+manifest plus `schema/<schema>/<type>/<name>.sql`). `Q-004` remains open and is
+now the binding constraint, because stable object identity is what rename
+detection needs (§86); without it a rename is indistinguishable from a drop
+plus an add, and `ER-010` forbids treating that as authorized.
+`Q-010`, `Q-011`, `Q-012`, `Q-020` block persistence but not the diff itself. `Q-006`, `Q-027` block deep validation (P2).
 `Q-007`, `Q-021`, `Q-024` block the policy profile work (P2).
 `Q-008`, `Q-014`, `Q-015`, `Q-016`, `Q-019`, `Q-025`, `Q-030` block deployment
 (P5+). `Q-009`, `Q-013`, `Q-017`, `Q-022`, `Q-023`, `Q-028`, `Q-029` are

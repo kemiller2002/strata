@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 34,
+  "nextSeq": 39,
   "items": [
     {
       "id": "WI-0001",
@@ -565,6 +565,87 @@
       "attachments": [],
       "createdAt": "2026-09-11T20:36:26Z",
       "updatedAt": "2026-09-11T20:36:26Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0034",
+      "title": "Slice V: validate candidate SQL against the schema (PR-018)",
+      "description": "Validate a SQL file against a catalog snapshot. Every relation and column resolved; unresolved references reported as errors with position and exit code. The compile-time equivalent for agent-authored SQL. Tests HY-STRATA-2026-D5B8.",
+      "tags": [
+        "strata"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T21:16:16Z",
+      "updatedAt": "2026-09-11T21:16:34Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0035",
+      "title": "Slice P: strata.json project file and desired-state loader (PR-025)",
+      "description": "Read a project manifest and per-object CREATE TABLE files into a SchemaSnapshot. Requires extracting ColumnDef name/type/nullability/default plus PK, FK, unique and check constraints, none of which the adapter reads today.",
+      "tags": [
+        "strata"
+      ],
+      "priority": "high",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-11T21:16:16Z",
+      "updatedAt": "2026-09-11T21:16:16Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0036",
+      "title": "Slice D: diff desired against actual with dry-run output (PR-022, PR-023)",
+      "description": "diff : desired -> actual -> Change list, fed to the existing DeploymentGate. Honours NG-006 and 1437: absence from desired state never implies delete, and objects outside managedSchemas are never dropped.",
+      "tags": [
+        "strata"
+      ],
+      "priority": "high",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-11T21:16:16Z",
+      "updatedAt": "2026-09-11T21:16:16Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0037",
+      "title": "Slice X: execute a plan against the database (PR-024)",
+      "description": "Ordered DDL from the Change list, gate as precondition, fingerprint check so a plan cannot apply to a database that changed after planning, verification after execution per ER-011.",
+      "tags": [
+        "strata"
+      ],
+      "priority": "high",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-11T21:16:16Z",
+      "updatedAt": "2026-09-11T21:16:16Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0038",
+      "title": "Requirements and decisions for validation and deployment capabilities",
+      "description": "Promote PR-018 to active and PR-022/023/024 out of deferred, add PR-025 for the project manifest, record DF-STRATA-2026-A4D9 (strata.json plus schema/<schema>/<type>/<name>.sql) and HY-STRATA-2026-D5B8 (validation catches what reasoning does not), and mark Q-003 answered.",
+      "tags": [
+        "strata",
+        "requirements"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T21:16:34Z",
+      "updatedAt": "2026-09-11T21:16:34Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
