@@ -21,6 +21,9 @@ USAGE
   strata <command> [args] --connection <connection-string> [--json]
 
 COMMANDS
+  plan [--project <dir>]           Dry run: diff the project's desired state
+                                   against the live database. Exit 0 allow,
+                                   1 block, 2 requires approval.
   validate <file.sql>              Check every relation and column in a SQL file
                                    against the live schema. Exit 0 valid,
                                    1 a reference provably does not exist,
@@ -38,6 +41,7 @@ COMMANDS
 OPTIONS
   --connection <s>   PostgreSQL connection string (or set STRATA_PG)
   --corpus <dir>     Directory of .sql files to index (or set STRATA_CORPUS)
+  --project <dir>    Strata project root, holding strata.json (default: .)
   --json             Machine-readable output (default is human-readable)
   --brief            With --json, replace the scope block with a digest. Fetch
                      the full scope once via `strata scope`. Caveats that change
@@ -132,6 +136,16 @@ let main argv =
         | "validate" :: path :: _ -> Some path
         | _ -> None
 
+    let projectRoot =
+        match valueOf "--project" args with
+        | Some dir -> dir
+        | None -> "."
+
+    let wantsPlan =
+        match positional with
+        | "plan" :: _ -> true
+        | _ -> false
+
     let query =
         match positional with
         | "scope" :: _ -> Ok Retrieval.ScopeOnly
@@ -152,8 +166,81 @@ let main argv =
         | "readers" :: name :: _ -> Ok(Retrieval.Readers(parseName name))
         | "writers" :: name :: _ -> Ok(Retrieval.Writers(parseName name))
         | "validate" :: _ -> Error "validate needs a path to a .sql file"
+        | "plan" :: _ -> Error "plan takes no positional arguments; use --project"
         | command :: _ -> Error(sprintf "unknown or incomplete command: %s" command)
         | [] -> Error "no command given"
+
+    if wantsPlan then
+        try
+            match Project.read projectRoot with
+            | Error message ->
+                eprintfn "error: %s" message
+                2
+            | Ok project ->
+                let parser = PgParserAdapter.PostgresParser() :> Strata.Analysis.DialectPort.IDialectParser
+
+                let declared =
+                    DesiredState.load
+                        parser
+                        (project.Files |> List.map (fun f -> f.Path, f.Contents))
+
+                // A file that could not even be located or read never reached
+                // the loader, so its failure has to be folded in here or the
+                // desired state would call itself complete while missing it.
+                let desired =
+                    if List.isEmpty project.Failures then declared.Snapshot
+                    else
+                        { declared.Snapshot with
+                            Completeness =
+                                Completeness.ofList
+                                    (declared.Snapshot.Completeness.Categories
+                                     |> List.map (fun (name, state) ->
+                                         if name = "relations" then
+                                             name,
+                                             Partial(
+                                                 sprintf
+                                                     "%d project file(s) could not be read"
+                                                     (List.length project.Failures))
+                                         else
+                                             name, state)) }
+
+                for path, reason in project.Failures do
+                    eprintfn "warning: %s: %s" path reason
+
+                for failure in declared.Failures do
+                    eprintfn "warning: %s: %s" failure.Path failure.Reason
+
+                let actual = CatalogIntrospection.introspect connectionString
+
+                let searchPath =
+                    match CatalogIntrospection.readSearchPath connectionString with
+                    | Ok p -> p
+                    | Error _ -> []
+
+                let corpusSources =
+                    project.Manifest.CorpusRoots
+                    |> List.collect (fun root ->
+                        match FileCorpus.read (IO.Path.Combine(projectRoot, root)) with
+                        | Ok r -> r.Sources
+                        | Error _ -> [])
+
+                let analysis = CorpusPipeline.analyse parser actual searchPath corpusSources
+                let graph = CorpusPipeline.buildGraph actual analysis
+                let scope = CorpusPipeline.toScope parser actual analysis
+
+                let diff = SchemaDiff.run project.Manifest.ManagedSchemas desired actual
+                let gate = DeploymentGate.run graph scope diff.Changes
+
+                if List.contains "--json" args then
+                    printfn "%s" (SchemaDiff.toJson diff gate)
+                else
+                    printfn "%s" (SchemaDiff.toText diff gate)
+
+                DeploymentGate.Verdict.exitCode gate.Verdict
+        with ex ->
+            eprintfn "error: %s" ex.Message
+            2
+    else
 
     match validateFile with
     | Some path when not (IO.File.Exists path) ->
