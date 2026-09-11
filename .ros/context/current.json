@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "claude",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-09-11T15:25:35.000Z",
+  "updatedAt": "2026-09-11T15:45:27.000Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -404,6 +404,74 @@
         "EXE-20260911T151644784Z-896d8a4f"
       ],
       "completedAt": "2026-09-11T15:25:35.000Z"
+    },
+    {
+      "id": "WI-0018",
+      "type": "implementation",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Host.PgParser/PgParserAdapter.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Application/CorpusPipeline.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/CorpusPipelineTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-11T15:42:12.000Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T153849023Z-79cc4f4f"
+      ],
+      "completedAt": "2026-09-11T15:42:12.000Z"
+    },
+    {
+      "id": "WI-0019",
+      "type": "implementation",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Semantic/AnalysisScope.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Semantic/Wire.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/CorpusPipelineTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-11T15:42:12.000Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T153849136Z-00793b43"
+      ],
+      "completedAt": "2026-09-11T15:42:12.000Z"
+    },
+    {
+      "id": "WI-0020",
+      "type": "research",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "research-record",
+          "path": "research/evidence/EV-STRATA-2026-F4C6--agent-context-cost.md"
+        }
+      ],
+      "updatedAt": "2026-09-11T15:45:27.000Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T154246574Z-2ea3c900"
+      ],
+      "completedAt": "2026-09-11T15:45:27.000Z",
+      "conclusion": "Spike D context-cost half run with its own harness, since ROS telemetry reports token capabilities as unsupported here. 46x-101x context reduction at 200 tables, 2.4x at 4 tables: raw context is O(schema size), a Strata point query is O(1). HY-STRATA-2026-1E5D moves to supported at medium confidence, held at medium because the baseline assumes an agent reads the whole schema rather than grepping selectively. Secondary finding: the scope-and-caveats block is larger than the result for point queries and is repeated verbatim per answer; emitting it once per session would cut a multi-query session by roughly two thirds. The correctness half (HY-STRATA-2026-2A6F) was NOT run - no agents were executed - and is recorded as untested."
     }
   ]
 }

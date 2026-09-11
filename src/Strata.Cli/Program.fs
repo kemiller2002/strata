@@ -127,7 +127,11 @@ let main argv =
                 { Scope.nothingAnalyzed with
                     LiveDatabaseInspected = true
                     SchemaCompleteness = snapshot.Completeness
-                    Corpus = CorpusScope.empty },
+                    Corpus = CorpusScope.empty
+                    // No SQL was parsed, so grammar compatibility does not
+                    // arise. That is a different statement from "the grammars
+                    // match", and the type keeps them apart.
+                    DialectCompatibility = NoParsingPerformed },
                 []
 
             | Some directory ->
@@ -142,7 +146,7 @@ let main argv =
                         CorpusPipeline.analyse parser snapshot searchPath corpusRead.Sources
 
                     CorpusPipeline.buildGraph snapshot analysis,
-                    CorpusPipeline.toScope snapshot analysis,
+                    CorpusPipeline.toScope parser snapshot analysis,
                     corpusRead.Failures
 
         let answer = Retrieval.answer snapshot graph scope query

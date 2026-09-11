@@ -1,19 +1,21 @@
 [
   {
-    "confidence": "low",
+    "confidence": "medium",
     "created": "2026-09-11",
     "created_by_agent": "claude",
     "id": "HY-STRATA-2026-1E5D",
     "path": "research/hypotheses/HY-STRATA-2026-1E5D--semantic-retrieval-reduces-agent-tokens.md",
     "research_area": "strata-agent-leverage",
-    "status": "proposed",
+    "status": "supported",
     "superseded_by": [],
     "supersedes": [],
     "tags": [
       "strata",
       "hypothesis"
     ],
-    "tests": [],
+    "tests": [
+      "EX-STRATA-2026-D4EA"
+    ],
     "title": "Semantic retrieval reduces agent token consumption versus raw SQL corpus reading",
     "updated": "2026-09-11"
   },

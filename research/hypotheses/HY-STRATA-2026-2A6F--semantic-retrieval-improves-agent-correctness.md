@@ -30,3 +30,14 @@ Correctness and cost can move independently, and S144.7 requires the agent value
 ## Notebook source
 
 S14; S137; D-020.
+
+## Status — 2026-09-11
+
+**Still untested.** Spike D measured context SIZE only
+(`EV-STRATA-2026-F4C6`); no agents were run. A context reduction is not
+evidence of a correctness improvement, and notebook §134 is explicit that token
+reduction alone does not establish business value.
+
+Testing this needs a graded task set with known-correct answers, agents run
+under both conditions, and scoring of incorrect joins, hallucinated columns and
+repair loops. None of that exists yet.

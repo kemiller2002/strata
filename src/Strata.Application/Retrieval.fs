@@ -109,6 +109,21 @@ module Retrieval =
           | Inaccessible _
           | NotRequested -> ()
 
+          match scope.DialectCompatibility with
+          | Diverged (parserMajor, serverMajor) ->
+              yield
+                  sprintf
+                      "Strata parsed with the PostgreSQL %d grammar but the target server is %d. A statement Strata reports as parsed may still be rejected by the target."
+                      parserMajor
+                      serverMajor
+          | ServerVersionUnknown parserMajor ->
+              yield
+                  sprintf
+                      "Strata parsed with the PostgreSQL %d grammar; the target server version was not established, so parse success is not evidence the target accepts a statement."
+                      parserMajor
+          | Matched _
+          | NoParsingPerformed -> ()
+
           if scope.Corpus.ParseFailures > 0 then
               yield sprintf "%d SQL unit(s) failed to parse and contribute no dependencies." scope.Corpus.ParseFailures
 

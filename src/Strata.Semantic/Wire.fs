@@ -195,6 +195,21 @@ module Wire =
                   )
                   "fullyComplete", JBool(Completeness.isFullyComplete c) ]
 
+    let dialectCompatibility (c: DialectCompatibility) =
+        match c with
+        | Matched major ->
+            JObject [ "state", JString "matched"; "parserMajor", JInt major; "serverMajor", JInt major ]
+        | Diverged (parserMajor, serverMajor) ->
+            JObject [ "state", JString "diverged"
+                      "parserMajor", JInt parserMajor
+                      "serverMajor", JInt serverMajor ]
+        | ServerVersionUnknown parserMajor ->
+            JObject [ "state", JString "server-version-unknown"
+                      "parserMajor", JInt parserMajor
+                      "serverMajor", JNull ]
+        | NoParsingPerformed ->
+            JObject [ "state", JString "no-parsing-performed"; "parserMajor", JNull; "serverMajor", JNull ]
+
     let corpusScope (s: CorpusScope) =
         JObject [ "indexedSources", JArray(s.IndexedSources |> List.sort |> List.map JString)
                   "parseFailures", JInt s.ParseFailures
@@ -208,6 +223,11 @@ module Wire =
         JObject [ "liveDatabaseInspected", JBool s.LiveDatabaseInspected
                   "schemaCompleteness", completeness s.SchemaCompleteness
                   "corpus", corpusScope s.Corpus
+                  "dialectCompatibility", dialectCompatibility s.DialectCompatibility
+                  // Whether a successful parse is evidence the target accepts
+                  // the statement. False whenever the grammars diverge.
+                  "parseImpliesTargetAccepts",
+                  JBool(DialectCompatibility.parseImpliesTargetAccepts s.DialectCompatibility)
                   "runtimeQueriesIndexed", JBool s.RuntimeQueriesIndexed
                   "externalConsumersIndexed", JBool s.ExternalConsumersIndexed
                   "ormMetadataIndexed", JBool s.OrmMetadataIndexed

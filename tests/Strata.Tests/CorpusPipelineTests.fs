@@ -161,7 +161,7 @@ let ``a failed unit still appears in the corpus scope`` () =
             [ SqlFile "ok.sql", "SELECT order_id FROM sales.orders"
               SqlFile "bad.sql", "SELECT FROM WHERE;" ]
 
-    let scope = CorpusPipeline.toScope snapshot analysis
+    let scope = CorpusPipeline.toScope parser snapshot analysis
 
     Assert.Equal(1, scope.Corpus.ParseFailures)
     Assert.Equal(2, List.length scope.Corpus.IndexedSources)
@@ -271,3 +271,104 @@ let ``FileCorpus reports a missing directory as an error, not an empty corpus`` 
     match FileCorpus.read "/nonexistent/strata/corpus/path" with
     | Error message -> Assert.Contains("not found", message)
     | Ok _ -> failwith "expected an error for a missing directory"
+
+// ---- WI-0018: unsupported join shapes are explicit, not silent --------------
+
+[<Fact>]
+let ``a range join is reported as an unmodelled shape rather than silently ignored`` () =
+    // Before this, "no relationship found" and "that shape is not analysed"
+    // were the same output. ER-008 forbids exactly that collapse.
+    let analysis =
+        analyse
+            [ SqlFile "range.sql",
+              "SELECT 1 FROM sales.orders o, sales.customer c WHERE o.customer_id > c.id" ]
+
+    Assert.Empty analysis.ObservedJoins
+    Assert.NotEmpty(CorpusIndex.extractionGaps analysis.Index)
+    Assert.Contains(analysis.Gaps, fun g -> g.Contains "not modelled as join evidence")
+
+[<Fact>]
+let ``an equality join in the same shape IS still observed`` () =
+    // Control: the gap must come from the operator, not from the statement form.
+    let analysis =
+        analyse
+            [ SqlFile "eq.sql",
+              "SELECT 1 FROM sales.orders o, sales.customer c WHERE o.customer_id = c.id" ]
+
+    Assert.Single analysis.ObservedJoins |> ignore
+
+[<Fact>]
+let ``an IN subquery is reported as an unmodelled shape`` () =
+    let analysis =
+        analyse
+            [ SqlFile "sub.sql",
+              "SELECT 1 FROM sales.customer c WHERE c.id IN (SELECT o.customer_id FROM sales.orders o)" ]
+
+    Assert.Contains(analysis.Gaps, fun g -> g.Contains "IN (SELECT ...)" || g.Contains "IN predicate")
+
+[<Fact>]
+let ``a BETWEEN predicate is reported as an unmodelled shape`` () =
+    let analysis =
+        analyse [ SqlFile "btw.sql", "SELECT 1 FROM sales.orders o WHERE o.total BETWEEN 1 AND 2" ]
+
+    Assert.Contains(analysis.Gaps, fun g -> g.Contains "BETWEEN")
+
+[<Fact>]
+let ``a plain equality statement reports no unmodelled shape`` () =
+    // Control: gaps must reflect real omissions, not fire on everything.
+    let analysis =
+        analyse [ SqlFile "plain.sql", "SELECT o.order_id FROM sales.orders o WHERE o.status = 'open'" ]
+
+    Assert.DoesNotContain(analysis.Gaps, fun g -> g.Contains "not modelled as join evidence")
+
+// ---- WI-0019: dialect divergence is a first-class state ---------------------
+
+[<Fact>]
+let ``a diverged parser and server major is reported and blocks the parse implication`` () =
+    // EV-STRATA-2026-C5D2: a 17.5 parser accepts syntax a 16.15 server rejects.
+    let compatibility = DialectCompatibility.compare 17 (Some 16)
+
+    match compatibility with
+    | Diverged (parser, server) ->
+        Assert.Equal(17, parser)
+        Assert.Equal(16, server)
+    | other -> failwithf "expected Diverged, got %A" other
+
+    Assert.False(DialectCompatibility.parseImpliesTargetAccepts compatibility)
+
+[<Fact>]
+let ``matching majors permit the parse implication`` () =
+    let compatibility = DialectCompatibility.compare 16 (Some 16)
+
+    Assert.True(DialectCompatibility.parseImpliesTargetAccepts compatibility)
+
+[<Fact>]
+let ``an unknown server version is not treated as a match`` () =
+    // ER-008: not having checked is not the same as having checked and agreed.
+    let compatibility = DialectCompatibility.compare 17 None
+
+    match compatibility with
+    | ServerVersionUnknown 17 -> ()
+    | other -> failwithf "expected ServerVersionUnknown, got %A" other
+
+    Assert.False(DialectCompatibility.parseImpliesTargetAccepts compatibility)
+
+[<Fact>]
+let ``the pipeline scope carries dialect compatibility from the real parser`` () =
+    let snapshotWith16 =
+        { snapshot with
+            ServerVersion =
+                Some(
+                    Strata.Semantic.Evidence.Fact.declared
+                        (Strata.Semantic.Evidence.Catalog "pg_settings")
+                        "test"
+                        { Major = 16; Full = "16.15" }
+                ) }
+
+    let analysis = analyse [ SqlFile "a.sql", "SELECT 1 FROM sales.orders" ]
+    let scope = CorpusPipeline.toScope parser snapshotWith16 analysis
+
+    // The real parser reports PostgreSQL 17, the snapshot says 16.
+    match scope.DialectCompatibility with
+    | Diverged (parserMajor, 16) -> Assert.True(parserMajor >= 17)
+    | other -> failwithf "expected Diverged against a 16 server, got %A" other

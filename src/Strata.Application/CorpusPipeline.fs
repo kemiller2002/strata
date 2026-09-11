@@ -169,7 +169,15 @@ module CorpusPipeline =
                 | _ -> None)
 
         let analyzabilityGaps = Effect.analyzabilityGaps effects
-        let gapCount = List.length columnGaps + List.length analyzabilityGaps
+
+        // Constructs the adapter recognised but does not model — including join
+        // shapes Strata cannot turn into relationship evidence. Counting these
+        // is what stops "no relationship found" from being indistinguishable
+        // from "that shape is not analysed" (ER-008, WI-0018).
+        let unmodelled = extraction.UnmodelledConstructs
+
+        let gapCount =
+            List.length columnGaps + List.length analyzabilityGaps + List.length unmodelled
 
         let status =
             if gapCount > 0 then ExtractedWithGaps gapCount else Extracted
@@ -187,7 +195,8 @@ module CorpusPipeline =
 
         let gapMessages =
             [ for gap in columnGaps -> sprintf "%s: %A" sourceId gap
-              for effect in analyzabilityGaps -> sprintf "%s: %A degrades analyzability" sourceId effect.Kind ]
+              for effect in analyzabilityGaps -> sprintf "%s: %A degrades analyzability" sourceId effect.Kind
+              for construct in unmodelled -> sprintf "%s: %s" sourceId construct ]
 
         indexed, dependencies, joins, gapMessages
 
@@ -266,8 +275,18 @@ module CorpusPipeline =
           Dependencies = analysis.Dependencies }
 
     /// The analysis scope a corpus run establishes.
-    let toScope (snapshot: SchemaSnapshot) (analysis: CorpusAnalysis) : Scope =
+    ///
+    /// `parser` is needed to compare the grammar Strata parsed with against the
+    /// server it inspected. A divergence means parse success is not evidence
+    /// the target accepts the statement (`RK-003`).
+    let toScope (parser: IDialectParser) (snapshot: SchemaSnapshot) (analysis: CorpusAnalysis) : Scope =
+        let serverMajor =
+            snapshot.ServerVersion
+            |> Option.map (fun fact -> (Strata.Semantic.Evidence.Fact.value fact).Major)
+
         { Scope.nothingAnalyzed with
             LiveDatabaseInspected = true
             SchemaCompleteness = snapshot.Completeness
-            Corpus = CorpusIndex.toScope analysis.Index }
+            Corpus = CorpusIndex.toScope analysis.Index
+            DialectCompatibility =
+                DialectCompatibility.compare parser.Identity.DialectMajor serverMajor }

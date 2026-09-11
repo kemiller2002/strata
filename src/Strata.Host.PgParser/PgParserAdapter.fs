@@ -229,6 +229,66 @@ module PgParserAdapter =
 
         List.ofSeq predicates
 
+    /// Predicates that relate two columns but which Strata does not model as
+    /// join evidence.
+    ///
+    /// Join detection above is equality-only. Without this, a corpus written
+    /// with range joins or `IN (SELECT ...)` yields FEWER relationships with no
+    /// indication anything was missed — making "no relationship found"
+    /// indistinguishable from "that shape is not analysed", which is exactly
+    /// the collapse ER-008 forbids.
+    ///
+    /// These are reported as unmodelled constructs so they become explicit
+    /// analysis gaps rather than silent omissions.
+    let private collectUnmodelledJoinShapes (stmt: Google.Protobuf.IMessage) =
+        let shapes = ResizeArray<string>()
+
+        let isColumnRef (node: Node) =
+            not (isNull (box node)) && not (isNull (box node.ColumnRef))
+
+        descend stmt (fun m ->
+            match m with
+            | :? A_Expr as expr ->
+                let operatorName =
+                    expr.Name
+                    |> Seq.tryPick (fun n ->
+                        if not (isNull (box n.String)) && not (String.IsNullOrEmpty n.String.Sval) then
+                            Some n.String.Sval
+                        else
+                            None)
+
+                match expr.Kind with
+                | A_Expr_Kind.AexprOp ->
+                    // A non-equality operator relating two columns is a range
+                    // join. Real relationship evidence Strata does not model.
+                    if isColumnRef expr.Lexpr && isColumnRef expr.Rexpr then
+                        match operatorName with
+                        | Some "=" -> ()
+                        | Some op -> shapes.Add(sprintf "column-to-column predicate with operator '%s' is not modelled as join evidence" op)
+                        | None -> shapes.Add "column-to-column predicate with an unnamed operator is not modelled as join evidence"
+                | A_Expr_Kind.AexprBetween
+                | A_Expr_Kind.AexprNotBetween
+                | A_Expr_Kind.AexprBetweenSym
+                | A_Expr_Kind.AexprNotBetweenSym ->
+                    if isColumnRef expr.Lexpr then
+                        shapes.Add "BETWEEN predicate is not modelled as join evidence"
+                | A_Expr_Kind.AexprIn ->
+                    if isColumnRef expr.Lexpr then
+                        shapes.Add "IN predicate is not modelled as join evidence"
+                | _ -> ()
+            | :? SubLink as sublink ->
+                // `x IN (SELECT ...)`, `EXISTS (SELECT ...)` and friends relate
+                // the outer query to an inner one. Strata extracts the inner
+                // relations as references but does not derive a relationship.
+                match sublink.SubLinkType with
+                | SubLinkType.AnySublink -> shapes.Add "IN (SELECT ...) subquery is not modelled as join evidence"
+                | SubLinkType.ExistsSublink -> shapes.Add "EXISTS (SELECT ...) subquery is not modelled as join evidence"
+                | SubLinkType.AllSublink -> shapes.Add "ALL (SELECT ...) subquery is not modelled as join evidence"
+                | _ -> ()
+            | _ -> ())
+
+        shapes |> Seq.distinct |> List.ofSeq
+
     /// Does this statement carry a WHERE predicate?
     ///
     /// Read from the statement node's own whereClause rather than by searching
@@ -264,10 +324,11 @@ module PgParserAdapter =
           Relations = collectRelations stmt
           Columns = collectColumns stmt
           UnmodelledConstructs =
-            match shapeOf stmt with
-            | UnsupportedShape detail -> [ detail ]
-            | SelectShape | InsertShape | UpdateShape | DeleteShape
-            | DdlShape _ | UtilityShape _ -> []
+            (match shapeOf stmt with
+             | UnsupportedShape detail -> [ detail ]
+             | SelectShape | InsertShape | UpdateShape | DeleteShape
+             | DdlShape _ | UtilityShape _ -> [])
+            @ collectUnmodelledJoinShapes stmt
           ContainsDynamicSql = containsDynamicSql stmt
           JoinPredicates = collectJoinPredicates stmt
           HasWherePredicate = hasWhereClause stmt }

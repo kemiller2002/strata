@@ -95,5 +95,31 @@
       "rk-004"
     ],
     "title": "PostgreSQL catalog visibility does not imply accessibility, contradicting the notebook's permission assumption"
+  },
+  {
+    "confidence": "medium",
+    "contradicts": [],
+    "created_by_agent": "claude",
+    "evidence_type": "test-result",
+    "id": "EV-STRATA-2026-F4C6",
+    "path": "research/evidence/EV-STRATA-2026-F4C6--agent-context-cost.md",
+    "related_theories": [],
+    "research_area": "strata-agent-leverage",
+    "retrieved": "2026-09-11",
+    "source_author": "claude",
+    "source_date": "2026-09-11",
+    "source_title": "Strata Spike D — agent context cost harness",
+    "source_uri": "tools/spike-d-context-cost.py; PostgreSQL 16.15 local instance",
+    "supports": [
+      "HY-STRATA-2026-1E5D"
+    ],
+    "tags": [
+      "strata",
+      "agent-leverage",
+      "spike-d",
+      "context-cost",
+      "measurement"
+    ],
+    "title": "Strata retrieval reduces agent context size 46-101x at 200 tables, but its scope block costs more than the answer"
   }
 ]

@@ -64,6 +64,53 @@ module AnalysisScope =
                 | Partial _
                 | NotRequested -> None)
 
+    /// Whether the parser's grammar matches the target server's.
+    ///
+    /// `EV-STRATA-2026-C5D2` demonstrated this is not theoretical: a 17.5
+    /// parser accepts `JSON_TABLE` and `MERGE ... RETURNING`, which a 16.15
+    /// server rejects outright. Without this state, Strata reports such a
+    /// statement as cleanly parsed and says nothing about the fact that the
+    /// target would refuse it (`RK-003`, `NFR-004`, `Q-026`).
+    ///
+    /// `ServerVersionUnknown` is distinct from `Matched`: not having checked is
+    /// not the same as having checked and agreed (`ER-008`).
+    type DialectCompatibility =
+        | Matched of major: int
+        | Diverged of parserMajor: int * serverMajor: int
+        | ServerVersionUnknown of parserMajor: int
+        /// No parsing was performed, so the question does not arise.
+        | NoParsingPerformed
+
+    [<RequireQualifiedAccess>]
+    module DialectCompatibility =
+
+        /// Compare a parser major against a server major.
+        let compare (parserMajor: int) (serverMajor: int option) =
+            match serverMajor with
+            | None -> ServerVersionUnknown parserMajor
+            | Some server when server = parserMajor -> Matched parserMajor
+            | Some server -> Diverged(parserMajor, server)
+
+        /// May a parse result be relied on as evidence the target accepts the
+        /// statement? Only when the grammars match.
+        ///
+        /// This is the guard: a diverged or unknown pairing means parse success
+        /// says nothing about executability on the target.
+        let parseImpliesTargetAccepts (c: DialectCompatibility) =
+            match c with
+            | Matched _ -> true
+            | Diverged _
+            | ServerVersionUnknown _
+            | NoParsingPerformed -> false
+
+        /// Wire tag, hand-written per Boundary Preservation.
+        let tag (c: DialectCompatibility) =
+            match c with
+            | Matched _ -> "matched"
+            | Diverged _ -> "diverged"
+            | ServerVersionUnknown _ -> "server-version-unknown"
+            | NoParsingPerformed -> "no-parsing-performed"
+
     /// Which SQL sources were indexed.
     type CorpusScope =
         { /// Paths or source identifiers actually indexed.
@@ -89,6 +136,8 @@ module AnalysisScope =
         { LiveDatabaseInspected: bool
           SchemaCompleteness: Completeness
           Corpus: CorpusScope
+          /// Whether the parser's grammar matches the target server's.
+          DialectCompatibility: DialectCompatibility
           /// Sources the notebook lists that Strata does not yet index at all.
           /// Present so their absence is stated rather than implied (§129).
           RuntimeQueriesIndexed: bool
@@ -104,6 +153,7 @@ module AnalysisScope =
             { LiveDatabaseInspected = false
               SchemaCompleteness = Completeness.empty
               Corpus = CorpusScope.empty
+              DialectCompatibility = NoParsingPerformed
               RuntimeQueriesIndexed = false
               ExternalConsumersIndexed = false
               OrmMetadataIndexed = false }

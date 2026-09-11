@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 18,
+  "nextSeq": 21,
   "items": [
     {
       "id": "WI-0001",
@@ -289,6 +289,57 @@
       "attachments": [],
       "createdAt": "2026-09-11T15:16:38.000Z",
       "updatedAt": "2026-09-11T15:16:43.000Z",
+      "createdBy": "claude",
+      "source": "user-request",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0018",
+      "title": "Report unsupported join shapes as explicit analysis gaps",
+      "description": "Join detection is equality-only. A corpus using BETWEEN, IN (SELECT ...) or range joins yields fewer relationships with no indication anything was missed, so 'no relationship found' and 'I do not analyse that shape' are the same output. Violates ER-008. Traces RK-007, PR-011.",
+      "tags": [
+        "strata",
+        "honesty"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T15:38:25.000Z",
+      "updatedAt": "2026-09-11T15:38:48.000Z",
+      "createdBy": "claude",
+      "source": "user-request",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0019",
+      "title": "Surface parser/server dialect divergence as a first-class analysis state",
+      "description": "EV-STRATA-2026-C5D2 demonstrated the 17.5 parser accepting JSON_TABLE and MERGE...RETURNING which a 16.15 server rejects. Strata currently reports such a statement as cleanly parsed. Make the divergence part of the analysis scope so every answer carries it. Traces RK-003, NFR-004, Q-026.",
+      "tags": [
+        "strata",
+        "honesty"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T15:38:25.000Z",
+      "updatedAt": "2026-09-11T15:38:48.000Z",
+      "createdBy": "claude",
+      "source": "user-request",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0020",
+      "title": "Spike D: measure agent context cost of Strata retrieval versus raw corpus",
+      "description": "Run EX-STRATA-2026-D4EA with its own measurement capture, since this runtime reports token metrics as unsupported to ROS telemetry. Tests HY-STRATA-2026-1E5D.",
+      "tags": [
+        "strata",
+        "spike"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T15:38:26.000Z",
+      "updatedAt": "2026-09-11T15:38:48.000Z",
       "createdBy": "claude",
       "source": "user-request",
       "sourceReference": null
