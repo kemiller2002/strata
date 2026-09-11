@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Tier 1 - Semantic Model (DF-STRATA-2026-D3F8).
+
+    Question this tier answers: what can be true about a database?
+
+    This project targets netstandard2.0 and references ONLY FSharp.Core so that
+    it structurally CANNOT reference Npgsql, Google.Protobuf, the parser, or any
+    host concern. That is the mechanical enforcement of ER-014 and D-005: the
+    semantic model is smaller than the parser AST and independent of it.
+
+    scripts/check-semantic-architecture.sh verifies this. Do not add a
+    PackageReference or ProjectReference here without changing that decision.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <AssemblyName>Strata.Semantic</AssemblyName>
+    <RootNamespace>Strata.Semantic</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Identity.fs" />
+    <Compile Include="Evidence.fs" />
+    <Compile Include="Resolution.fs" />
+    <Compile Include="AnalysisScope.fs" />
+    <Compile Include="Schema.fs" />
+  </ItemGroup>
+
+</Project>

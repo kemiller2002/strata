@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Tier 4 - Host / External Effects (DF-STRATA-2026-D3F8).
+
+    The PostgreSQL parser adapter. This is the ONLY project permitted to
+    reference pgsqlparser or Google.Protobuf; the protobuf AST must not cross
+    into Tier 1 or Tier 2 (D-005, ER-014). Verified by
+    scripts/check-semantic-architecture.sh.
+
+    Parser selection and its evidence: DF-STRATA-2026-4C7A / EV-STRATA-2026-7A31.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>Strata.Host.PgParser</AssemblyName>
+    <RootNamespace>Strata.Host.PgParser</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="DialectParser.fs" />
+    <Compile Include="PgParserAdapter.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Strata.Semantic/Strata.Semantic.fsproj" />
+    <ProjectReference Include="../Strata.Analysis/Strata.Analysis.fsproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="pgsqlparser" Version="1.0.0" />
+  </ItemGroup>
+
+</Project>

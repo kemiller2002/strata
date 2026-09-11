@@ -33,3 +33,7 @@ logs/*
 !.env.example
 *.pem
 *.key
+
+# .NET build output
+bin/
+obj/

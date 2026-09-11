@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Tier 2 - Domain Execution (DF-STRATA-2026-D3F8).
+
+    Question this tier answers: what legal change or derivation may happen?
+
+    References Tier 1 only. It must NOT reference the parser, Npgsql, or
+    Google.Protobuf: parsing is a Tier 4 effect, and the protobuf AST never
+    crosses this boundary (ER-014, D-005). This tier consumes a small
+    Strata-owned extraction result produced by the adapter.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <AssemblyName>Strata.Analysis</AssemblyName>
+    <RootNamespace>Strata.Analysis</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="StatementReferences.fs" />
+    <Compile Include="ScopeResolution.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Strata.Semantic/Strata.Semantic.fsproj" />
+  </ItemGroup>
+
+</Project>

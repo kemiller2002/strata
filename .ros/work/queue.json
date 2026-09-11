@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 15,
+  "nextSeq": 16,
   "items": [
     {
       "id": "WI-0001",
@@ -47,10 +47,10 @@
         "slice-s1"
       ],
       "priority": "high",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-11T14:01:00.000Z",
-      "updatedAt": "2026-09-11T14:01:00.000Z",
+      "updatedAt": "2026-09-11T14:03:53.000Z",
       "createdBy": "claude",
       "source": "strata-roadmap",
       "sourceReference": null
@@ -64,10 +64,10 @@
         "slice-s1"
       ],
       "priority": "high",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-11T14:01:00.000Z",
-      "updatedAt": "2026-09-11T14:01:00.000Z",
+      "updatedAt": "2026-09-11T14:03:53.000Z",
       "createdBy": "claude",
       "source": "strata-roadmap",
       "sourceReference": null
@@ -115,10 +115,10 @@
         "slice-s2"
       ],
       "priority": "high",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-11T14:01:01.000Z",
-      "updatedAt": "2026-09-11T14:01:01.000Z",
+      "updatedAt": "2026-09-11T14:03:53.000Z",
       "createdBy": "claude",
       "source": "strata-roadmap",
       "sourceReference": null
@@ -132,10 +132,10 @@
         "slice-s2"
       ],
       "priority": "high",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-11T14:01:02.000Z",
-      "updatedAt": "2026-09-11T14:01:02.000Z",
+      "updatedAt": "2026-09-11T14:03:53.000Z",
       "createdBy": "claude",
       "source": "strata-roadmap",
       "sourceReference": null
@@ -238,6 +238,23 @@
       "attachments": [],
       "createdAt": "2026-09-11T14:01:03.000Z",
       "updatedAt": "2026-09-11T14:01:03.000Z",
+      "createdBy": "claude",
+      "source": "strata-roadmap",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0015",
+      "title": "Record engineering metrics and SDE routing artefacts for the first Strata increment",
+      "description": "SDE-MAP.md, feature manifests, and the engineering metrics record for WI-0003/0004/0007/0008.",
+      "tags": [
+        "strata",
+        "documentation"
+      ],
+      "priority": "medium",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T14:15:20.000Z",
+      "updatedAt": "2026-09-11T14:15:21.000Z",
       "createdBy": "claude",
       "source": "strata-roadmap",
       "sourceReference": null

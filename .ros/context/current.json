@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "claude",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-09-11T14:01:49.000Z",
+  "updatedAt": "2026-09-11T14:15:21.000Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -58,6 +58,134 @@
       ],
       "completedAt": "2026-09-11T14:01:49.000Z",
       "conclusion": "Notebook classified into 24 product requirements, 20 engineering rules, 12 NFRs, 20 architecture decisions, 6 hypotheses, 18 risks, 30 open questions and 10 non-goals. Two spikes run; parser selected; scope-resolution false-edge risk discovered. 12 implementation work items created with traceability."
+    },
+    {
+      "id": "WI-0003",
+      "type": "implementation",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Semantic/Strata.Semantic.fsproj"
+        },
+        {
+          "type": "implementation",
+          "path": "scripts/check-semantic-architecture.sh"
+        },
+        {
+          "type": "implementation",
+          "path": "Strata.sln"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/Strata.Tests.fsproj"
+        }
+      ],
+      "updatedAt": "2026-09-11T14:14:07.000Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T140355298Z-847e0753"
+      ],
+      "completedAt": "2026-09-11T14:14:07.000Z"
+    },
+    {
+      "id": "WI-0004",
+      "type": "implementation",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Semantic/Identity.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Semantic/Evidence.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Semantic/Resolution.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Semantic/AnalysisScope.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Semantic/Schema.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/AnalysisScopeTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-11T14:14:20.000Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T140355378Z-6ad2f15c"
+      ],
+      "completedAt": "2026-09-11T14:14:20.000Z"
+    },
+    {
+      "id": "WI-0007",
+      "type": "implementation",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Host.PgParser/DialectParser.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Host.PgParser/PgParserAdapter.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/ParserAdapterTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-11T14:14:20.000Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T140355406Z-740f9956"
+      ],
+      "completedAt": "2026-09-11T14:14:20.000Z"
+    },
+    {
+      "id": "WI-0008",
+      "type": "implementation",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Analysis/StatementReferences.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Analysis/ScopeResolution.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/ScopeResolutionTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-11T14:14:30.000Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T140355450Z-b7f78e5e"
+      ],
+      "completedAt": "2026-09-11T14:14:30.000Z"
+    },
+    {
+      "id": "WI-0015",
+      "type": "mechanical",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [],
+      "updatedAt": "2026-09-11T14:15:21.000Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T141521593Z-efbcf191"
+      ],
+      "completedAt": "2026-09-11T14:15:21.000Z"
     }
   ]
 }
