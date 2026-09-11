@@ -73,7 +73,7 @@ if deployment execution never ships (§144.15).
 | PR-022 | Compare desired schema against actual schema | C-012, §17 | **ACTIVE, slice D** |
 | PR-023 | Detect drift between environments | C-013, §27 | **ACTIVE, slice D** |
 | PR-024 | Plan, execute and verify deployments | C-014/018/019, §18, §28 | **ACTIVE, slice X** |
-| PR-025 | Read desired state from a project manifest and per-object SQL files | DF-STRATA-2026-B1E7, DF-STRATA-2026-A4D9 | **ACTIVE, slice P** |
+| PR-025 | Read desired state from a project manifest and per-object SQL files (tables, views, materialized views, routines, indexes) | DF-STRATA-2026-B1E7, DF-STRATA-2026-A4D9 | **ACTIVE, slice P** |
 
 Capabilities `C-015`–`C-023` map onto PR-022..PR-024 and the deferred list;
 they are not separate first-version requirements.

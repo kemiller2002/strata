@@ -51,4 +51,5 @@
 | WI-0046 | Compare view definitions by normalising declared DDL through the server | complete | strata, diff | high |
 | WI-0047 | Compare routine bodies directly from prosrc | complete | strata, diff | high |
 | WI-0048 | Compare default and check expressions via shadow normalisation | complete | strata, diff | high |
-| WI-0049 | Rename detection via -- strata:renamed_from (Q-004) | ready | strata, rename | high |
+| WI-0049 | Rename detection via -- strata:renamed_from (Q-004) | complete | strata, rename | high |
+| WI-0050 | Indexes as desired state | ready | strata, desired-state | high |

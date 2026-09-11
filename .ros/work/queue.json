@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 50,
+  "nextSeq": 51,
   "items": [
     {
       "id": "WI-0001",
@@ -835,6 +835,23 @@
       "attachments": [],
       "createdAt": "2026-09-11T23:25:19Z",
       "updatedAt": "2026-09-11T23:25:19Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0050",
+      "title": "Indexes as desired state",
+      "description": "CREATE INDEX files load and attach to their table, so indexes are created, dropped and compared like any other object. A project declaring no index file says nothing about indexes and drops none; declaring any takes ownership.",
+      "tags": [
+        "strata",
+        "desired-state"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:31:08Z",
+      "updatedAt": "2026-09-11T23:31:08Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null

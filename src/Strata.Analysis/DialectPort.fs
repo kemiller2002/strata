@@ -1,5 +1,6 @@
 namespace Strata.Analysis
 
+open Strata.Semantic.Identity
 open Strata.Semantic.Schema
 open Strata.Analysis.StatementReferences
 
@@ -62,6 +63,12 @@ module DialectPort =
     /// stay apart (ER-008). `Unmodelled` carries what it saw.
     type ObjectDeclaration =
         | Declared of SchemaObject
+        /// An index, which belongs to a table rather than standing alone.
+        ///
+        /// `CREATE INDEX` is a separate statement but `Index` is a field of
+        /// `Table`, so a declared index carries the table it attaches to and
+        /// the loader joins them once every file is read.
+        | DeclaredIndex of table: QualifiedName * index: Index
         | Unmodelled of detail: string
         | DeclarationFailed of ParseError
 

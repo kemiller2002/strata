@@ -64,6 +64,7 @@ module DesiredState =
         let objects = ResizeArray<SchemaObject>()
         let failures = ResizeArray<LoadFailure>()
         let declarations' = ResizeArray<QualifiedName * string>()
+        let indexes = ResizeArray<QualifiedName * Index>()
 
         for path, contents in files do
             let declarations = parser.ParseObjectDefinitions contents
@@ -76,11 +77,16 @@ module DesiredState =
             | _ ->
                 let declaredHere =
                     declarations
-                    |> List.choose (function Declared o -> Some o | Unmodelled _ | DeclarationFailed _ -> None)
+                    |> List.choose (function
+                        | Declared o -> Some o
+                        | DeclaredIndex _
+                        | Unmodelled _
+                        | DeclarationFailed _ -> None)
 
                 for declaration in declarations do
                     match declaration with
                     | Declared object' -> objects.Add object'
+                    | DeclaredIndex (table, index) -> indexes.Add(table, index)
                     | Unmodelled detail -> failures.Add { Path = path; Reason = detail }
                     | DeclarationFailed error ->
                         failures.Add
@@ -94,7 +100,46 @@ module DesiredState =
                 // reconstruction.
                 | _ -> ()
 
-        let loaded = List.ofSeq objects
+        // Indexes are declared in their own files but live on a table, so they
+        // are attached once every file has been read.
+        //
+        // An index naming a table the project does not declare is a FAILURE,
+        // not something to drop quietly: the project is asserting an index on
+        // something it does not own, and acting on half of that is worse than
+        // acting on none of it.
+        let declaredIndexes = List.ofSeq indexes
+
+        let orphanIndexes =
+            declaredIndexes
+            |> List.filter (fun (table, _) ->
+                not (
+                    objects
+                    |> Seq.exists (fun o ->
+                        QualifiedName.display (SchemaObject.name o) = QualifiedName.display table)))
+            |> List.map (fun (table, index) ->
+                { Path = QualifiedName.display table
+                  Reason =
+                    sprintf
+                        "index '%s' is declared on a table this project does not declare"
+                        index.Name.Text })
+
+        let withIndexes =
+            objects
+            |> Seq.map (fun o ->
+                match o with
+                | TableObject t ->
+                    let attached =
+                        declaredIndexes
+                        |> List.filter (fun (table, _) ->
+                            QualifiedName.display table = QualifiedName.display t.Name)
+                        |> List.map snd
+
+                    if List.isEmpty attached then o else TableObject { t with Indexes = attached }
+                | ViewObject _
+                | RoutineObject _ -> o)
+            |> List.ofSeq
+
+        let loaded = withIndexes
         let loadFailures = List.ofSeq failures
 
         // One object per file is the layout contract. More than one is not an
@@ -108,7 +153,7 @@ module DesiredState =
                 { Path = name
                   Reason = sprintf "declared %d times across the project" count })
 
-        let allFailures = loadFailures @ duplicates
+        let allFailures = loadFailures @ duplicates @ orphanIndexes
 
         let state reason =
             if List.isEmpty allFailures then Complete else Partial reason
@@ -127,10 +172,15 @@ module DesiredState =
                       state "column declarations are only as complete as the files that parsed"
                       "constraints",
                       state "constraint declarations are only as complete as the files that parsed"
-                      // Indexes are separate statements in PostgreSQL and are
-                      // not read yet, so the declared side cannot speak to
-                      // them at all. Stated rather than omitted.
-                      "indexes", NotRequested
+                      // A project that declares NO index file is not saying
+                      // "this schema has no indexes" — it is saying nothing
+                      // about indexes at all, and the difference decides
+                      // whether every existing index is a drop candidate.
+                      // Declaring one index is how a project takes ownership
+                      // of them, exactly as declaring one table does.
+                      "indexes",
+                      (if List.isEmpty declaredIndexes then NotRequested
+                       else state "index declarations are only as complete as the files that parsed")
                       "view_definitions", NotRequested
                       "routines", NotRequested ] }
           Failures = allFailures

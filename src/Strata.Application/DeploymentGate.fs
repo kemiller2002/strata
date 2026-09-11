@@ -176,6 +176,30 @@ module DeploymentGate =
                 if List.isEmpty dependents then cleanResultNextMove
                 else "Update the listed sources to the new name, re-run this gate, then re-plan the rename." }
 
+        | CreateIndex (table, index) ->
+            { Change = change
+              Verdict = Allow
+              Detected = sprintf "creates index %s on %s" index.Display (QualifiedName.display table)
+              Rationale =
+                // Additive to readers. Building it takes a lock, which is an
+                // operational cost rather than a correctness one, and saying so
+                // beats implying the operation is free.
+                "Additive. No query can depend on an index that does not exist; building it takes a lock."
+              AffectedSources = []
+              NextSafeMove = "Proceed." }
+
+        | DropIndex (table, index) ->
+            // Dropping an index breaks nothing and reports nothing: every query
+            // keeps working and gets slower. There is no dependency to find, so
+            // the honest verdict is that a human decides.
+            { Change = change
+              Verdict = RequiresApproval
+              Detected = sprintf "drops index %s on %s" index.Display (QualifiedName.display table)
+              Rationale =
+                "No query breaks, and none reports anything — they get slower. Strata cannot tell which rely on it."
+              AffectedSources = []
+              NextSafeMove = "Confirm no query depends on this index for its plan, then approve explicitly." }
+
         | CreateView view ->
             { Change = change
               Verdict = Allow

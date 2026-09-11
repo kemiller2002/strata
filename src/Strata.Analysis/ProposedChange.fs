@@ -37,6 +37,13 @@ module ProposedChange =
         | RenameColumn of table: QualifiedName * from: Identifier * to': Identifier
         /// Creates a relation. Additive.
         | CreateTable of table: QualifiedName
+        /// Creates an index. Additive to READERS — nothing can depend on an
+        /// index that does not exist — though building one takes a lock, which
+        /// is an operational cost rather than a correctness one.
+        | CreateIndex of table: QualifiedName * index: Identifier
+        /// Removes an index. Destructive: queries keep working and get slower,
+        /// which no error reports.
+        | DropIndex of table: QualifiedName * index: Identifier
         /// Creates a view. Additive: nothing can already depend on an object
         /// that does not yet exist.
         | CreateView of view: QualifiedName
@@ -80,6 +87,8 @@ module ProposedChange =
             | CreateTable _ -> "create-table"
             | RenameTable _ -> "rename-table"
             | RenameColumn _ -> "rename-column"
+            | CreateIndex _ -> "create-index"
+            | DropIndex _ -> "drop-index"
             | CreateView _ -> "create-view"
             | ReplaceView _ -> "replace-view"
             | ReplaceRoutine _ -> "replace-routine"
@@ -102,6 +111,8 @@ module ProposedChange =
             | ReplaceView table
             | ReplaceRoutine table
             | CreateRoutine table
+            | CreateIndex (table, _)
+            | DropIndex (table, _)
             | AddConstraint (table, _)
             | TruncateTable table -> Some table
             | UnclassifiedChange _ -> None
@@ -115,6 +126,7 @@ module ProposedChange =
         let isPotentiallyDestructive (change: Change) =
             match change with
             | DropColumn _
+            | DropIndex _
             | DropTable _
             | ReplaceView _
             | ReplaceRoutine _
@@ -125,6 +137,7 @@ module ProposedChange =
             | UnclassifiedChange _ -> true
             | AddColumn _
             | CreateTable _
+            | CreateIndex _
             | CreateView _
             | CreateRoutine _
             | AddConstraint _ -> false

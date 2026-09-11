@@ -903,3 +903,105 @@ let ``column renames are ordered before the table rename`` () =
     Assert.True(
         List.findIndex ((=) "rename-column") tags < List.findIndex ((=) "rename-table") tags,
         "a column rename must run while the table still has its old name")
+
+
+// ---- indexes as desired state ---------------------------------------------
+
+let private tableWithIndexes name columns indexes =
+    TableObject
+        { Name = qn "sales" name
+          Columns = columns |> List.mapi (fun i (n, nullable) -> col (i + 1) n nullable)
+          PrimaryKey = None
+          UniqueConstraints = []
+          CheckConstraints = []
+          ForeignKeys = []
+          Indexes = indexes
+          Scope = Managed }
+
+let private index name columns unique =
+    { Name = id' name; Columns = columns |> List.map id'; IsUnique = unique; Predicate = None }
+
+/// A snapshot whose desired side DECLARES indexes, which is how a project takes
+/// ownership of them.
+let private declaringIndexes objects =
+    { Objects = objects
+      ServerVersion = None
+      Completeness = Completeness.ofList [ "relations", Complete; "indexes", Complete ] }
+
+[<Fact>]
+let ``a declared index that does not exist is created`` () =
+    let result =
+        run true managed
+            (declaringIndexes [ tableWithIndexes "orders" orders [ index "idx_total" [ "total" ] false ] ])
+            (complete [ tbl Observed "sales" "orders" orders ])
+
+    Assert.Contains(result.Changes, fun c -> c = CreateIndex(qn "sales" "orders", id' "idx_total"))
+
+[<Fact>]
+let ``an index the project does not declare is dropped once it declares any`` () =
+    let result =
+        run true managed
+            (declaringIndexes [ tableWithIndexes "orders" orders [ index "idx_keep" [ "id" ] false ] ])
+            (complete
+                [ TableObject
+                    { Name = qn "sales" "orders"
+                      Columns = orders |> List.mapi (fun i (n, nullable) -> col (i + 1) n nullable)
+                      PrimaryKey = None
+                      UniqueConstraints = []
+                      CheckConstraints = []
+                      ForeignKeys = []
+                      Indexes = [ index "idx_keep" [ "id" ] false; index "idx_gone" [ "total" ] false ]
+                      Scope = Observed } ])
+
+    Assert.Contains(result.Changes, fun c -> c = DropIndex(qn "sales" "orders", id' "idx_gone"))
+    Assert.DoesNotContain(result.Changes, fun c -> c = DropIndex(qn "sales" "orders", id' "idx_keep"))
+
+[<Fact>]
+let ``a project declaring NO index drops none and discloses instead`` () =
+    // Declaring nothing is not the same as declaring emptiness. A project that
+    // says nothing about indexes must not have every existing one proposed for
+    // removal — that is NG-006 applied to a second object type.
+    let result =
+        run true managed
+            (complete [ tbl Managed "sales" "orders" orders ])
+            (complete
+                [ TableObject
+                    { Name = qn "sales" "orders"
+                      Columns = orders |> List.mapi (fun i (n, nullable) -> col (i + 1) n nullable)
+                      PrimaryKey = None
+                      UniqueConstraints = []
+                      CheckConstraints = []
+                      ForeignKeys = []
+                      Indexes = [ index "idx_total" [ "total" ] false ]
+                      Scope = Observed } ])
+
+    Assert.Empty result.Changes
+    Assert.Contains(result.Suppressed, fun s -> s.Detail.Contains "declares none")
+
+[<Fact>]
+let ``an index redefined under the same name is reported`` () =
+    let result =
+        run true managed
+            (declaringIndexes [ tableWithIndexes "orders" orders [ index "idx" [ "total" ] true ] ])
+            (complete
+                [ TableObject
+                    { Name = qn "sales" "orders"
+                      Columns = orders |> List.mapi (fun i (n, nullable) -> col (i + 1) n nullable)
+                      PrimaryKey = None
+                      UniqueConstraints = []
+                      CheckConstraints = []
+                      ForeignKeys = []
+                      Indexes = [ index "idx" [ "id" ] false ]
+                      Scope = Observed } ])
+
+    Assert.Contains(result.Changes, fun c ->
+        match c with
+        | UnclassifiedChange d -> d.Contains "index 'idx' covers"
+        | _ -> false)
+
+[<Fact>]
+let ``creating an index is additive and dropping one needs approval`` () =
+    // Dropping an index breaks nothing and reports nothing: queries keep
+    // working and get slower, which no error surfaces.
+    Assert.False(Change.isPotentiallyDestructive (CreateIndex(qn "sales" "t", id' "i")))
+    Assert.True(Change.isPotentiallyDestructive (DropIndex(qn "sales" "t", id' "i")))

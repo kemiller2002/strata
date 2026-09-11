@@ -936,6 +936,32 @@ module PgParserAdapter =
           Body = body
           Scope = Managed }
 
+    /// An index, as its file declares it.
+    ///
+    /// `Predicate` is left `None` even when the statement has a WHERE clause:
+    /// the expression is not recoverable from the parse tree without
+    /// deparsing, and the catalog reports its own normalised rendering. The
+    /// diff compares name, columns and uniqueness, and discloses predicates.
+    let private indexOf (stmt: IndexStmt) =
+        let columns =
+            if isNull (box stmt.IndexParams) then []
+            else
+                stmt.IndexParams
+                |> Seq.choose (fun n ->
+                    if isNull (box n.IndexElem) || String.IsNullOrEmpty n.IndexElem.Name then None
+                    else Some(identifierOf n.IndexElem.Name))
+                |> List.ofSeq
+
+        let table =
+            if isNull (box stmt.Relation) then QualifiedName.unqualified (identifierOf "unknown")
+            else qualifiedNameOf stmt.Relation.Schemaname stmt.Relation.Relname
+
+        table,
+        { Name = identifierOf stmt.Idxname
+          Columns = columns
+          IsUnique = stmt.Unique
+          Predicate = None }
+
     let private errorOf (e: PgSqlParser.Error) =
         { Message = e.Message
           CursorPosition = e.CursorPos
@@ -1025,6 +1051,13 @@ module PgParserAdapter =
 
                         | Node.NodeOneofCase.CreateFunctionStmt ->
                             Declared(RoutineObject(routineOf stmt.CreateFunctionStmt))
+
+                        // An unnamed index gets a server-generated name, which
+                        // a file cannot predict and a diff cannot match. It is
+                        // unmodelled rather than guessed at.
+                        | Node.NodeOneofCase.IndexStmt when not (String.IsNullOrEmpty stmt.IndexStmt.Idxname) ->
+                            let table, index = indexOf stmt.IndexStmt
+                            DeclaredIndex(table, index)
                         // Recognised, modelled nowhere yet. Saying so keeps a
                         // view file from reading as an empty declaration, which
                         // a diff would treat as "nothing to create" (ER-008).

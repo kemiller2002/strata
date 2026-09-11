@@ -366,6 +366,30 @@ module SchemaDiff =
         | RenameColumn (table, from, to') ->
             Some(sprintf "ALTER TABLE %s RENAME COLUMN %s TO %s" (quoteName table) (quote from) (quote to'))
 
+        | CreateIndex (table, index) ->
+            desiredTable table
+            |> Option.bind (fun t -> t.Indexes |> List.tryFind (fun i -> Identifier.sameName i.Name index))
+            // A partial index's predicate is not carried, so one cannot be
+            // created faithfully — building it without the WHERE would index
+            // every row and silently differ from what was declared.
+            |> Option.filter (fun i -> i.Predicate.IsNone)
+            |> Option.map (fun i ->
+                sprintf
+                    "CREATE %sINDEX %s ON %s (%s)"
+                    (if i.IsUnique then "UNIQUE " else "")
+                    (quote i.Name)
+                    (quoteName table)
+                    (i.Columns |> List.map quote |> String.concat ", "))
+
+        | DropIndex (table, index) ->
+            // An index is dropped by name in its schema, not via its table.
+            Some(
+                sprintf
+                    "DROP INDEX %s"
+                    (match table.Schema with
+                     | Some schema -> sprintf "%s.%s" (quote schema) (quote index)
+                     | None -> quote index))
+
         | AddColumn (table, column) ->
             desiredTable table
             |> Option.bind (fun t -> t.Columns |> List.tryFind (fun c -> Identifier.sameName c.Name column))
@@ -409,6 +433,9 @@ module SchemaDiff =
         | CreateTable _ -> 1
         | AddColumn _ -> 2
         | AlterColumnType _ -> 3
+        // After the columns they cover exist, before the drops.
+        | CreateIndex _ -> 3
+        | DropIndex _ -> 3
         | AddConstraint _ -> 3
         // Views and routines reference tables and columns, so they come after
         // every table change that might create what they read.
@@ -452,7 +479,14 @@ module SchemaDiff =
           Defaults: (string * string) list
           Checks: (string * string) list }
 
-    let private constraintChanges (normalised: NormalisedTable list) (desired: Table) (actual: Table) =
+    let private constraintChanges
+        (allowDrops: bool)
+        (desiredComplete: bool)
+        (indexesDeclared: bool)
+        (normalised: NormalisedTable list)
+        (desired: Table)
+        (actual: Table)
+        =
         let rendered =
             normalised |> List.tryFind (fun n -> n.Table = QualifiedName.display desired.Name)
 
@@ -629,22 +663,81 @@ module SchemaDiff =
                         else
                             None))
 
-        // Indexes are never compared: CREATE INDEX is a separate statement and
-        // the declared side therefore always reports none. Comparing them would
-        // propose dropping every index in the database; ignoring them silently
-        // is the other half of the same mistake, so they are disclosed.
-        //
-        // Only SECONDARY indexes are reported. PostgreSQL creates an index to
-        // back each primary key and unique constraint, naming it after the
-        // constraint, and those ARE compared above — listing them here would
-        // report an uncompared difference for every table with a key.
-        let uncomparedIndexes =
-            let constraintNames =
-                (match actual.PrimaryKey with Some pk -> [ named pk.ConstraintName ] | None -> [])
-                @ (actual.UniqueConstraints |> List.map (fun u -> named u.ConstraintName))
+        // PostgreSQL creates an index to back each primary key and unique
+        // constraint, naming it after the constraint. Those are compared as
+        // CONSTRAINTS above, so they are excluded here — proposing to drop one
+        // would be proposing to drop its constraint by a side door.
+        let constraintBackedNames =
+            (match actual.PrimaryKey with Some pk -> [ named pk.ConstraintName ] | None -> [])
+            @ (actual.UniqueConstraints |> List.map (fun u -> named u.ConstraintName))
 
-            actual.Indexes
-            |> List.filter (fun i -> not (constraintNames |> List.contains (named i.Name)))
+        let secondaryIndexes (t: Table) =
+            t.Indexes |> List.filter (fun i -> not (constraintBackedNames |> List.contains (named i.Name)))
+
+        let declaredIndexes = secondaryIndexes desired
+        let deployedIndexes = secondaryIndexes actual
+
+        // A project that declares NO index anywhere says nothing about them;
+        // one that declares any takes ownership. `indexesDeclared` carries that
+        // distinction from the loader's completeness.
+        let indexChanges =
+            if not indexesDeclared then []
+            else
+                let created =
+                    declaredIndexes
+                    |> List.filter (fun d -> not (deployedIndexes |> List.exists (fun a -> named a.Name = named d.Name)))
+                    |> List.map (fun d -> Ok(CreateIndex(desired.Name, d.Name)))
+
+                let dropped =
+                    deployedIndexes
+                    |> List.filter (fun a -> not (declaredIndexes |> List.exists (fun d -> named d.Name = named a.Name)))
+                    |> List.map (fun a ->
+                        if not desiredComplete then
+                            Microsoft.FSharp.Core.Error
+                                { Object = desired.Name
+                                  Reason = DesiredStateIncomplete
+                                  Detail =
+                                    sprintf
+                                        "index '%s' is absent from desired state, but desired state did not load completely"
+                                        a.Name.Text }
+                        elif not allowDrops then
+                            Microsoft.FSharp.Core.Error
+                                { Object = desired.Name
+                                  Reason = DropsNotEnabled
+                                  Detail =
+                                    sprintf "index '%s' would be dropped; pass --allow-drops" a.Name.Text }
+                        else
+                            Ok(DropIndex(desired.Name, a.Name)))
+
+                // Same name, different columns or uniqueness. Reported rather
+                // than silently rebuilt: dropping and recreating an index is a
+                // different operation with a different cost.
+                let redefined =
+                    declaredIndexes
+                    |> List.choose (fun d ->
+                        deployedIndexes
+                        |> List.tryFind (fun a -> named a.Name = named d.Name)
+                        |> Option.bind (fun a ->
+                            let columnsOf (i: Index) = i.Columns |> List.map named |> String.concat ","
+
+                            if columnsOf d <> columnsOf a || d.IsUnique <> a.IsUnique then
+                                Some(
+                                    Ok(
+                                        UnclassifiedChange(
+                                            sprintf
+                                                "%s: index '%s' covers (%s)%s in desired state and (%s)%s in the database"
+                                                (QualifiedName.display desired.Name)
+                                                d.Name.Text
+                                                (columnsOf d)
+                                                (if d.IsUnique then " unique" else "")
+                                                (columnsOf a)
+                                                (if a.IsUnique then " unique" else ""))))
+                            else
+                                None))
+
+                created @ dropped @ redefined
+
+        let uncomparedIndexes = if indexesDeclared then [] else deployedIndexes
 
         // Everything above establishes PRESENCE. Two expressions Strata cannot
         // read might still differ, and saying so is the difference between a
@@ -698,10 +791,10 @@ module SchemaDiff =
                     Reason = NotModelled
                     Detail =
                       sprintf
-                          "%d index(es) exist in the database; CREATE INDEX is not read as desired state, so indexes were NOT compared"
+                          "%d index(es) exist in the database and this project declares none, so indexes were NOT compared. Declaring any index file takes ownership of them."
                           (List.length uncomparedIndexes) } ]
 
-        primaryKey @ uniques @ foreignKeys @ checks @ defaults @ checkRedefinitions, notCompared
+        primaryKey @ uniques @ foreignKeys @ checks @ defaults @ checkRedefinitions @ indexChanges, notCompared
 
     /// Views and routines, compared by PRESENCE only.
     ///
@@ -940,6 +1033,16 @@ module SchemaDiff =
 
         let tableRenames = renamedTables |> List.map (fun (from, to') -> Ok(RenameTable(from, to')))
 
+        // A table being created needs its declared indexes created too. Index
+        // comparison below only runs for tables present on BOTH sides, so
+        // without this a new table's indexes would need a second apply — the
+        // first run created the table and reported the index as a change it had
+        // not made.
+        let indexesForNewTables =
+            desiredTables
+            |> List.filter (fun d -> not (actualTables |> List.exists (fun a -> sameName a.Name d.Name)))
+            |> List.collect (fun d -> d.Indexes |> List.map (fun i -> Ok(CreateIndex(d.Name, i.Name))))
+
         let shared =
             desiredTables
             |> List.choose (fun d ->
@@ -1016,7 +1119,16 @@ module SchemaDiff =
                 @ columnChanges allowDrops managedSchemas desiredComplete desiredMinus actualMinus)
 
         let constraintResults =
-            shared |> List.map (fun (d, a) -> constraintChanges normalisedTables d a)
+            let indexesDeclared =
+                match Completeness.stateOf "indexes" desired.Completeness with
+                | NotRequested -> false
+                | Complete
+                | Partial _
+                | Inaccessible _ -> true
+
+            shared
+            |> List.map (fun (d, a) ->
+                constraintChanges allowDrops desiredComplete indexesDeclared normalisedTables d a)
 
         let constraintChangeResults = constraintResults |> List.collect fst
         let notCompared = constraintResults |> List.collect snd
@@ -1035,6 +1147,7 @@ module SchemaDiff =
         let all =
             creations
             @ tableRenames
+            @ indexesForNewTables
             @ removals
                 allowDrops
                 managedSchemas
@@ -1078,6 +1191,10 @@ module SchemaDiff =
             sprintf "rename-table       %s -> %s" (QualifiedName.display from) (QualifiedName.display to')
         | RenameColumn (table, from, to') ->
             sprintf "rename-column      %s.%s -> %s" (QualifiedName.display table) from.Text to'.Text
+        | CreateIndex (table, index) ->
+            sprintf "create-index       %s on %s" index.Text (QualifiedName.display table)
+        | DropIndex (table, index) ->
+            sprintf "drop-index         %s on %s" index.Text (QualifiedName.display table)
         | CreateView view -> sprintf "create-view        %s" (QualifiedName.display view)
         | ReplaceView view -> sprintf "replace-view       %s" (QualifiedName.display view)
         | ReplaceRoutine r -> sprintf "replace-routine    %s" (QualifiedName.display r)
