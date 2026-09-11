@@ -37,8 +37,8 @@
 | WI-0032 | Record Q-003 decision: desired state is DACPAC-style object files | complete | strata, desired-state, decision | high |
 | WI-0033 | Survey the declarative schema landscape and candidate fixtures | complete | strata, competitive-landscape, fixtures | high |
 | WI-0034 | Slice V: validate candidate SQL against the schema (PR-018) | complete | strata | high |
-| WI-0035 | Slice P: strata.json project file and desired-state loader (PR-025) | captured | strata | high |
+| WI-0035 | Slice P: strata.json project file and desired-state loader (PR-025) | ready | strata | high |
 | WI-0036 | Slice D: diff desired against actual with dry-run output (PR-022, PR-023) | captured | strata | high |
 | WI-0037 | Slice X: execute a plan against the database (PR-024) | captured | strata | high |
 | WI-0038 | Requirements and decisions for validation and deployment capabilities | complete | strata, requirements | high |
-| WI-0039 | Record PostgreSQL-only scope and the dialect port's known leaks | ready | strata, dialect, scope | medium |
+| WI-0039 | Record PostgreSQL-only scope and the dialect port's known leaks | complete | strata, dialect, scope | medium |

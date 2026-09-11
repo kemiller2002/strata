@@ -22,6 +22,7 @@
     <Compile Include="Retrieval.fs" />
     <Compile Include="DeploymentGate.fs" />
     <Compile Include="Validation.fs" />
+    <Compile Include="DesiredState.fs" />
   </ItemGroup>
 
   <ItemGroup>

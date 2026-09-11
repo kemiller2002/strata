@@ -1,5 +1,6 @@
 namespace Strata.Analysis
 
+open Strata.Semantic.Schema
 open Strata.Analysis.StatementReferences
 
 /// The narrow dialect-adapter boundary.
@@ -54,12 +55,37 @@ module DialectPort =
           DialectVersion: string
           DialectMajor: int }
 
+    /// What a desired-state object file turned out to declare.
+    ///
+    /// A file that declares nothing Strata models is NOT an empty file — it is
+    /// a file whose declaration Strata could not represent, and the two must
+    /// stay apart (ER-008). `Unmodelled` carries what it saw.
+    type ObjectDeclaration =
+        | Declared of SchemaObject
+        | Unmodelled of detail: string
+        | DeclarationFailed of ParseError
+
     /// The contract Tier 3 depends on.
     type IDialectParser =
         abstract Identity: ParserIdentity
         /// Parse a script into statements. A script with a failing statement
         /// still returns the statements around it.
         abstract ParseScript: sql: string -> StatementParse list
+
+        /// Read a desired-state object file into the semantic model.
+        ///
+        /// Separate from `ParseScript` because the two answer different
+        /// questions about the same grammar. `ParseScript` asks what a
+        /// statement REFERENCES, which is what a query has; this asks what a
+        /// statement DECLARES, which is what a `CREATE TABLE` has. Folding the
+        /// second into `StatementExtraction` would put definition fields on
+        /// every parsed query and put the desired-state path on the hot query
+        /// path (PR-025, DF-STRATA-2026-B1E7).
+        ///
+        /// Returns one declaration per top-level statement so a file declaring
+        /// more than one object is visible to the caller as such, rather than
+        /// silently merged.
+        abstract ParseObjectDefinitions: sql: string -> ObjectDeclaration list
         /// Parse a routine body in the dialect's procedural language.
         abstract ParseRoutineBody: body: string -> Result<unit, ParseError>
         /// A literal-independent fingerprint, for corpus deduplication (§123).

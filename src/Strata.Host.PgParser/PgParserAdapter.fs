@@ -3,6 +3,7 @@ namespace Strata.Host.PgParser
 open System
 open PgSqlParser
 open Strata.Semantic.Identity
+open Strata.Semantic.Schema
 open Strata.Analysis.StatementReferences
 open Strata.Analysis.DialectPort
 
@@ -488,6 +489,246 @@ module PgParserAdapter =
         | Node.NodeOneofCase.DeleteStmt -> not (isNull (box stmt.DeleteStmt.WhereClause))
         | _ -> false
 
+    // ---- desired state ------------------------------------------------------
+    //
+    // Everything below reads what a statement DECLARES, for PR-025. The walk
+    // above reads what a statement REFERENCES. They share a grammar and
+    // nothing else: a `CREATE TABLE` mentions its own columns nowhere a
+    // `ColumnRef` walk can see them, which is why extracting five columns from
+    // a five-column table previously yielded one.
+
+    /// PostgreSQL's internal type names, mapped to the spelling the catalog
+    /// reports.
+    ///
+    /// The parser canonicalises `bigint` to `int8`; `format_type()`, which
+    /// introspection reads, renders the same type as `bigint`. They are the
+    /// same type spelled two ways, and a diff comparing the two spellings
+    /// reports every column of every table as changed, forever. Measured
+    /// against a live database: 5 of 7 columns differed on type alone while
+    /// every structural property matched.
+    ///
+    /// The catalog's spelling wins because it is the one a human sees in
+    /// `\d`, and because the declared side is the one Strata controls.
+    let private canonicalTypeNames =
+        dict [ "int8", "bigint"
+               "int4", "integer"
+               "int2", "smallint"
+               "float8", "double precision"
+               "float4", "real"
+               "bool", "boolean"
+               "varchar", "character varying"
+               "bpchar", "character"
+               "timestamptz", "timestamp with time zone"
+               "timestamp", "timestamp without time zone"
+               "timetz", "time with time zone"
+               "time", "time without time zone" ]
+
+    /// Integer type modifiers, in order: the `(12,2)` of `numeric(12,2)`.
+    ///
+    /// An earlier version dropped these on the stated grounds that "the catalog
+    /// side does not carry them either". That was simply wrong — introspection
+    /// reports `numeric(12,2)` — and the round-trip against a live database is
+    /// what exposed it.
+    let private typeModifiers (typeName: TypeName) =
+        if isNull (box typeName.Typmods) then []
+        else
+            typeName.Typmods
+            |> Seq.choose (fun node ->
+                if isNull (box node.AConst) || isNull (box node.AConst.Ival) then None
+                else Some(string node.AConst.Ival.Ival))
+            |> List.ofSeq
+
+    /// A type name as written, flattened from libpg_query's name path and
+    /// rendered the way the catalog renders it.
+    let private typeNameOf (typeName: TypeName) =
+        if isNull (box typeName) then QualifiedName.unqualified (identifierOf "unknown")
+        else
+            let parts =
+                typeName.Names
+                |> Seq.choose (fun n ->
+                    if not (isNull (box n.String)) && not (String.IsNullOrEmpty n.String.Sval) then
+                        Some n.String.Sval
+                    else
+                        None)
+                |> List.ofSeq
+
+            let canonical (name: string) =
+                match canonicalTypeNames.TryGetValue name with
+                | true, mapped -> mapped
+                | false, _ -> name
+
+            let withModifiers (name: string) =
+                match typeModifiers typeName with
+                | [] -> name
+                | modifiers ->
+                    // `timestamp(3) with time zone` — the precision sits inside
+                    // the phrase, not after it, so a naive append is wrong for
+                    // exactly the types whose canonical spelling is a phrase.
+                    let rendered = String.concat "," modifiers
+
+                    if name.Contains " with time zone" then
+                        name.Replace(" with time zone", sprintf "(%s) with time zone" rendered)
+                    elif name.Contains " without time zone" then
+                        name.Replace(" without time zone", sprintf "(%s) without time zone" rendered)
+                    else
+                        sprintf "%s(%s)" name rendered
+
+            match parts with
+            | [ "pg_catalog"; name ] -> QualifiedName.unqualified (identifierOf (withModifiers (canonical name)))
+            | [ name ] -> QualifiedName.unqualified (identifierOf (withModifiers (canonical name)))
+            | [ schema; name ] -> qualifiedNameOf schema (withModifiers name)
+            | _ -> QualifiedName.unqualified (identifierOf "unknown")
+
+    let private constraintsOf (col: ColumnDef) =
+        if isNull (box col.Constraints) then []
+        else
+            col.Constraints
+            |> Seq.choose (fun n -> if isNull (box n.Constraint) then None else Some n.Constraint)
+            |> List.ofSeq
+
+    /// One column of a table definition.
+    ///
+    /// Nullability is NOT NULL-or-absent in the grammar, so the default is
+    /// nullable — matching PostgreSQL rather than guessing. A PRIMARY KEY
+    /// written inline implies NOT NULL, which the catalog reports and a file
+    /// therefore must too, or every primary key column would diff.
+    let private columnOf (position: int) (col: ColumnDef) =
+        let constraints = constraintsOf col
+
+        let hasKind kind =
+            constraints |> List.exists (fun c -> c.Contype = kind)
+
+        let isNotNull = hasKind ConstrType.ConstrNotnull || hasKind ConstrType.ConstrPrimary
+
+        { Name = identifierOf col.Colname
+          Type = { TypeName = typeNameOf col.TypeName; IsNullable = not isNotNull }
+          Position = position
+          HasDefault = hasKind ConstrType.ConstrDefault
+          IsGenerated = hasKind ConstrType.ConstrGenerated
+          IsIdentity = hasKind ConstrType.ConstrIdentity }
+
+    let private keyNames (keys: Google.Protobuf.Collections.RepeatedField<Node>) =
+        if isNull (box keys) then []
+        else
+            keys
+            |> Seq.choose (fun n ->
+                if not (isNull (box n.String)) && not (String.IsNullOrEmpty n.String.Sval) then
+                    Some(identifierOf n.String.Sval)
+                else
+                    None)
+            |> List.ofSeq
+
+    /// Read a CREATE TABLE into the semantic model.
+    ///
+    /// Table-level and column-inline constraints are both collected: the same
+    /// primary key can be written either way and the catalog cannot tell which
+    /// the author chose, so a loader that read only one form would diff a table
+    /// against itself.
+    let private tableOf (stmt: CreateStmt) =
+        let elements =
+            if isNull (box stmt.TableElts) then []
+            else stmt.TableElts |> List.ofSeq
+
+        let columnDefs =
+            elements
+            |> List.choose (fun n -> if isNull (box n.ColumnDef) then None else Some n.ColumnDef)
+
+        let columns = columnDefs |> List.mapi (fun i c -> columnOf (i + 1) c)
+
+        // Constraints written at table level.
+        let tableConstraints =
+            elements
+            |> List.choose (fun n -> if isNull (box n.Constraint) then None else Some n.Constraint)
+
+        // Constraints written inline on a column, paired with that column.
+        let inlineConstraints =
+            columnDefs
+            |> List.collect (fun c -> constraintsOf c |> List.map (fun con -> identifierOf c.Colname, con))
+
+        let constraintName (c: Constraint) fallback =
+            if isNull (box c) || String.IsNullOrEmpty c.Conname then identifierOf fallback
+            else identifierOf c.Conname
+
+        // PrimaryKey and UniqueConstraint are structurally identical, so these
+        // are annotated: without it F# infers the later-declared type and the
+        // table would carry its primary key in the wrong field.
+        let primaryKey: PrimaryKey option =
+            let fromTable =
+                tableConstraints
+                |> List.tryFind (fun c -> c.Contype = ConstrType.ConstrPrimary)
+                |> Option.map (fun c ->
+                    { PrimaryKey.ConstraintName = constraintName c "primary_key"
+                      Columns = keyNames c.Keys })
+
+            match fromTable with
+            | Some pk -> Some pk
+            | None ->
+                inlineConstraints
+                |> List.tryFind (fun (_, c) -> c.Contype = ConstrType.ConstrPrimary)
+                |> Option.map (fun (column, c) ->
+                    { PrimaryKey.ConstraintName = constraintName c "primary_key"
+                      Columns = [ column ] })
+
+        let uniques: UniqueConstraint list =
+            (tableConstraints
+             |> List.filter (fun c -> c.Contype = ConstrType.ConstrUnique)
+             |> List.map (fun c ->
+                 { ConstraintName = constraintName c "unique"
+                   Columns = keyNames c.Keys }))
+            @ (inlineConstraints
+               |> List.filter (fun (_, c) -> c.Contype = ConstrType.ConstrUnique)
+               |> List.map (fun (column, c) ->
+                   { ConstraintName = constraintName c "unique"
+                     Columns = [ column ] }))
+
+        let checks =
+            (tableConstraints |> List.filter (fun c -> c.Contype = ConstrType.ConstrCheck)
+             |> List.map (fun c -> constraintName c "check", c))
+            @ (inlineConstraints |> List.filter (fun (_, c) -> c.Contype = ConstrType.ConstrCheck)
+               |> List.map (fun (_, c) -> constraintName c "check", c))
+            |> List.map (fun (name, _) ->
+                // The predicate TEXT is not recoverable from the parse tree
+                // without deparsing, and the catalog reports it already
+                // normalised. Carrying the name alone keeps a check constraint
+                // visible as an object without inventing an expression that
+                // would diff against the server's own rendering every time.
+                { ConstraintName = name; Expression = "" })
+
+        let foreignKeys =
+            (tableConstraints
+             |> List.filter (fun c -> c.Contype = ConstrType.ConstrForeign)
+             |> List.map (fun c -> None, c))
+            @ (inlineConstraints
+               |> List.filter (fun (_, c) -> c.Contype = ConstrType.ConstrForeign)
+               |> List.map (fun (column, c) -> Some column, c))
+            |> List.map (fun (inlineColumn, c) ->
+                let columns =
+                    match inlineColumn with
+                    | Some column -> [ column ]
+                    | None -> keyNames c.FkAttrs
+
+                { ConstraintName = constraintName c "foreign_key"
+                  Columns = columns
+                  ReferencedTable =
+                    if isNull (box c.Pktable) then QualifiedName.unqualified (identifierOf "unknown")
+                    else qualifiedNameOf c.Pktable.Schemaname c.Pktable.Relname
+                  ReferencedColumns = keyNames c.PkAttrs })
+
+        { Name =
+            if isNull (box stmt.Relation) then QualifiedName.unqualified (identifierOf "unknown")
+            else qualifiedNameOf stmt.Relation.Schemaname stmt.Relation.Relname
+          Columns = columns
+          PrimaryKey = primaryKey
+          UniqueConstraints = uniques
+          CheckConstraints = checks
+          ForeignKeys = foreignKeys
+          // Indexes are separate statements in PostgreSQL, so a CREATE TABLE
+          // declares none. An empty list here means "this statement declared
+          // no index", not "this table has none".
+          Indexes = []
+          // Everything in a project's desired state is by definition managed.
+          Scope = Managed }
+
     let private errorOf (e: PgSqlParser.Error) =
         { Message = e.Message
           CursorPosition = e.CursorPos
@@ -549,6 +790,24 @@ module PgParserAdapter =
             member _.ParseRoutineBody(body: string) =
                 let result = Parser.ParsePlpgsql body
                 if result.IsSuccess then Ok() else Microsoft.FSharp.Core.Error(errorOf result.Error)
+
+            member _.ParseObjectDefinitions(sql: string) =
+                let result = Parser.Parse(sql, ParserOptions())
+
+                if not result.IsSuccess then
+                    [ DeclarationFailed(errorOf result.Error) ]
+                else
+                    result.Value.Stmts
+                    |> Seq.map (fun raw ->
+                        let stmt = raw.Stmt
+
+                        match stmt.NodeCase with
+                        | Node.NodeOneofCase.CreateStmt -> Declared(TableObject(tableOf stmt.CreateStmt))
+                        // Recognised, modelled nowhere yet. Saying so keeps a
+                        // view file from reading as an empty declaration, which
+                        // a diff would treat as "nothing to create" (ER-008).
+                        | other -> Unmodelled(sprintf "%s is not yet read as a desired-state declaration" (string other)))
+                    |> List.ofSeq
 
             member _.Fingerprint(sql: string) =
                 let result = Parser.Fingerprint(sql, ParserOptions())

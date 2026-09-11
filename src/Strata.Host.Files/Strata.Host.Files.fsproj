@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <Compile Include="FileCorpus.fs" />
+    <Compile Include="Project.fs" />
   </ItemGroup>
 
   <ItemGroup>
