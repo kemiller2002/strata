@@ -42,4 +42,5 @@
 | WI-0037 | Slice X: execute a plan against the database (PR-024) | captured | strata | high |
 | WI-0038 | Requirements and decisions for validation and deployment capabilities | complete | strata, requirements | high |
 | WI-0039 | Record PostgreSQL-only scope and the dialect port's known leaks | complete | strata, dialect, scope | medium |
-| WI-0040 | Make the project manifest optional and require opt-in for removals | ready | strata, project | high |
+| WI-0040 | Make the project manifest optional and require opt-in for removals | complete | strata, project | high |
+| WI-0041 | Validate SQL routine bodies instead of reporting them unverifiable | ready | strata, validation | high |

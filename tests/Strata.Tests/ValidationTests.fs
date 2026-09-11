@@ -191,14 +191,70 @@ let ``a column that does not exist on the relation its alias names is invalid`` 
     Assert.NotEmpty(Report.invalidFindings report)
 
 [<Fact>]
-let ``a routine body is never silently passed`` () =
-    // A CREATE FUNCTION body is a string literal to the parser, so a typo
-    // inside it is invisible. Reporting VALID here would be a FALSE PASS —
-    // the one outcome a validator must never produce, and worse than no
-    // validator, because it is trusted.
+let ``a typo inside a SQL routine body is caught`` () =
+    // A CREATE FUNCTION body is a string literal to the parser, so nothing
+    // inside it appears in the extraction. Until the body was re-parsed as SQL
+    // in its own right, this reported VALID — a false pass, the one outcome a
+    // validator must never produce, and worse than no validator because it is
+    // trusted.
     let report =
         validate completeSnapshot
             "CREATE FUNCTION sales.f() RETURNS int AS $$ SELECT custmer_id FROM sales.orders $$ LANGUAGE sql"
 
+    Assert.Equal(1, Report.exitCode report)
+    Assert.Contains(Report.invalidFindings report, fun f ->
+        f.Message.Contains "routine body" && f.Message.Contains "custmer_id")
+
+[<Fact>]
+let ``a correct SQL routine body is valid`` () =
+    let report =
+        validate completeSnapshot
+            "CREATE FUNCTION sales.f() RETURNS int AS $$ SELECT id FROM sales.orders $$ LANGUAGE sql"
+
+    Assert.Empty report.Findings
+    Assert.Equal(0, Report.exitCode report)
+
+[<Fact>]
+let ``a routine parameter is not reported as a missing column`` () =
+    // THE false positive. Inside a body a parameter is an ordinary bare name,
+    // indistinguishable from a column reference. Without the signature, every
+    // parameter of every function reads as a column that does not exist — which
+    // would fire on essentially every real function and destroy trust in the
+    // tool faster than missing a real error would.
+    let report =
+        validate completeSnapshot
+            "CREATE FUNCTION sales.f(p_id bigint) RETURNS int AS $$ SELECT id FROM sales.orders WHERE id = p_id $$ LANGUAGE sql"
+
+    Assert.DoesNotContain(report.Findings, fun f -> f.Message.Contains "p_id")
+    Assert.Equal(0, Report.exitCode report)
+
+[<Fact>]
+let ``a qualified name matching a parameter is still checked`` () =
+    // The control: only an UNQUALIFIED name can be a parameter. `p_id.total`
+    // names a relation called `p_id`, whatever the signature says, and
+    // suppressing it would open a hole shaped exactly like the fix.
+    let report =
+        validate completeSnapshot
+            "CREATE FUNCTION sales.f(p_id bigint) RETURNS int AS $$ SELECT p_id.total FROM sales.orders $$ LANGUAGE sql"
+
     Assert.NotEqual(0, Report.exitCode report)
-    Assert.Contains(Report.unverifiableFindings report, fun f -> f.Message.Contains "body")
+
+[<Fact>]
+let ``a plpgsql body is parsed but its references are not claimed to be checked`` () =
+    // plpgsql has its own grammar. Strata can confirm it parses; it does not
+    // resolve references inside one, and saying so beats implying a check that
+    // did not happen.
+    let report =
+        validate completeSnapshot
+            "CREATE FUNCTION sales.f() RETURNS int AS $$ BEGIN RETURN 1; END $$ LANGUAGE plpgsql"
+
+    Assert.Equal(2, Report.exitCode report)
+    Assert.Contains(Report.unverifiableFindings report, fun f -> f.Message.Contains "plpgsql")
+
+[<Fact>]
+let ``a body in a language Strata cannot read is unverifiable, not passed`` () =
+    let report =
+        validate completeSnapshot
+            "CREATE FUNCTION sales.f() RETURNS int AS 'libthing', 'do_it' LANGUAGE c"
+
+    Assert.NotEqual(0, Report.exitCode report)

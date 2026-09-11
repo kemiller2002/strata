@@ -729,6 +729,67 @@ module PgParserAdapter =
           // Everything in a project's desired state is by definition managed.
           Scope = Managed }
 
+    /// The body and language of a `CREATE FUNCTION`, when it defines one.
+    ///
+    /// libpg_query puts both in `Options` as `DefElem` nodes: `as` carries the
+    /// body (a List of String, because `AS 'obj_file', 'link_symbol'` is legal
+    /// for C functions), `language` carries the language name.
+    ///
+    /// Only the single-element `as` form yields a body. A two-element one names
+    /// an object file and a symbol, which is not SQL and must not be handed to
+    /// a SQL parser as though it were.
+    let private routineBodyOf (stmt: Node) =
+        if stmt.NodeCase <> Node.NodeOneofCase.CreateFunctionStmt then None
+        else
+            let options =
+                if isNull (box stmt.CreateFunctionStmt.Options) then []
+                else
+                    stmt.CreateFunctionStmt.Options
+                    |> Seq.choose (fun n -> if isNull (box n.DefElem) then None else Some n.DefElem)
+                    |> List.ofSeq
+
+            let stringsOf (arg: Node) =
+                if isNull (box arg) then []
+                elif not (isNull (box arg.String)) then [ arg.String.Sval ]
+                elif not (isNull (box arg.List)) then
+                    arg.List.Items
+                    |> Seq.choose (fun i ->
+                        if not (isNull (box i.String)) then Some i.String.Sval else None)
+                    |> List.ofSeq
+                else []
+
+            let valueOf name =
+                options
+                |> List.tryFind (fun d -> d.Defname = name)
+                |> Option.map (fun d -> stringsOf d.Arg)
+
+            match valueOf "as" with
+            | Some [ body ] ->
+                let language =
+                    match valueOf "language" with
+                    | Some [ l ] -> l
+                    | _ -> "unknown"
+
+                // IN and INOUT parameters are visible as bare names inside the
+                // body. OUT parameters are too, so every named parameter is
+                // collected regardless of mode.
+                let parameters =
+                    if isNull (box stmt.CreateFunctionStmt.Parameters) then []
+                    else
+                        stmt.CreateFunctionStmt.Parameters
+                        |> Seq.choose (fun n ->
+                            if isNull (box n.FunctionParameter) then None
+                            elif String.IsNullOrEmpty n.FunctionParameter.Name then None
+                            else Some(identifierOf n.FunctionParameter.Name))
+                        |> List.ofSeq
+
+                Some
+                    { Language = language
+                      Body = body
+                      Parameters = parameters }
+            | Some _
+            | None -> None
+
     let private errorOf (e: PgSqlParser.Error) =
         { Message = e.Message
           CursorPosition = e.CursorPos
@@ -754,7 +815,8 @@ module PgParserAdapter =
           ContainsDynamicSql = gathered.ContainsDynamicSql
           JoinPredicates = gathered.JoinPredicates |> List.rev
           AlterActions = collectAlterActions stmt
-          HasWherePredicate = hasWhereClause stmt }
+          HasWherePredicate = hasWhereClause stmt
+          RoutineBody = routineBodyOf stmt }
 
     /// The adapter.
     type PostgresParser() =

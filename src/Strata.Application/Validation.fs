@@ -211,6 +211,7 @@ module Validation =
     let private validateColumns
         (snapshot: SchemaSnapshot)
         (searchPath: Identifier list)
+        (bound: Identifier list)
         (index: int)
         (location: StatementLocation)
         (extraction: StatementExtraction)
@@ -245,6 +246,13 @@ module Validation =
             else
                 match mention.Column with
                 | None -> None
+                // A name bound by an enclosing routine's signature is a
+                // parameter, not a column. Only an UNQUALIFIED name can be one:
+                // `p.id` names a relation called `p`, whatever the signature
+                // says.
+                | Some column when
+                    mention.Qualifier.IsNone
+                    && bound |> List.exists (fun b -> Identifier.sameName b column) -> None
                 | Some column ->
                     let subject =
                         match mention.Qualifier with
@@ -285,12 +293,26 @@ module Validation =
                                 (sprintf "column '%s': %s" subject (ResolutionGap.describe gap))))
 
     /// Validate a whole SQL script.
-    let validate
+    ///
+    /// Recurses into routine bodies. A `CREATE FUNCTION` body is a string
+    /// literal in the grammar, so a body selecting a column that does not exist
+    /// extracts as a statement with no columns and no relations — and reporting
+    /// VALID for it is a false pass, the one outcome a validator must never
+    /// produce. The body is re-parsed as SQL in its own right and validated
+    /// against the same catalog.
+    ///
+    /// Depth is bounded because a routine body cannot itself contain a
+    /// `CREATE FUNCTION` with a body in PostgreSQL, but the bound is explicit
+    /// rather than assumed: a grammar change should degrade to
+    /// `Unverifiable`, not recurse forever.
+    let rec private validateScript
         (parser: IDialectParser)
         (snapshot: SchemaSnapshot)
         (searchPath: Identifier list)
+        (bound: Identifier list)
+        (depth: int)
         (sql: string)
-        : Report =
+        : Finding list =
 
         let parsed = parser.ParseScript sql
 
@@ -326,23 +348,93 @@ module Validation =
                     // unverifiable is the honest floor; validating the body is
                     // the next step and is tracked separately.
                     let routineBody =
-                        match extraction.Shape with
-                        | DdlShape kind when kind = "CREATE FUNCTION" ->
+                        match extraction.RoutineBody with
+                        | None ->
+                            match extraction.Shape with
+                            // Defines a routine, but no body came back — an
+                            // `AS 'file', 'symbol'` form, or a shape the
+                            // adapter does not read. Never a pass.
+                            | DdlShape kind when kind = "CREATE FUNCTION" ->
+                                [ findingFor Unverifiable index location ""
+                                    "defines a routine whose body Strata could not read, so references inside it were not checked" ]
+                            | DdlShape _
+                            | SelectShape | InsertShape | UpdateShape | DeleteShape
+                            | UtilityShape _ | UnsupportedShape _ -> []
+
+                        | Some routine when depth >= 1 ->
                             [ findingFor Unverifiable index location ""
-                                "defines a routine whose body Strata did not validate: the body is a string literal to the parser, so references inside it were not checked" ]
-                        | DdlShape _
-                        | SelectShape | InsertShape | UpdateShape | DeleteShape
-                        | UtilityShape _ | UnsupportedShape _ -> []
+                                (sprintf
+                                    "routine body in '%s' nests deeper than Strata validates, so it was not checked"
+                                    routine.Language) ]
+
+                        | Some routine ->
+                            // Only languages whose bodies ARE SQL can be parsed
+                            // as SQL. plpgsql has its own grammar and the port
+                            // exposes a separate check for it; anything else is
+                            // not Strata's to interpret, and guessing would
+                            // produce findings about a language it cannot read.
+                            match routine.Language.ToLowerInvariant() with
+                            | "sql" ->
+                                validateScript
+                                    parser
+                                    snapshot
+                                    searchPath
+                                    (bound @ routine.Parameters)
+                                    (depth + 1)
+                                    routine.Body
+                                |> List.map (fun f ->
+                                    { f with
+                                        // Re-anchor to the defining statement:
+                                        // offsets inside the body do not exist
+                                        // in the file the caller passed.
+                                        StatementIndex = index
+                                        Offset = location.Offset
+                                        Length = location.Length
+                                        Message = sprintf "in routine body: %s" f.Message })
+                            | "plpgsql" ->
+                                // `ParseRoutineBody` wraps libpg_query's plpgsql
+                                // parser, which expects the WHOLE
+                                // `CREATE FUNCTION` statement rather than the
+                                // bare body — passing just the body makes every
+                                // valid function look like a parse error, which
+                                // is a false INVALID and worse than no check.
+                                let statementText =
+                                    if location.Length > 0 && location.Offset + location.Length <= sql.Length then
+                                        sql.Substring(location.Offset, location.Length)
+                                    else
+                                        sql
+
+                                match parser.ParseRoutineBody statementText with
+                                | Ok () ->
+                                    [ findingFor Unverifiable index location ""
+                                        "routine body parses as plpgsql, but Strata does not resolve references inside plpgsql bodies" ]
+                                | Microsoft.FSharp.Core.Error error ->
+                                    [ findingFor Invalid index location ""
+                                        (sprintf "routine body does not parse as plpgsql: %s" error.Message) ]
+                            | other ->
+                                [ findingFor Unverifiable index location ""
+                                    (sprintf "routine body is written in '%s', which Strata does not read" other) ]
 
                     validateRelations snapshot searchPath index location extraction
-                    @ validateColumns snapshot searchPath index location extraction
+                    @ validateColumns snapshot searchPath bound index location extraction
                     @ dynamic
                     @ routineBody
                     @ unmodelled)
             |> List.concat
 
+        findings
+
+    let validate
+        (parser: IDialectParser)
+        (snapshot: SchemaSnapshot)
+        (searchPath: Identifier list)
+        (sql: string)
+        : Report =
+
+        let findings = validateScript parser snapshot searchPath [] 0 sql
+
         { Findings = findings
-          StatementCount = List.length parsed
+          StatementCount = List.length (parser.ParseScript sql)
           Scope =
             { Scope.nothingAnalyzed with
                 LiveDatabaseInspected = true

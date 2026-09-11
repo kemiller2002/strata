@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 41,
+  "nextSeq": 42,
   "items": [
     {
       "id": "WI-0001",
@@ -681,6 +681,23 @@
       "attachments": [],
       "createdAt": "2026-09-11T21:50:22Z",
       "updatedAt": "2026-09-11T21:50:22Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0041",
+      "title": "Validate SQL routine bodies instead of reporting them unverifiable",
+      "description": "A CREATE FUNCTION body is a string literal to the parser, so a typo inside it was invisible and the validator could only say unverifiable. Re-parse a LANGUAGE sql body as SQL and validate it against the same catalog, with the routine's parameters treated as bound names.",
+      "tags": [
+        "strata",
+        "validation"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T21:56:27Z",
+      "updatedAt": "2026-09-11T21:56:27Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null

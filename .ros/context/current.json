@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "claude",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-09-11T21:50:22Z",
+  "updatedAt": "2026-09-11T21:56:27Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -903,6 +903,27 @@
         "EXE-20260911T215023932Z-17ed5b3a"
       ],
       "completedAt": "2026-09-11T21:50:22Z"
+    },
+    {
+      "id": "WI-0041",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Application/Validation.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/ValidationTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-11T21:56:27Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T215628526Z-38674629"
+      ],
+      "completedAt": "2026-09-11T21:56:27Z"
     }
   ]
 }
