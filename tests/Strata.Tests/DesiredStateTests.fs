@@ -199,3 +199,67 @@ let ``a precision on a phrase-spelled type goes inside the phrase`` () =
     let column = (tableNamed loaded "s.t").Value.Columns |> List.head
 
     Assert.Equal("timestamp(3) with time zone", QualifiedName.display column.Type.TypeName)
+
+// ---- serial pseudo-types --------------------------------------------------
+//
+// `serial` is not a type. `id bigserial` becomes `id bigint NOT NULL DEFAULT
+// nextval(...)` plus a sequence, so the catalog reports bigint WITH a default
+// while the file says bigserial with none. Read literally that is two
+// differences on a column nobody changed, and serial is common enough that a
+// diff would report permanent churn on most real schemas. Found by
+// round-tripping a created table back through the diff.
+
+[<Theory>]
+[<InlineData("smallserial", "smallint")>]
+[<InlineData("serial2", "smallint")>]
+[<InlineData("serial", "integer")>]
+[<InlineData("serial4", "integer")>]
+[<InlineData("bigserial", "bigint")>]
+[<InlineData("serial8", "bigint")>]
+let ``a serial column reads as the type the catalog reports`` (declared: string) (expected: string) =
+    let loaded = load [ "f.sql", sprintf "CREATE TABLE s.t (id %s)" declared ]
+    let column = (tableNamed loaded "s.t").Value.Columns |> List.head
+
+    Assert.Equal(expected, QualifiedName.display column.Type.TypeName)
+
+[<Fact>]
+let ``a serial column carries the default and NOT NULL the author did not write`` () =
+    let loaded = load [ "f.sql", "CREATE TABLE s.t (id bigserial)" ]
+    let column = (tableNamed loaded "s.t").Value.Columns |> List.head
+
+    Assert.True(column.HasDefault, "serial implies a nextval default the catalog reports")
+    Assert.False(column.Type.IsNullable, "serial implies NOT NULL")
+
+[<Fact>]
+let ``a schema-qualified type named serial is left alone`` () =
+    // The control: `myschema.serial` is a user type, not the pseudo-type, and
+    // rewriting it would be a fabricated difference in the other direction.
+    let loaded = load [ "f.sql", "CREATE TABLE s.t (id myschema.serial)" ]
+    let column = (tableNamed loaded "s.t").Value.Columns |> List.head
+
+    Assert.Equal("myschema.serial", QualifiedName.display column.Type.TypeName)
+
+// ---- the declaring text ---------------------------------------------------
+
+[<Fact>]
+let ``a single-declaration file records its verbatim text`` () =
+    // Creating from a reconstructed parse tree loses whatever the model does
+    // not carry — a default expression, a check expression — and 96% of real
+    // tables have at least one. The file already holds exactly the DDL the
+    // author wrote.
+    let loaded = load [ "schema/sales/tables/orders.sql", ordersSql ]
+
+    Assert.Single loaded.Declarations |> ignore
+    let name, text = List.head loaded.Declarations
+    Assert.Equal("sales.orders", QualifiedName.display name)
+    Assert.Equal(ordersSql, text)
+
+[<Fact>]
+let ``a file declaring two objects records neither`` () =
+    // Executing a two-table file to create ONE of them would create the other
+    // as a side effect — a change nobody planned.
+    let loaded =
+        load [ "f.sql", "CREATE TABLE s.a (id bigint); CREATE TABLE s.b (id bigint);" ]
+
+    Assert.Equal(2, List.length loaded.Snapshot.Objects)
+    Assert.Empty loaded.Declarations

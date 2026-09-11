@@ -45,4 +45,5 @@
 | WI-0040 | Make the project manifest optional and require opt-in for removals | complete | strata, project | high |
 | WI-0041 | Validate SQL routine bodies instead of reporting them unverifiable | complete | strata, validation | high |
 | WI-0042 | Probe diff coverage: false clean on constraints, 96% of tables uncreatable | complete | strata, diff, coverage | high |
-| WI-0043 | Compare constraints and defaults; report what cannot be compared | ready | strata, diff | high |
+| WI-0043 | Compare constraints and defaults; report what cannot be compared | complete | strata, diff | high |
+| WI-0044 | Create tables from the declaring file; canonicalise serial pseudo-types | ready | strata, deployment | high |

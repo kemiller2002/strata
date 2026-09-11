@@ -32,7 +32,21 @@ module DesiredState =
 
     type Loaded =
         { Snapshot: SchemaSnapshot
-          Failures: LoadFailure list }
+          Failures: LoadFailure list
+          /// The verbatim text that declared each object, when the file
+          /// declared exactly one.
+          ///
+          /// Carried because CREATING an object from a reconstructed parse
+          /// tree loses whatever the model does not carry — a column default,
+          /// a check expression — and 96% of real tables have at least one
+          /// (`EV-STRATA-2026-D3A8`). The file already holds exactly the DDL
+          /// the author wrote, so executing it is both simpler and strictly
+          /// more faithful than deparsing protobuf back into SQL.
+          ///
+          /// Only single-declaration files are recorded. Executing a file that
+          /// declares two tables to create ONE of them would create the other
+          /// as a side effect, which is a change nobody planned.
+          Declarations: (QualifiedName * string) list }
 
     /// Declared schema names, from the objects actually loaded.
     let private declaredSchemas (objects: SchemaObject list) =
@@ -49,6 +63,7 @@ module DesiredState =
     let load (parser: IDialectParser) (files: (string * string) list) : Loaded =
         let objects = ResizeArray<SchemaObject>()
         let failures = ResizeArray<LoadFailure>()
+        let declarations' = ResizeArray<QualifiedName * string>()
 
         for path, contents in files do
             let declarations = parser.ParseObjectDefinitions contents
@@ -59,6 +74,10 @@ module DesiredState =
                     { Path = path
                       Reason = "file declares no statements" }
             | _ ->
+                let declaredHere =
+                    declarations
+                    |> List.choose (function Declared o -> Some o | Unmodelled _ | DeclarationFailed _ -> None)
+
                 for declaration in declarations do
                     match declaration with
                     | Declared object' -> objects.Add object'
@@ -67,6 +86,13 @@ module DesiredState =
                         failures.Add
                             { Path = path
                               Reason = sprintf "does not parse: %s" error.Message }
+
+                match declaredHere with
+                | [ single ] -> declarations'.Add(SchemaObject.name single, contents)
+                // Two or more objects in one file: the text cannot be attributed
+                // to either, so neither gets it and both fall back to
+                // reconstruction.
+                | _ -> ()
 
         let loaded = List.ofSeq objects
         let loadFailures = List.ofSeq failures
@@ -107,7 +133,8 @@ module DesiredState =
                       "indexes", NotRequested
                       "view_definitions", NotRequested
                       "routines", NotRequested ] }
-          Failures = allFailures }
+          Failures = allFailures
+          Declarations = List.ofSeq declarations' }
 
     /// Schemas the project actually declared objects in.
     ///

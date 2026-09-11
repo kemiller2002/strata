@@ -46,6 +46,13 @@ let private partial' = snapshot (Partial "a file did not parse")
 
 let private managed = [ "sales" ]
 
+/// `SchemaDiff.run` also takes the verbatim text that declared each object, so
+/// a CREATE can execute the author's own DDL rather than a reconstruction.
+/// These tests build snapshots directly and have no files, so they pass none
+/// and exercise the reconstruction path deliberately.
+let private run allowDrops managedSchemas desired actual =
+    Strata.Application.SchemaDiff.run allowDrops managedSchemas [] desired actual
+
 /// Existing guard tests pass allowDrops=true deliberately: a test that left
 /// drops globally disabled would pass even if the guard it names were deleted.
 

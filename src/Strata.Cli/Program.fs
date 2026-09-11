@@ -267,7 +267,7 @@ let main argv =
                 let scope = CorpusPipeline.toScope parser actual analysis
 
                 let allowDrops = List.contains "--allow-drops" args
-                let diff = SchemaDiff.run allowDrops project.Manifest.ManagedSchemas desired actual
+                let diff = SchemaDiff.run allowDrops project.Manifest.ManagedSchemas declared.Declarations desired actual
                 let gate = DeploymentGate.run graph scope diff.Changes
 
                 if List.contains "--json" args then

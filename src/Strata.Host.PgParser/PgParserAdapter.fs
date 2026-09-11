@@ -592,18 +592,58 @@ module PgParserAdapter =
     /// nullable — matching PostgreSQL rather than guessing. A PRIMARY KEY
     /// written inline implies NOT NULL, which the catalog reports and a file
     /// therefore must too, or every primary key column would diff.
+    /// The serial pseudo-types, and what PostgreSQL actually creates.
+    ///
+    /// `serial` is not a type. `id bigserial` becomes
+    /// `id bigint NOT NULL DEFAULT nextval(...)` plus a sequence, so the
+    /// catalog reports `bigint` WITH a default while the file says `bigserial`
+    /// with none. Read literally that is two differences on a column nobody
+    /// changed — and `serial` is common enough that a diff would report
+    /// permanent churn on most real schemas.
+    ///
+    /// Found by round-tripping a created table back through the diff, the same
+    /// way the int8/bigint spelling mismatch was.
+    let private serialTypes =
+        dict [ "smallserial", "smallint"
+               "serial2", "smallint"
+               "serial", "integer"
+               "serial4", "integer"
+               "bigserial", "bigint"
+               "serial8", "bigint" ]
+
     let private columnOf (position: int) (col: ColumnDef) =
         let constraints = constraintsOf col
 
         let hasKind kind =
             constraints |> List.exists (fun c -> c.Contype = kind)
 
-        let isNotNull = hasKind ConstrType.ConstrNotnull || hasKind ConstrType.ConstrPrimary
+        let declaredType = typeNameOf col.TypeName
+
+        let serial =
+            match declaredType.Schema with
+            | Some _ -> None
+            | None ->
+                match serialTypes.TryGetValue(Identifier.folded declaredType.Name) with
+                | true, underlying -> Some underlying
+                | false, _ -> None
+
+        let isNotNull =
+            hasKind ConstrType.ConstrNotnull
+            || hasKind ConstrType.ConstrPrimary
+            // A serial column is NOT NULL whether or not the author wrote it.
+            || serial.IsSome
 
         { Name = identifierOf col.Colname
-          Type = { TypeName = typeNameOf col.TypeName; IsNullable = not isNotNull }
+          Type =
+            { TypeName =
+                match serial with
+                | Some underlying -> QualifiedName.unqualified (identifierOf underlying)
+                | None -> declaredType
+              IsNullable = not isNotNull }
           Position = position
-          HasDefault = hasKind ConstrType.ConstrDefault
+          // A serial column always has a nextval default, which the catalog
+          // reports and the file does not write.
+          HasDefault = hasKind ConstrType.ConstrDefault || serial.IsSome
           IsGenerated = hasKind ConstrType.ConstrGenerated
           IsIdentity = hasKind ConstrType.ConstrIdentity }
 

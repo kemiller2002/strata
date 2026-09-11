@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 44,
+  "nextSeq": 45,
   "items": [
     {
       "id": "WI-0001",
@@ -733,6 +733,23 @@
       "attachments": [],
       "createdAt": "2026-09-11T22:15:32Z",
       "updatedAt": "2026-09-11T22:15:32Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0044",
+      "title": "Create tables from the declaring file; canonicalise serial pseudo-types",
+      "description": "Creation reconstructed DDL from the parse tree and refused any table with a default or check, which is 96% of real tables. Carry the declaring file's verbatim text and execute it instead. Round-tripping a created table then exposed serial pseudo-types reporting permanent churn.",
+      "tags": [
+        "strata",
+        "deployment"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T22:20:31Z",
+      "updatedAt": "2026-09-11T22:20:31Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null

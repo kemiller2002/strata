@@ -258,11 +258,25 @@ module SchemaDiff =
     /// half-understood expression would be worse than storing none. Emitting a
     /// table without its checks would create an object that differs from what
     /// the project declared while reporting success.
-    let private emit (desired: Table list) (change: Change) : string option =
+    let private emit
+        (declarations: (QualifiedName * string) list)
+        (desired: Table list)
+        (change: Change)
+        : string option =
         let desiredTable name = desired |> List.tryFind (fun t -> sameName t.Name name)
+
+        let declaredText name =
+            declarations
+            |> List.tryPick (fun (declared, text) -> if sameName declared name then Some text else None)
 
         match change with
         | UnclassifiedChange _ -> None
+
+        // The declaring file holds exactly the DDL the author wrote, defaults
+        // and check expressions included. Reconstruction below is the fallback
+        // for a snapshot built without files, and it still refuses whatever it
+        // cannot render faithfully.
+        | CreateTable name when (declaredText name).IsSome -> declaredText name
 
         | CreateTable name ->
             match desiredTable name with
@@ -530,6 +544,7 @@ module SchemaDiff =
     let run
         (allowDrops: bool)
         (managedSchemas: string list)
+        (declarations: (QualifiedName * string) list)
         (desired: SchemaSnapshot)
         (actual: SchemaSnapshot)
         : DiffResult =
@@ -599,7 +614,7 @@ module SchemaDiff =
             |> List.sortBy orderKey
 
         { Changes = changes
-          Statements = changes |> List.map (fun c -> { Change = c; Sql = emit desiredTables c })
+          Statements = changes |> List.map (fun c -> { Change = c; Sql = emit declarations desiredTables c })
           Suppressed =
             (all |> List.choose (function Microsoft.FSharp.Core.Error s -> Some s | Ok _ -> None))
             @ notCompared
