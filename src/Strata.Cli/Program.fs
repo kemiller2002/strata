@@ -328,6 +328,42 @@ let main argv =
 
                         []
 
+                // Rename intent, read from the raw file text: libpg_query
+                // discards comments, so there is nothing to read in the tree.
+                let renames =
+                    declared.Declarations
+                    |> List.map (fun (name, text) ->
+                        let annotations = RenameAnnotations.read text
+
+                        let qualify (raw: string) =
+                            match raw.Split('.') with
+                            | [| schema; object' |] ->
+                                QualifiedName.qualified
+                                    (Identifier.unquoted (schema.Trim '"'))
+                                    (Identifier.unquoted (object'.Trim '"'))
+                            | _ ->
+                                // An unqualified old name means the same schema
+                                // the object is declared in. Reaching across
+                                // schemas has to be spelled out.
+                                match name.Schema with
+                                | Some schema ->
+                                    QualifiedName.qualified schema (Identifier.unquoted (raw.Trim '"'))
+                                | None -> QualifiedName.unqualified (Identifier.unquoted (raw.Trim '"'))
+
+                        ({ Object = name
+                           RenamedFrom = annotations.Object |> Option.map qualify
+                           Columns = annotations.Columns }: SchemaDiff.DeclaredRename))
+                    |> List.filter (fun r -> r.RenamedFrom.IsSome || not (List.isEmpty r.Columns))
+
+                for r in renames do
+                    match r.RenamedFrom with
+                    | Some from ->
+                        eprintfn
+                            "note: %s declares a rename from %s"
+                            (QualifiedName.display r.Object)
+                            (QualifiedName.display from)
+                    | None -> ()
+
                 let diff =
                     SchemaDiff.run
                         allowDrops
@@ -335,6 +371,7 @@ let main argv =
                         declared.Declarations
                         normalisedViews
                         normalisedTables
+                        renames
                         desired
                         actual
                 let gate = DeploymentGate.run graph scope diff.Changes

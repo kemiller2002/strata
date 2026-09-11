@@ -225,6 +225,11 @@ The notebook's `Q-001`–`Q-030` (§131) are preserved in full. Status:
 
 **Blocking for their phase, unresolved:**
 
+`Q-004` is **ANSWERED** by `-- strata:renamed_from`: an object's previous name
+is DECLARED in the file that declares its new one, never inferred. §86 is why —
+a rename and a drop-plus-add produce identical desired states — and `ER-010`
+turns that from unwise into forbidden.
+
 `Q-003` is **ANSWERED** by `DF-STRATA-2026-B1E7` (desired state is per-object
 declarative files, DACPAC-shaped) and `DF-STRATA-2026-A4D9` (a `strata.json`
 manifest plus `schema/<schema>/<type>/<name>.sql`). `Q-004` remains open and is

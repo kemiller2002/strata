@@ -50,4 +50,5 @@
 | WI-0045 | Views and routines as desired state; disclose uncompared indexes | complete | strata, desired-state | high |
 | WI-0046 | Compare view definitions by normalising declared DDL through the server | complete | strata, diff | high |
 | WI-0047 | Compare routine bodies directly from prosrc | complete | strata, diff | high |
-| WI-0048 | Compare default and check expressions via shadow normalisation | ready | strata, diff | high |
+| WI-0048 | Compare default and check expressions via shadow normalisation | complete | strata, diff | high |
+| WI-0049 | Rename detection via -- strata:renamed_from (Q-004) | ready | strata, rename | high |

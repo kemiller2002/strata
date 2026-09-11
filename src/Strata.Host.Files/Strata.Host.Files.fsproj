@@ -17,6 +17,7 @@
   <ItemGroup>
     <Compile Include="FileCorpus.fs" />
     <Compile Include="Project.fs" />
+    <Compile Include="RenameAnnotations.fs" />
   </ItemGroup>
 
   <ItemGroup>

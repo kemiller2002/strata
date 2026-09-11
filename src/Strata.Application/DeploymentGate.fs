@@ -124,6 +124,58 @@ module DeploymentGate =
               AffectedSources = []
               NextSafeMove = "Proceed." }
 
+        // A rename preserves the data and breaks every reader of the OLD name,
+        // so the gate weighs dependents on the name being RETIRED, not the new
+        // one — nothing can depend on a name that does not exist yet.
+        | RenameTable (from, to') ->
+            let dependents =
+                graph.Dependencies
+                |> List.filter (fun d -> QualifiedName.display d.Target = QualifiedName.display from)
+                |> List.map (fun d -> d.SourceId)
+                |> List.distinct
+
+            { Change = change
+              Verdict = if List.isEmpty dependents && scopeSupportsAbsence then Allow else Block
+              Detected =
+                sprintf
+                    "renames %s to %s, which %d source(s) still reference by the old name"
+                    (QualifiedName.display from)
+                    (QualifiedName.display to')
+                    (List.length dependents)
+              Rationale =
+                if List.isEmpty dependents then cleanResultRationale
+                else "The data survives, but every reader of the old name breaks at once."
+              AffectedSources = dependents
+              NextSafeMove =
+                if List.isEmpty dependents then cleanResultNextMove
+                else "Update the listed sources to the new name, re-run this gate, then re-plan the rename." }
+
+        | RenameColumn (table, from, to') ->
+            let dependents =
+                graph.ColumnDependencies
+                |> List.filter (fun d ->
+                    QualifiedName.display d.Table = QualifiedName.display table
+                    && Identifier.sameName d.Column from)
+                |> List.map (fun d -> d.SourceId)
+                |> List.distinct
+
+            { Change = change
+              Verdict = if List.isEmpty dependents && scopeSupportsAbsence then Allow else Block
+              Detected =
+                sprintf
+                    "renames %s.%s to %s, which %d source(s) still reference by the old name"
+                    (QualifiedName.display table)
+                    from.Display
+                    to'.Display
+                    (List.length dependents)
+              Rationale =
+                if List.isEmpty dependents then cleanResultRationale
+                else "The data survives, but every reader of the old column name breaks at once."
+              AffectedSources = dependents
+              NextSafeMove =
+                if List.isEmpty dependents then cleanResultNextMove
+                else "Update the listed sources to the new name, re-run this gate, then re-plan the rename." }
+
         | CreateView view ->
             { Change = change
               Verdict = Allow

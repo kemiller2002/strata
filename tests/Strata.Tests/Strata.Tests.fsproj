@@ -21,6 +21,7 @@
     <Compile Include="ValidationTests.fs" />
     <Compile Include="DesiredStateTests.fs" />
     <Compile Include="SchemaDiffTests.fs" />
+    <Compile Include="RenameTests.fs" />
     <Compile Include="CatalogIntrospectionTests.fs" />
     <Compile Include="Main.fs" />
   </ItemGroup>

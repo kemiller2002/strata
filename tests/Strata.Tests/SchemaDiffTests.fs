@@ -52,7 +52,7 @@ let private managed = [ "sales" ]
 /// These tests build snapshots directly and have no files, so they pass none
 /// and exercise the reconstruction path deliberately.
 let private run allowDrops managedSchemas desired actual =
-    Strata.Application.SchemaDiff.run allowDrops managedSchemas [] [] [] desired actual
+    Strata.Application.SchemaDiff.run allowDrops managedSchemas [] [] [] [] desired actual
 
 /// Existing guard tests pass allowDrops=true deliberately: a test that left
 /// drops globally disabled would pass even if the guard it names were deleted.
@@ -599,7 +599,7 @@ let private viewDefined name definition =
           Scope = Managed }
 
 let private runWithViews normalised desired actual =
-    Strata.Application.SchemaDiff.run true managed [] normalised [] desired actual
+    Strata.Application.SchemaDiff.run true managed [] normalised [] [] desired actual
 
 [<Fact>]
 let ``a view whose normalised definition differs is redefined`` () =
@@ -741,7 +741,7 @@ let private tableWithDefault name column deployedDefault =
           Scope = Managed }
 
 let private runWithTables normalisedTables desired actual =
-    Strata.Application.SchemaDiff.run true managed [] [] normalisedTables desired actual
+    Strata.Application.SchemaDiff.run true managed [] [] normalisedTables [] desired actual
 
 let private normalisedTable name defaults checks : Strata.Application.SchemaDiff.NormalisedTable =
     { Table = name; Defaults = defaults; Checks = checks }
@@ -821,3 +821,85 @@ let ``a table that could not be normalised keeps its disclosure`` () =
 
     Assert.Empty result.Changes
     Assert.Contains(result.Suppressed, fun s -> s.Reason = NotCompared)
+
+// ---- renames --------------------------------------------------------------
+
+let private runWithRenames renames desired actual =
+    Strata.Application.SchemaDiff.run true managed [] [] [] renames desired actual
+
+let private declaredRename object' renamedFrom columns : Strata.Application.SchemaDiff.DeclaredRename =
+    { Object = object'; RenamedFrom = renamedFrom; Columns = columns }
+
+[<Fact>]
+let ``a declared table rename replaces the create and the drop`` () =
+    // The whole point: without the annotation this is a CreateTable plus a
+    // DropTable, which destroys the data. Neither must survive into the plan.
+    let result =
+        runWithRenames
+            [ declaredRename (qn "sales" "orders") (Some(qn "sales" "legacy")) [] ]
+            (complete [ tbl Managed "sales" "orders" orders ])
+            (complete [ tbl Observed "sales" "legacy" orders ])
+
+    Assert.Contains(result.Changes, fun c -> c = RenameTable(qn "sales" "legacy", qn "sales" "orders"))
+    Assert.DoesNotContain(result.Changes, fun c -> c = CreateTable(qn "sales" "orders"))
+    Assert.DoesNotContain(result.Changes, fun c -> c = DropTable(qn "sales" "legacy"))
+
+[<Fact>]
+let ``a declared column rename replaces the drop and the add`` () =
+    let result =
+        runWithRenames
+            [ declaredRename (qn "sales" "orders") None [ "amount", "total" ] ]
+            (complete [ tbl Managed "sales" "orders" [ "id", false; "total", true ] ])
+            (complete [ tbl Observed "sales" "orders" [ "id", false; "amount", true ] ])
+
+    Assert.Contains(result.Changes, fun c ->
+        c = RenameColumn(qn "sales" "orders", id' "amount", id' "total"))
+    Assert.DoesNotContain(result.Changes, fun c -> c = DropColumn(qn "sales" "orders", id' "amount"))
+    Assert.DoesNotContain(result.Changes, fun c -> c = AddColumn(qn "sales" "orders", id' "total"))
+
+[<Fact>]
+let ``a spent annotation proposes nothing`` () =
+    // The rename already happened: the old name is gone and the new one is
+    // there. Re-proposing it every run would be churn, and the ALTER would fail.
+    let result =
+        runWithRenames
+            [ declaredRename (qn "sales" "orders") (Some(qn "sales" "legacy")) [ "amount", "total" ] ]
+            (complete [ tbl Managed "sales" "orders" [ "id", false; "total", true ] ])
+            (complete [ tbl Observed "sales" "orders" [ "id", false; "total", true ] ])
+
+    Assert.Empty result.Changes
+
+[<Fact>]
+let ``a rename is destructive, so the gate weighs readers of the OLD name`` () =
+    // The data survives; every reader of the old name breaks at once.
+    Assert.True(Change.isPotentiallyDestructive (RenameTable(qn "sales" "a", qn "sales" "b")))
+    Assert.True(Change.isPotentiallyDestructive (RenameColumn(qn "sales" "t", id' "a", id' "b")))
+
+[<Fact>]
+let ``a column rename names the table by its CURRENT name`` () =
+    // Two reasons pointing the same way: the corpus records dependencies under
+    // the name that exists today, so the gate can only find readers under it;
+    // and column renames run BEFORE the table rename, so the table still
+    // answers to it. Naming the desired table made the gate report "no
+    // dependency found" for a column a query was plainly reading.
+    let result =
+        runWithRenames
+            [ declaredRename (qn "sales" "orders") (Some(qn "sales" "legacy")) [ "amount", "total" ] ]
+            (complete [ tbl Managed "sales" "orders" [ "id", false; "total", true ] ])
+            (complete [ tbl Observed "sales" "legacy" [ "id", false; "amount", true ] ])
+
+    Assert.Contains(result.Changes, fun c ->
+        c = RenameColumn(qn "sales" "legacy", id' "amount", id' "total"))
+
+[<Fact>]
+let ``column renames are ordered before the table rename`` () =
+    let result =
+        runWithRenames
+            [ declaredRename (qn "sales" "orders") (Some(qn "sales" "legacy")) [ "amount", "total" ] ]
+            (complete [ tbl Managed "sales" "orders" [ "id", false; "total", true ] ])
+            (complete [ tbl Observed "sales" "legacy" [ "id", false; "amount", true ] ])
+
+    let tags = result.Changes |> List.map Change.tag
+    Assert.True(
+        List.findIndex ((=) "rename-column") tags < List.findIndex ((=) "rename-table") tags,
+        "a column rename must run while the table still has its old name")

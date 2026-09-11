@@ -25,6 +25,16 @@ module ProposedChange =
         | AlterColumnType of table: QualifiedName * column: Identifier * newType: string
         /// Adds a column. Additive.
         | AddColumn of table: QualifiedName * column: Identifier
+        /// Renames a relation, preserving its data.
+        ///
+        /// NOT inferable from two snapshots — a rename and a drop-plus-add look
+        /// identical (§86) — so this only ever comes from an explicit
+        /// annotation. It is destructive in the way that matters: every reader
+        /// of the OLD name breaks, and the data survives, so the gate weighs
+        /// dependents on the name being retired.
+        | RenameTable of from: QualifiedName * to': QualifiedName
+        /// Renames a column, preserving its data. Same reasoning.
+        | RenameColumn of table: QualifiedName * from: Identifier * to': Identifier
         /// Creates a relation. Additive.
         | CreateTable of table: QualifiedName
         /// Creates a view. Additive: nothing can already depend on an object
@@ -68,6 +78,8 @@ module ProposedChange =
             | AlterColumnType _ -> "alter-column-type"
             | AddColumn _ -> "add-column"
             | CreateTable _ -> "create-table"
+            | RenameTable _ -> "rename-table"
+            | RenameColumn _ -> "rename-column"
             | CreateView _ -> "create-view"
             | ReplaceView _ -> "replace-view"
             | ReplaceRoutine _ -> "replace-routine"
@@ -84,6 +96,8 @@ module ProposedChange =
             | AlterColumnType (table, _, _)
             | AddColumn (table, _)
             | CreateTable table
+            | RenameTable (table, _)
+            | RenameColumn (table, _, _)
             | CreateView table
             | ReplaceView table
             | ReplaceRoutine table
@@ -104,6 +118,8 @@ module ProposedChange =
             | DropTable _
             | ReplaceView _
             | ReplaceRoutine _
+            | RenameTable _
+            | RenameColumn _
             | AlterColumnType _
             | TruncateTable _
             | UnclassifiedChange _ -> true

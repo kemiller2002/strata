@@ -360,6 +360,12 @@ module SchemaDiff =
                         (quoteName name)
                         (columns @ primaryKey @ uniques @ foreignKeys |> String.concat ",\n    "))
 
+        | RenameTable (from, to') ->
+            Some(sprintf "ALTER TABLE %s RENAME TO %s" (quoteName from) (quote to'.Name))
+
+        | RenameColumn (table, from, to') ->
+            Some(sprintf "ALTER TABLE %s RENAME COLUMN %s TO %s" (quoteName table) (quote from) (quote to'))
+
         | AddColumn (table, column) ->
             desiredTable table
             |> Option.bind (fun t -> t.Columns |> List.tryFind (fun c -> Identifier.sameName c.Name column))
@@ -395,9 +401,14 @@ module SchemaDiff =
     /// statement never runs against an object the previous one removed.
     let private orderKey (change: Change) =
         match change with
-        | CreateTable _ -> 0
-        | AddColumn _ -> 1
-        | AlterColumnType _ -> 2
+        // Renames first: they preserve data, and every later statement refers
+        // to the NEW name. Column renames precede the table rename so both can
+        // name the table as it stands before either runs.
+        | RenameColumn _ -> 0
+        | RenameTable _ -> 1
+        | CreateTable _ -> 1
+        | AddColumn _ -> 2
+        | AlterColumnType _ -> 3
         | AddConstraint _ -> 3
         // Views and routines reference tables and columns, so they come after
         // every table change that might create what they read.
@@ -421,6 +432,20 @@ module SchemaDiff =
     ///
     /// What can be compared faithfully is compared. What cannot is reported as
     /// `NotCompared` — never passed over.
+    /// Rename intent declared in a project file.
+    ///
+    /// §86: a rename and a drop-plus-add produce identical desired states, so
+    /// this can only ever be declared, never inferred. `ER-010` makes guessing
+    /// forbidden rather than merely unwise — guess wrong and you either destroy
+    /// a table or silently keep one that should have gone.
+    type DeclaredRename =
+        { /// The object the annotation sits on, by its NEW name.
+          Object: QualifiedName
+          /// The object's previous name, if the object itself was renamed.
+          RenamedFrom: QualifiedName option
+          /// Previous column name -> current column name.
+          Columns: (string * string) list }
+
     /// Declared defaults and checks as the SERVER renders them, for one table.
     type NormalisedTable =
         { Table: string
@@ -865,6 +890,7 @@ module SchemaDiff =
         (declarations: (QualifiedName * string) list)
         (normalisedViews: (string * string) list)
         (normalisedTables: NormalisedTable list)
+        (renames: DeclaredRename list)
         (desired: SchemaSnapshot)
         (actual: SchemaSnapshot)
         : DiffResult =
@@ -881,10 +907,38 @@ module SchemaDiff =
         let desiredTables = tables desired
         let actualTables = tables actual
 
+        // An object whose file declares a previous name that EXISTS in the
+        // database is a rename, not a create-plus-drop. Resolving it here keeps
+        // both halves out of the plan: the create is replaced, and the drop is
+        // suppressed below because the old name is no longer treated as absent.
+        let renamedTables =
+            desiredTables
+            |> List.choose (fun d ->
+                renames
+                |> List.tryFind (fun r -> sameName r.Object d.Name)
+                |> Option.bind (fun r -> r.RenamedFrom)
+                |> Option.bind (fun from ->
+                    if
+                        actualTables |> List.exists (fun a -> sameName a.Name from)
+                        && not (actualTables |> List.exists (fun a -> sameName a.Name d.Name))
+                    then
+                        Some(from, d.Name)
+                    else
+                        // The old name is not in the database, or the new name
+                        // already is. Either way the rename already happened or
+                        // never applied, and the annotation is spent.
+                        None))
+
+        let renamedAway = renamedTables |> List.map fst
+
         let creations =
             desiredTables
-            |> List.filter (fun d -> not (actualTables |> List.exists (fun a -> sameName a.Name d.Name)))
+            |> List.filter (fun d ->
+                not (actualTables |> List.exists (fun a -> sameName a.Name d.Name))
+                && not (renamedTables |> List.exists (fun (_, to') -> sameName to' d.Name)))
             |> List.map (fun d -> Ok(CreateTable d.Name))
+
+        let tableRenames = renamedTables |> List.map (fun (from, to') -> Ok(RenameTable(from, to')))
 
         let shared =
             desiredTables
@@ -893,9 +947,73 @@ module SchemaDiff =
                 |> List.tryFind (fun a -> sameName a.Name d.Name)
                 |> Option.map (fun a -> d, a))
 
-        let columnResults =
+        // A table matched by its NEW name after a rename still needs its columns
+        // compared, so renamed pairs join the shared set.
+        let sharedIncludingRenamed =
             shared
-            |> List.collect (fun (d, a) -> columnChanges allowDrops managedSchemas desiredComplete d a)
+            @ (renamedTables
+               |> List.choose (fun (from, to') ->
+                   match
+                       desiredTables |> List.tryFind (fun d -> sameName d.Name to'),
+                       actualTables |> List.tryFind (fun a -> sameName a.Name from)
+                   with
+                   | Some d, Some a -> Some(d, a)
+                   | _ -> None))
+
+        let columnRenamesFor (d: Table) (a: Table) =
+            renames
+            |> List.tryFind (fun r -> sameName r.Object d.Name)
+            |> Option.map (fun r ->
+                r.Columns
+                |> List.filter (fun (from, to') ->
+                    // Only a rename whose OLD name is in the database and whose
+                    // NEW name is not. Anything else is already applied.
+                    a.Columns |> List.exists (fun c -> Identifier.sameName c.Name (Identifier.unquoted from))
+                    && not (a.Columns |> List.exists (fun c -> Identifier.sameName c.Name (Identifier.unquoted to'))))
+                |> List.map (fun (from, to') ->
+                    // The table is named by its CURRENT name, not its desired
+                    // one, for two reasons that point the same way: the corpus
+                    // records dependencies against the name that exists today,
+                    // so the gate can only find readers under it; and column
+                    // renames are ordered BEFORE a table rename, so at
+                    // execution time the table still answers to it.
+                    Ok(RenameColumn(a.Name, Identifier.unquoted from, Identifier.unquoted to'))))
+            |> Option.defaultValue []
+
+        let columnResults =
+            sharedIncludingRenamed
+            |> List.collect (fun (d, a) ->
+                let renamed = columnRenamesFor d a
+
+                let renamedFrom =
+                    renamed
+                    |> List.choose (function
+                        | Ok (RenameColumn (_, from, _)) -> Some from
+                        | _ -> None)
+
+                let renamedTo =
+                    renamed
+                    |> List.choose (function
+                        | Ok (RenameColumn (_, _, to')) -> Some to'
+                        | _ -> None)
+
+                // A renamed column must not also appear as a drop of the old
+                // name and an add of the new one, so both are hidden from the
+                // column comparison.
+                let withoutRenamed =
+                    { a with
+                        Columns =
+                            a.Columns
+                            |> List.filter (fun c -> not (renamedFrom |> List.exists (Identifier.sameName c.Name))) },
+                    { d with
+                        Columns =
+                            d.Columns
+                            |> List.filter (fun c -> not (renamedTo |> List.exists (Identifier.sameName c.Name))) }
+
+                let actualMinus, desiredMinus = withoutRenamed
+
+                renamed
+                @ columnChanges allowDrops managedSchemas desiredComplete desiredMinus actualMinus)
 
         let constraintResults =
             shared |> List.map (fun (d, a) -> constraintChanges normalisedTables d a)
@@ -916,7 +1034,13 @@ module SchemaDiff =
 
         let all =
             creations
-            @ removals allowDrops managedSchemas desiredComplete desiredTables actualTables
+            @ tableRenames
+            @ removals
+                allowDrops
+                managedSchemas
+                desiredComplete
+                desiredTables
+                (actualTables |> List.filter (fun a -> not (renamedAway |> List.exists (sameName a.Name))))
             @ columnResults
             @ constraintChangeResults
             @ otherChangeResults
@@ -950,6 +1074,10 @@ module SchemaDiff =
             sprintf "add-constraint     %s %s" (QualifiedName.display table) name.Text
         | DropTable table -> sprintf "drop-table         %s" (QualifiedName.display table)
         | CreateTable table -> sprintf "create-table       %s" (QualifiedName.display table)
+        | RenameTable (from, to') ->
+            sprintf "rename-table       %s -> %s" (QualifiedName.display from) (QualifiedName.display to')
+        | RenameColumn (table, from, to') ->
+            sprintf "rename-column      %s.%s -> %s" (QualifiedName.display table) from.Text to'.Text
         | CreateView view -> sprintf "create-view        %s" (QualifiedName.display view)
         | ReplaceView view -> sprintf "replace-view       %s" (QualifiedName.display view)
         | ReplaceRoutine r -> sprintf "replace-routine    %s" (QualifiedName.display r)
