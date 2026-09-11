@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 42,
+  "nextSeq": 43,
   "items": [
     {
       "id": "WI-0001",
@@ -698,6 +698,24 @@
       "attachments": [],
       "createdAt": "2026-09-11T21:56:27Z",
       "updatedAt": "2026-09-11T21:56:27Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0042",
+      "title": "Probe diff coverage: false clean on constraints, 96% of tables uncreatable",
+      "description": "Measure what the shipped plan and apply commands actually cover. Found: constraint and default differences are never compared, so the diff reports 'already matches desired state' while three real differences exist; and 47 of 49 tables cannot be created because the model carries that defaults and checks exist but not their text.",
+      "tags": [
+        "strata",
+        "diff",
+        "coverage"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T22:11:49Z",
+      "updatedAt": "2026-09-11T22:11:49Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null

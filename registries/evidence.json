@@ -195,6 +195,30 @@
   },
   {
     "confidence": "high",
+    "contradicts": [],
+    "created_by_agent": "claude",
+    "evidence_type": "test-result",
+    "id": "EV-STRATA-2026-D3A8",
+    "path": "research/evidence/EV-STRATA-2026-D3A8--diff-reports-a-false-clean.md",
+    "related_theories": [],
+    "research_area": "strata-deployment",
+    "retrieved": "2026-09-11",
+    "source_author": "claude",
+    "source_date": "2026-09-11",
+    "source_title": "Schema diff coverage probe against a live PostgreSQL database",
+    "source_uri": "strata_probe and strata_test on PostgreSQL 16.15",
+    "supports": [],
+    "tags": [
+      "strata",
+      "diff",
+      "false-clean",
+      "coverage",
+      "deployment"
+    ],
+    "title": "The diff reports \"already matches desired state\" while a foreign key, a check constraint and a column default all differ — a false clean, and 96% of real tables cannot be created"
+  },
+  {
+    "confidence": "high",
     "contradicts": [
       "HY-STRATA-2026-2A6F"
     ],

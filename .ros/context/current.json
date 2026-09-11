@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "claude",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-09-11T22:03:04Z",
+  "updatedAt": "2026-09-11T22:11:49Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -945,6 +945,31 @@
         "EXE-20260911T220305324Z-adf6d541"
       ],
       "completedAt": "2026-09-11T22:03:04Z"
+    },
+    {
+      "id": "WI-0042",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "research/evidence/EV-STRATA-2026-D3A8--diff-reports-a-false-clean.md"
+        },
+        {
+          "type": "tests",
+          "path": "research/evidence/EV-STRATA-2026-D3A8--diff-reports-a-false-clean.md"
+        },
+        {
+          "type": "test-result",
+          "path": "research/evidence/EV-STRATA-2026-D3A8--diff-reports-a-false-clean.md"
+        }
+      ],
+      "updatedAt": "2026-09-11T22:11:49Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T221150512Z-bf71e19f"
+      ],
+      "completedAt": "2026-09-11T22:11:49Z"
     }
   ]
 }
