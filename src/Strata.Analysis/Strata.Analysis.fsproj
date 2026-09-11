@@ -24,6 +24,7 @@
     <Compile Include="CatalogResolution.fs" />
     <Compile Include="Corpus.fs" />
     <Compile Include="Graph.fs" />
+    <Compile Include="ProposedChange.fs" />
     <Compile Include="Effects.fs" />
   </ItemGroup>
 

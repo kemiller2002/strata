@@ -271,5 +271,31 @@
       "measurement"
     ],
     "title": "Strata retrieval reduces agent context size 46-101x at 200 tables, but its scope block costs more than the answer"
+  },
+  {
+    "confidence": "medium",
+    "contradicts": [],
+    "created_by_agent": "claude",
+    "evidence_type": "test-result",
+    "id": "EV-STRATA-2026-F8A2",
+    "path": "research/evidence/EV-STRATA-2026-F8A2--deployment-gate.md",
+    "related_theories": [],
+    "research_area": "strata-product-value",
+    "retrieved": "2026-09-11",
+    "source_author": "claude",
+    "source_date": "2026-09-11",
+    "source_title": "Strata deployment gate — verdict matrix",
+    "source_uri": "examples/gate; docs/strata/experiments/gate-ground-truth.md",
+    "supports": [
+      "HY-STRATA-2026-6F14"
+    ],
+    "tags": [
+      "strata",
+      "deployment-safety",
+      "gate",
+      "ci",
+      "determinism"
+    ],
+    "title": "A deterministic deployment gate scores 9/9 with byte-identical output and correct CI exit codes — the one capability agents structurally cannot provide"
   }
 ]

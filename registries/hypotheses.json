@@ -105,7 +105,9 @@
       "strata",
       "hypothesis"
     ],
-    "tests": [],
+    "tests": [
+      "EV-STRATA-2026-F8A2"
+    ],
     "title": "Deployment-safety value is independent of agent-leverage value",
     "updated": "2026-09-11"
   }

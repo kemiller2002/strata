@@ -59,6 +59,21 @@ module StatementReferences =
           RightColumn: Identifier
           QueryLevel: int }
 
+    /// One action inside an `ALTER TABLE`.
+    ///
+    /// A single `ALTER TABLE` can add one column and drop another, and the
+    /// column names live in the statement's subcommands rather than in any
+    /// `ColumnRef`. Without this the gate cannot tell `ADD COLUMN` from
+    /// `DROP COLUMN` at all — and guessing from the statement text is a
+    /// substring match waiting to misfire on a column literally named
+    /// "drop_column".
+    type AlterAction =
+        { /// Adapter-reported action kind, e.g. "add-column", "drop-column",
+          /// "alter-column-type", "add-constraint".
+          Kind: string
+          /// The column or constraint the action names, where it names one.
+          Name: Identifier option }
+
     /// What a statement does, structurally.
     ///
     /// Populated by the adapter from the statement node type. Effect
@@ -92,6 +107,9 @@ module StatementReferences =
           /// systematically under-count relationships in older corpora.
           JoinPredicates: JoinPredicate list
 
+          /// Actions inside an ALTER TABLE, in statement order.
+          AlterActions: AlterAction list
+
           /// True when the statement carries a WHERE predicate.
           ///
           /// This is the boundedness signal effect classification turns on
@@ -111,4 +129,5 @@ module StatementReferences =
               UnmodelledConstructs = []
               ContainsDynamicSql = false
               JoinPredicates = []
+              AlterActions = []
               HasWherePredicate = false }

@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 29,
+  "nextSeq": 30,
   "items": [
     {
       "id": "WI-0001",
@@ -476,6 +476,23 @@
       "attachments": [],
       "createdAt": "2026-09-11T18:22:14.000Z",
       "updatedAt": "2026-09-11T18:22:16.000Z",
+      "createdBy": "claude",
+      "source": "user-request",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0029",
+      "title": "Build a deterministic pre-deployment gate and test HY-STRATA-2026-6F14",
+      "description": "Test whether deployment-safety value stands independently of agent leverage. Requires a gate: given proposed DDL, decide allow/block/needs-approval deterministically with evidence and a CI exit code, no agent in the loop. Then measure verdict correctness against a matrix of safe and dangerous changes, including false-positive rate (RK-016). Traces PR-018, PR-020, PR-024, NG-009.",
+      "tags": [
+        "strata",
+        "slice-s4"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T18:33:12.000Z",
+      "updatedAt": "2026-09-11T18:33:13.000Z",
       "createdBy": "claude",
       "source": "user-request",
       "sourceReference": null

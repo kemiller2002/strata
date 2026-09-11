@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "claude",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-09-11T18:28:14.000Z",
+  "updatedAt": "2026-09-11T18:41:39.000Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -648,6 +648,35 @@
       ],
       "completedAt": "2026-09-11T18:28:14.000Z",
       "conclusion": "Built the messy fixture: unqualified names, three schemas sharing a table name, alias-only references, SELECT *, CTE shadowing, comment noise, dynamic SQL. It did NOT discriminate - both agents scored 6/6 recall and 6/6 precision, identical to Strata, rejecting every trap with accurate reasons. HY-STRATA-2026-2A6F moved to rejected after four regimes and thirteen agent runs. The fixture did find a real Strata bug: columnDependencies used the catalog-BLIND resolver, so every bare-name column reader was silently dropped whenever more than one schema was on the search_path. Fixed with scope resolution still running first to preserve RK-001, plus three regression tests including an ambiguity control."
+    },
+    {
+      "id": "WI-0029",
+      "type": "implementation",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Analysis/ProposedChange.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Application/DeploymentGate.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Cli/Program.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/DeploymentGateTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-11T18:41:39.000Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T183313755Z-8cf27ee7"
+      ],
+      "completedAt": "2026-09-11T18:41:39.000Z"
     }
   ]
 }

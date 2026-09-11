@@ -1,6 +1,7 @@
 module Strata.Cli.Program
 
 open System
+open System.IO
 open Strata.Semantic.Identity
 open Strata.Semantic.AnalysisScope
 open Strata.Analysis.Graph
@@ -20,6 +21,8 @@ USAGE
   strata <command> [args] --connection <connection-string> [--json]
 
 COMMANDS
+  check <proposed.sql>             Gate a proposed migration. Exit 0 allow,
+                                   1 block, 2 requires approval.
   scope                            Print the analysis scope alone, once
   inspect <schema.object>          Describe an object
   relationships <schema.object>    Relationships touching an object
@@ -86,6 +89,21 @@ let main argv =
 
     let positional = args |> List.filter (fun a -> not (a.StartsWith "--")) 
 
+    // `check` is not a retrieval query — it reads a file and returns an exit
+    // code — so it is dispatched before the query parser.
+    let corpusDirectory =
+        match valueOf "--corpus" args with
+        | Some dir -> Some dir
+        | None ->
+            match Environment.GetEnvironmentVariable "STRATA_CORPUS" with
+            | null | "" -> None
+            | value -> Some value
+
+    let gateFile =
+        match positional with
+        | "check" :: path :: _ -> Some path
+        | _ -> None
+
     let query =
         match positional with
         | "scope" :: _ -> Ok Retrieval.ScopeOnly
@@ -108,6 +126,69 @@ let main argv =
         | command :: _ -> Error(sprintf "unknown or incomplete command: %s" command)
         | [] -> Error "no command given"
 
+    match gateFile with
+    | Some path when not (IO.File.Exists path) ->
+        eprintfn "error: proposed migration not found: %s" path
+        2
+    | Some path ->
+        try
+            let snapshot = CatalogIntrospection.introspect connectionString
+
+            let searchPath =
+                match CatalogIntrospection.readSearchPath connectionString with
+                | Ok p -> p
+                | Error _ -> []
+
+            let parser = PgParserAdapter.PostgresParser() :> Strata.Analysis.DialectPort.IDialectParser
+
+            // The gate needs the corpus: without it there are no dependencies,
+            // and the scope will correctly refuse to support an absence claim.
+            let corpusSources =
+                match corpusDirectory with
+                | None -> []
+                | Some directory ->
+                    match FileCorpus.read directory with
+                    | Ok r -> r.Sources
+                    | Error _ -> []
+
+            let analysis = CorpusPipeline.analyse parser snapshot searchPath corpusSources
+            let graph = CorpusPipeline.buildGraph snapshot analysis
+            let scope = CorpusPipeline.toScope parser snapshot analysis
+
+            let proposedText = IO.File.ReadAllText path
+
+            let changes =
+                parser.ParseScript proposedText
+                |> List.collect (fun parsed ->
+                    match parsed with
+                    | Strata.Analysis.DialectPort.Failed (_, error) ->
+                        // A migration statement that does not parse is not a
+                        // migration statement with no effect.
+                        [ Strata.Analysis.ProposedChange.UnclassifiedChange(sprintf "unparseable: %s" error.Message) ]
+                    | Strata.Analysis.DialectPort.Parsed (location, extraction) ->
+                        let statementText =
+                            if location.Length > 0 && location.Offset + location.Length <= proposedText.Length then
+                                proposedText.Substring(location.Offset, location.Length)
+                            else
+                                proposedText
+
+                        Strata.Analysis.ProposedChange.ofStatement extraction
+                        |> List.map (Strata.Analysis.ProposedChange.refineWithText statementText))
+
+            let result = DeploymentGate.run graph scope changes
+
+            if List.contains "--json" args then
+                printfn "%s" (DeploymentGate.toJson result)
+            else
+                printfn "%s" (DeploymentGate.toText result)
+
+            DeploymentGate.Verdict.exitCode result.Verdict
+        with ex ->
+            eprintfn "error: %s" ex.Message
+            2
+
+    | None ->
+
     match query with
     | Error message ->
         eprintfn "error: %s" message
@@ -127,14 +208,6 @@ let main argv =
                 // empty keeps unqualified names PartiallyResolved rather than
                 // resolving them against a guess (RK-006).
                 []
-
-        let corpusDirectory =
-            match valueOf "--corpus" args with
-            | Some dir -> Some dir
-            | None ->
-                match Environment.GetEnvironmentVariable "STRATA_CORPUS" with
-                | null | "" -> None
-                | value -> Some value
 
         let graph, scope, readFailures =
             match corpusDirectory with

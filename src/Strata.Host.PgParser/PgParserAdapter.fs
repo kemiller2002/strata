@@ -57,6 +57,35 @@ module PgParserAdapter =
                 | _ -> ()
             | _ -> ()
 
+    /// Relations named by a DROP statement.
+    ///
+    /// `DropStmt` lists its targets in `Objects` as name lists, not as
+    /// `RangeVar` nodes, so the generic relation walk never sees them. Without
+    /// this a `DROP TABLE` reaches the gate with no resolvable target and is
+    /// classified as unmodelled — the single most destructive statement in SQL,
+    /// invisible.
+    let private dropTargets (stmt: Node) =
+        if stmt.NodeCase <> Node.NodeOneofCase.DropStmt then []
+        else
+            stmt.DropStmt.Objects
+            |> Seq.choose (fun node ->
+                if isNull (box node.List) then None
+                else
+                    let parts =
+                        node.List.Items
+                        |> Seq.choose (fun item ->
+                            if not (isNull (box item.String)) && not (String.IsNullOrEmpty item.String.Sval) then
+                                Some item.String.Sval
+                            else
+                                None)
+                        |> List.ofSeq
+
+                    match parts with
+                    | [ name ] -> Some(QualifiedName.unqualified (identifierOf name))
+                    | [ schema; name ] -> Some(qualifiedNameOf schema name)
+                    | _ -> None)
+            |> List.ofSeq
+
     /// Names bound by WITH clauses anywhere in the statement.
     ///
     /// Collected separately and up front, because a CTE defined in a WITH clause
@@ -73,7 +102,7 @@ module PgParserAdapter =
         set names
 
     /// Relations mentioned, each tagged with the role that decides its meaning.
-    let private collectRelations (stmt: Google.Protobuf.IMessage) =
+    let private collectRelations (stmt: Node) =
         let ctes = cteNames stmt
         let mentions = ResizeArray<RelationMention>()
 
@@ -111,6 +140,14 @@ module PgParserAdapter =
                       Alias = alias
                       QueryLevel = 0 }
             | _ -> ())
+
+        // DROP targets are not RangeVar nodes and must be added explicitly.
+        for name in dropTargets stmt do
+            mentions.Add
+                { Name = name
+                  Role = RelationReference
+                  Alias = None
+                  QueryLevel = 0 }
 
         List.ofSeq mentions
 
@@ -183,6 +220,50 @@ module PgParserAdapter =
                       Column = Some(identifierOf node.ResTarget.Name)
                       IsWildcard = false
                       QueryLevel = 0 })
+
+    /// Actions inside an ALTER TABLE.
+    ///
+    /// libpg_query models these as `AlterTableCmd` nodes carrying a `Subtype`
+    /// enum and a `Name`. Reading the enum is what lets the gate distinguish an
+    /// additive change from a destructive one; the statement text cannot be
+    /// trusted for that.
+    let private collectAlterActions (stmt: Node) =
+        if stmt.NodeCase <> Node.NodeOneofCase.AlterTableStmt then []
+        else
+            stmt.AlterTableStmt.Cmds
+            |> Seq.choose (fun node ->
+                if isNull (box node.AlterTableCmd) then None
+                else
+                    let cmd = node.AlterTableCmd
+
+                    let kind =
+                        match cmd.Subtype with
+                        | AlterTableType.AtAddColumn -> "add-column"
+                        | AlterTableType.AtDropColumn -> "drop-column"
+                        | AlterTableType.AtAlterColumnType -> "alter-column-type"
+                        | AlterTableType.AtAddConstraint -> "add-constraint"
+                        | AlterTableType.AtDropConstraint -> "drop-constraint"
+                        | AlterTableType.AtSetNotNull -> "set-not-null"
+                        | AlterTableType.AtDropNotNull -> "drop-not-null"
+                        | AlterTableType.AtColumnDefault -> "set-default"
+                        | other -> "other:" + string other
+
+                    // `cmd.Name` carries the column for DROP COLUMN and
+                    // ALTER COLUMN TYPE, but ADD COLUMN puts it in the ColumnDef
+                    // instead. Reading only one of the two silently loses the
+                    // additive case, which is the case a gate must get right to
+                    // avoid blocking safe migrations.
+                    let nameFromDef =
+                        if isNull (box cmd.Def) || isNull (box cmd.Def.ColumnDef) then None
+                        elif String.IsNullOrEmpty cmd.Def.ColumnDef.Colname then None
+                        else Some(identifierOf cmd.Def.ColumnDef.Colname)
+
+                    Some
+                        { Kind = kind
+                          Name =
+                            if not (String.IsNullOrEmpty cmd.Name) then Some(identifierOf cmd.Name)
+                            else nameFromDef })
+            |> List.ofSeq
 
     let private shapeOf (stmt: Node) =
         match stmt.NodeCase with
@@ -355,6 +436,7 @@ module PgParserAdapter =
             @ collectUnmodelledJoinShapes stmt
           ContainsDynamicSql = containsDynamicSql stmt
           JoinPredicates = collectJoinPredicates stmt
+          AlterActions = collectAlterActions stmt
           HasWherePredicate = hasWhereClause stmt }
 
     /// The adapter.

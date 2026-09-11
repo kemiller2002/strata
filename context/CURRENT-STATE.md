@@ -44,6 +44,15 @@ introspection, under the four-tier architecture of `DF-STRATA-2026-D3F8`.
 
 ## Largest decision-relevant unknown
 
+**Deployment safety: capability demonstrated, value unproven.**
+`EV-STRATA-2026-F8A2` — a deterministic gate scores 9/9 with byte-identical
+output and CI exit codes, which agents structurally cannot provide. But the
+matrix is author-written, no baseline comparison exists, no real migration
+history has been gated, and most real change types fall through to
+`requires-approval`. The next question is the abstention and false-positive
+rate on a real migration series.
+
+Previously:
 **The agent thesis is rejected** (`HY-STRATA-2026-2A6F`, `EV-STRATA-2026-E3D7`):
 four regimes, thirteen agent runs, no correctness advantage anywhere. The
 remaining justification for the program is `HY-STRATA-2026-6F14` — that
