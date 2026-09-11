@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 16,
+  "nextSeq": 17,
   "items": [
     {
       "id": "WI-0001",
@@ -149,10 +149,10 @@
         "slice-s2"
       ],
       "priority": "high",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-11T14:01:02.000Z",
-      "updatedAt": "2026-09-11T14:01:02.000Z",
+      "updatedAt": "2026-09-11T14:37:10.000Z",
       "createdBy": "claude",
       "source": "strata-roadmap",
       "sourceReference": null
@@ -183,10 +183,10 @@
         "slice-s2"
       ],
       "priority": "medium",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-11T14:01:02.000Z",
-      "updatedAt": "2026-09-11T14:01:02.000Z",
+      "updatedAt": "2026-09-11T14:37:10.000Z",
       "createdBy": "claude",
       "source": "strata-roadmap",
       "sourceReference": null
@@ -200,10 +200,10 @@
         "slice-s3"
       ],
       "priority": "medium",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-11T14:01:03.000Z",
-      "updatedAt": "2026-09-11T14:01:03.000Z",
+      "updatedAt": "2026-09-11T14:39:51.000Z",
       "createdBy": "claude",
       "source": "strata-roadmap",
       "sourceReference": null
@@ -217,10 +217,10 @@
         "slice-s3"
       ],
       "priority": "medium",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-11T14:01:03.000Z",
-      "updatedAt": "2026-09-11T14:01:03.000Z",
+      "updatedAt": "2026-09-11T14:39:51.000Z",
       "createdBy": "claude",
       "source": "strata-roadmap",
       "sourceReference": null
@@ -255,6 +255,23 @@
       "attachments": [],
       "createdAt": "2026-09-11T14:15:20.000Z",
       "updatedAt": "2026-09-11T14:15:21.000Z",
+      "createdBy": "claude",
+      "source": "strata-roadmap",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0016",
+      "title": "Record final metrics and routing artefacts for slices S1-S3",
+      "description": "Metrics record, SDE map and Tier 3 manifest for the completed work items.",
+      "tags": [
+        "strata",
+        "documentation"
+      ],
+      "priority": "medium",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T14:46:32.000Z",
+      "updatedAt": "2026-09-11T14:46:32.000Z",
       "createdBy": "claude",
       "source": "strata-roadmap",
       "sourceReference": null

@@ -20,6 +20,9 @@
   <ItemGroup>
     <Compile Include="StatementReferences.fs" />
     <Compile Include="ScopeResolution.fs" />
+    <Compile Include="CatalogResolution.fs" />
+    <Compile Include="Corpus.fs" />
+    <Compile Include="Graph.fs" />
     <Compile Include="Effects.fs" />
   </ItemGroup>
 

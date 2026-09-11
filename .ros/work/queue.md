@@ -7,14 +7,15 @@
 | WI-0002 | Convert Strata design notebook into ROS requirements, decisions, experiments and work items | complete | strata, planning, requirements | high |
 | WI-0003 | S1: Strata four-tier F# solution skeleton with mechanical architecture check | complete | strata, slice-s1 | high |
 | WI-0004 | S1: canonical semantic model for PostgreSQL schema objects | complete | strata, slice-s1 | high |
-| WI-0005 | S1: PostgreSQL catalog introspection adapter | ready | strata, slice-s1 | high |
+| WI-0005 | S1: PostgreSQL catalog introspection adapter | complete | strata, slice-s1 | high |
 | WI-0006 | S1: deterministic semantic snapshot serialization | complete | strata, slice-s1 | medium |
 | WI-0007 | S2: PostgreSQL parser adapter over pgsqlparser | complete | strata, slice-s2 | high |
 | WI-0008 | S2: lexical scope resolution over the parse tree | complete | strata, slice-s2 | high |
-| WI-0009 | S2: reference extraction with explicit resolution states | captured | strata, slice-s2 | high |
+| WI-0009 | S2: reference extraction with explicit resolution states | complete | strata, slice-s2 | high |
 | WI-0010 | S2: effect classification by consequence | complete | strata, slice-s2 | medium |
-| WI-0011 | S2: SQL corpus indexing with provenance | captured | strata, slice-s2 | medium |
-| WI-0012 | S3: dependency and relationship graph with evidence | captured | strata, slice-s3 | medium |
-| WI-0013 | S3: targeted retrieval queries and CLI output | captured | strata, slice-s3 | medium |
-| WI-0014 | Spike B remainder: live-server binding comparison | ready | strata, spike | high |
+| WI-0011 | S2: SQL corpus indexing with provenance | complete | strata, slice-s2 | medium |
+| WI-0012 | S3: dependency and relationship graph with evidence | complete | strata, slice-s3 | medium |
+| WI-0013 | S3: targeted retrieval queries and CLI output | complete | strata, slice-s3 | medium |
+| WI-0014 | Spike B remainder: live-server binding comparison | complete | strata, spike | high |
 | WI-0015 | Record engineering metrics and SDE routing artefacts for the first Strata increment | complete | strata, documentation | medium |
+| WI-0016 | Record final metrics and routing artefacts for slices S1-S3 | ready | strata, documentation | medium |

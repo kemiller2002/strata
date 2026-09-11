@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Tier 4 - Host (DF-STRATA-2026-D3F8). The composition root.
+
+    Wires the catalog adapter, the parser adapter and the application tier
+    together. It holds no semantic decisions of its own.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>strata</AssemblyName>
+    <RootNamespace>Strata.Cli</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Strata.Semantic/Strata.Semantic.fsproj" />
+    <ProjectReference Include="../Strata.Analysis/Strata.Analysis.fsproj" />
+    <ProjectReference Include="../Strata.Application/Strata.Application.fsproj" />
+    <ProjectReference Include="../Strata.Host.Postgres/Strata.Host.Postgres.fsproj" />
+    <ProjectReference Include="../Strata.Host.PgParser/Strata.Host.PgParser.fsproj" />
+  </ItemGroup>
+
+</Project>

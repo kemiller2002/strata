@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Tier 3 - Application / Orchestration (DF-STRATA-2026-D3F8).
+
+    Coordinates use cases and projections. It must NOT become a second semantic
+    authority: if this tier starts deciding what is legal or how certain a fact
+    is, the Tier 1/2 boundary has failed. It composes; it does not re-decide.
+
+    References Tier 1 and Tier 2 only. Host adapters are injected as functions
+    so this tier performs no I/O itself.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <AssemblyName>Strata.Application</AssemblyName>
+    <RootNamespace>Strata.Application</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Retrieval.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Strata.Semantic/Strata.Semantic.fsproj" />
+    <ProjectReference Include="../Strata.Analysis/Strata.Analysis.fsproj" />
+  </ItemGroup>
+
+</Project>

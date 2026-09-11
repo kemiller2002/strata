@@ -79,6 +79,29 @@ for tier_src in src/Strata.Semantic src/Strata.Analysis; do
     fi
 done
 
+# --- Tier 3: Strata.Application ---------------------------------------------
+#
+# Orchestration composes; it must not acquire a host dependency of its own.
+
+app="src/Strata.Application/Strata.Application.fsproj"
+
+if [[ -f "$app" ]]; then
+    if grep -q "<PackageReference" "$app"; then
+        fail "Strata.Application has a PackageReference; Tier 3 composes Strata's own tiers"
+        grep -n "<PackageReference" "$app" >&2
+    fi
+
+    if grep -q "Strata.Host" "$app"; then
+        fail "Strata.Application references a host adapter; Tier 3 must not perform I/O"
+    fi
+fi
+
+if [[ -d "src/Strata.Application" ]]; then
+    if grep -rn --include="*.fs" -E "PgSqlParser|Google\.Protobuf|Npgsql" "src/Strata.Application" >/dev/null 2>&1; then
+        fail "parser/driver types appear in Strata.Application; they belong behind Tier 4"
+    fi
+fi
+
 # --- Tier 4 driver containment ----------------------------------------------
 #
 # Npgsql belongs to the catalog adapter alone; the parser adapter must not

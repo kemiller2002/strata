@@ -11,6 +11,10 @@
     <Compile Include="AnalysisScopeTests.fs" />
     <Compile Include="WireTests.fs" />
     <Compile Include="EffectsTests.fs" />
+    <Compile Include="CatalogResolutionTests.fs" />
+    <Compile Include="CorpusTests.fs" />
+    <Compile Include="GraphTests.fs" />
+    <Compile Include="RetrievalTests.fs" />
     <Compile Include="ParserAdapterTests.fs" />
     <Compile Include="CatalogIntrospectionTests.fs" />
     <Compile Include="Main.fs" />
@@ -21,6 +25,7 @@
     <ProjectReference Include="../../src/Strata.Analysis/Strata.Analysis.fsproj" />
     <ProjectReference Include="../../src/Strata.Host.PgParser/Strata.Host.PgParser.fsproj" />
     <ProjectReference Include="../../src/Strata.Host.Postgres/Strata.Host.Postgres.fsproj" />
+    <ProjectReference Include="../../src/Strata.Application/Strata.Application.fsproj" />
   </ItemGroup>
 
   <ItemGroup>
