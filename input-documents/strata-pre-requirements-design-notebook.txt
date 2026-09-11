@@ -1,0 +1,4057 @@
+STRATA
+Pre-Requirements Design Notebook
+Working draft for later conversion into ROS requirements
+
+Date: 2026-09-07
+Status: Exploratory / pre-requirements
+Purpose: Capture the full design space before turning Strata into formal requirements, work items, experiments, and implementation phases.
+
+================================================================================
+0. EXECUTIVE SUMMARY
+================================================================================
+
+Strata is a proposed database understanding, validation, agent-support, and deployment system.
+
+The central idea is:
+
+    Parse database SQL with real dialect parsers.
+    Inspect the actual database directly.
+    Build a durable semantic model of schema, relationships, dependencies,
+    behavior, usage, and policy.
+    Let humans and agents continue to write expressive SQL where SQL is the
+    right language.
+    Use deterministic software to analyze consequences, enforce guardrails,
+    plan safe transitions, converge schemas where safe, manage reference data,
+    and verify results.
+
+Strata should NOT become another SQL language.
+
+Strata should NOT force complex analytical SQL into a simplistic DSL.
+
+Strata should NOT make AI responsible for low-level correctness that can be
+verified deterministically.
+
+Strata should NOT assume that because a database permits an operation, an
+application should permit it.
+
+The intended leverage is broader than SQL parsing:
+
+    - Give agents compact, targeted database context rather than thousands of
+      SQL files.
+    - Eliminate repeated schema and relationship archaeology.
+    - Make declared and observed relationships explicit.
+    - Surface reads, writes, dependencies, hidden side effects, and risks.
+    - Validate generated or human-written SQL before execution.
+    - Detect schema drift.
+    - Reconcile safe schema differences automatically.
+    - Handle reference data declaratively.
+    - Require explicit transition plans for ambiguous/destructive/data-moving
+      changes.
+    - Provide evidence and provenance for every inferred fact.
+    - Measure whether semantic context lowers agent cost and improves accuracy.
+    - Eventually support multiple SQL dialects without reducing everything to
+      a lowest-common-denominator model.
+
+The likely first implementation target is PostgreSQL.
+
+For PostgreSQL, Strata should use a parser based on PostgreSQL's actual parser,
+such as libpg_query through a .NET wrapper, rather than implementing a parser
+from scratch.
+
+For SQL Server, a future adapter can use Microsoft's ScriptDom.
+
+The durable product is not the parser. The durable product is the semantic
+model, policy system, dependency/usage graph, agent interface, and transition
+engine built above the parser.
+
+================================================================================
+1. WORKING PRODUCT DEFINITION
+================================================================================
+
+Working name:
+    Strata
+
+Possible one-line descriptions:
+    - Semantic infrastructure for relational databases.
+    - Understand, validate, and evolve database state.
+    - A semantic and policy layer between SQL authors and database effects.
+    - Database structure, consequences, and controlled evolution for humans
+      and agents.
+
+Core product thesis:
+
+    Relational databases expose rich behavior through SQL, but their structure
+    and behavior are usually distributed across schema metadata, DDL, views,
+    functions, procedures, application queries, migrations, ORM mappings,
+    deployment scripts, and institutional knowledge.
+
+    Humans and agents repeatedly rediscover this structure.
+
+    Strata should compute and retain the structure once, attach evidence and
+    confidence to it, then expose only the relevant portion to each task.
+
+Second thesis:
+
+    SQL's expressiveness is a strength. The problem is not that SQL can express
+    complex operations. The problem is that consequences, dependencies, and
+    architecture rules are often implicit.
+
+    Therefore Strata should constrain dangerous or architecturally invalid
+    effects, not arbitrarily constrain legitimate expressive SQL.
+
+Third thesis:
+
+    Database deployment should move toward desired-state convergence where
+    convergence is deterministic and safe, while preserving explicit migration
+    plans for transformations where intent cannot be inferred safely.
+
+================================================================================
+2. FOUNDATIONAL PRINCIPLES
+================================================================================
+
+P-001. Buy/use the parser; build the semantics.
+
+Do not write a PostgreSQL parser unless a future experiment proves that no
+available parser can satisfy a concrete requirement.
+
+P-002. SQL remains a first-class language.
+
+Humans and agents must be able to write direct SQL, including complex
+aggregation, window functions, recursive CTEs, dialect-specific features,
+optimizer-conscious query shapes, and other advanced SQL.
+
+P-003. Do not build a "better SQL" meta-language.
+
+A higher-level query API may exist for common operations, but it must remain an
+optional convenience, not the only path to the database.
+
+P-004. Constrain effects more strongly than expression.
+
+Complex SELECTs may be low risk.
+Simple unbounded DELETEs may be catastrophic.
+Policy should reflect consequence, not syntax complexity.
+
+P-005. Deterministic mechanisms should own deterministic decisions.
+
+Parsing, schema introspection, dependency extraction where unambiguous,
+structural comparison, policy evaluation, SQL generation for known transitions,
+precondition checks, and verification should be deterministic.
+
+P-006. AI may help where intent is ambiguous, but AI does not get to silently
+decide destructive intent.
+
+Examples:
+    - likely rename detection may be AI-assisted
+    - migration-plan suggestions may be AI-assisted
+    - business-rule interpretation may be AI-assisted
+
+But:
+    - inferred rename must not automatically destroy the original
+    - inferred safe deletion must not become execution authority
+    - AI confidence is never a substitute for an explicit destructive policy
+
+P-007. Preserve provenance.
+
+Every semantic fact should be traceable to its evidence:
+    - database catalog
+    - declared FK
+    - view definition
+    - SQL file
+    - stored procedure
+    - application query
+    - migration
+    - user declaration
+    - inferred repeated join pattern
+    - manually approved override
+
+P-008. Preserve uncertainty.
+
+Unknown, unsupported, unparsed, ambiguous, inaccessible, and absent are
+different states and must not be collapsed into "not found."
+
+P-009. Fail closed when visibility is incomplete for high-risk operations.
+
+If the introspection account cannot see all relevant schemas, policies,
+dependencies, or objects, Strata must not claim the database is safe to alter.
+
+P-010. Desired state is not enough for every transition.
+
+Safe additive changes can often be derived from current vs desired state.
+Data-moving, destructive, rename-like, and behavior-changing operations may
+require explicit transition intent.
+
+P-011. Verification is part of deployment.
+
+A deployment is not complete when SQL returns success.
+The database must be re-inspected and checked against expected postconditions.
+
+P-012. Roll-forward is often more realistic than rollback.
+
+Strata should not promise automatic rollback where rollback can lose data or is
+not semantically valid. It should distinguish:
+    - reversible
+    - compensatable
+    - roll-forward only
+    - restore-from-backup required
+
+P-013. Dialect differences are first-class.
+
+Do not create a cross-dialect abstraction that discards important PostgreSQL or
+SQL Server semantics merely to make a generic model look clean.
+
+P-014. The semantic model should be smaller than the parser AST.
+
+Do not normalize every SQL construct into Strata's own universal SQL AST.
+Retain the parser-native AST and extract only semantic concepts Strata needs.
+
+P-015. Reference data is database state.
+
+Reference data should be modeled, versioned, compared, validated, deployed, and
+verified just like structural state, with stricter ownership semantics.
+
+P-016. User/business data is not reference data.
+
+The system must require explicit classification and must not treat ordinary
+business data as something it can reconcile automatically.
+
+P-017. Agent context should be retrieved, not dumped.
+
+A 1,000-table database should not produce a 1,000-table prompt.
+Agents should ask targeted questions and receive compact semantic slices.
+
+P-018. "Known relationship" does not mean "only relationship."
+
+Ad hoc joins can be valid.
+Unknown joins should produce evidence-sensitive warnings rather than being
+universally blocked.
+
+P-019. The database remains the execution authority.
+
+Static analysis can detect many issues, but actual types, permissions,
+constraints, extensions, statistics, locks, plans, and runtime behavior matter.
+
+P-020. Avoid hidden magic in Strata itself.
+
+Strata should make its decisions inspectable:
+    why a change was classified
+    why a rule fired
+    what evidence supported a relationship
+    what was not analyzed
+    what SQL will run
+    what preconditions were checked
+    what changed after execution
+
+================================================================================
+3. PRIMARY USER GROUPS
+================================================================================
+
+U-001. Software engineers writing SQL.
+
+Needs:
+    - accurate database context
+    - dependency information
+    - safe SQL validation
+    - fast feedback
+    - no unnecessary DSL
+
+U-002. AI coding agents.
+
+Needs:
+    - compact context
+    - machine-readable schema and relationships
+    - targeted retrieval
+    - deterministic validation
+    - explicit legal/illegal actions
+    - evidence when assumptions are uncertain
+    - ability to submit direct SQL for analysis
+
+U-003. Database engineers / DBAs.
+
+Needs:
+    - transparency
+    - full control over risky operations
+    - impact analysis
+    - predictable execution
+    - support for legitimate advanced database features
+    - no simplistic "AI knows best" behavior
+
+U-004. Deployment pipelines.
+
+Needs:
+    - noninteractive deterministic mode
+    - drift detection
+    - preflight
+    - risk classification
+    - gated approvals
+    - idempotence where possible
+    - verification artifacts
+    - clear exit codes
+
+U-005. Architecture / SDE tooling.
+
+Needs:
+    - database semantic maps
+    - structural locality evidence
+    - relationship graphs
+    - agent telemetry
+    - repeatable experiments
+    - query/task context reduction measurements
+
+================================================================================
+4. HIGH-LEVEL CAPABILITIES
+================================================================================
+
+C-001. Dialect-aware SQL parsing.
+
+C-002. Live database introspection.
+
+C-003. Canonical schema representation.
+
+C-004. SQL corpus indexing.
+
+C-005. Semantic extraction.
+
+C-006. Dependency graph construction.
+
+C-007. Declared and inferred relationship graph construction.
+
+C-008. Read/write/effect classification.
+
+C-009. SQL policy analysis.
+
+C-010. Targeted agent retrieval.
+
+C-011. SQL validation against current schema.
+
+C-012. Desired-vs-actual schema comparison.
+
+C-013. Drift detection.
+
+C-014. Deployment planning.
+
+C-015. Controlled schema convergence for safe changes.
+
+C-016. Explicit transition plans for unsafe/ambiguous changes.
+
+C-017. Reference-data convergence.
+
+C-018. Deployment preconditions/postconditions.
+
+C-019. Post-deployment re-introspection and verification.
+
+C-020. Explainable risk classification.
+
+C-021. Extensible metrics and telemetry.
+
+C-022. Multi-dialect adapters over time.
+
+C-023. CI/CD integration.
+
+C-024. Human-readable and machine-readable output.
+
+================================================================================
+5. PARSER STRATEGY
+================================================================================
+
+5.1 PostgreSQL
+
+Preferred architectural direction:
+    libpg_query-based parser through a .NET wrapper.
+
+Reason:
+    libpg_query incorporates the actual PostgreSQL parser source and provides
+    PostgreSQL's parse tree outside the server.
+
+Current candidate:
+    pgsqlparser (.NET wrapper over libpg_query)
+
+Capabilities currently relevant:
+    - PostgreSQL SQL parsing
+    - protobuf-based AST
+    - SQL normalization
+    - statement splitting
+    - PL/pgSQL parsing
+    - deparsing support in the wrapper
+    - packaged native binaries
+
+Important concern:
+    Strata must pin and test parser/PostgreSQL major versions.
+    Parser support and AST shape can change by PostgreSQL major version.
+
+Important concern:
+    Native library packaging creates platform/architecture deployment concerns.
+
+Important concern:
+    A parser accepting syntax does not prove the target live database supports
+    every object, extension, operator, type, collation, or runtime semantic.
+
+5.2 SQL Server
+
+Future adapter:
+    Microsoft.SqlServer.TransactSql.ScriptDom.
+
+5.3 Future dialects
+
+Potential later adapters:
+    - other relational databases only when a real user need appears
+
+Do not start by implementing generic support for every dialect.
+
+5.4 Parser adapter boundary
+
+Define a narrow adapter interface.
+
+Illustrative shape:
+
+    DialectParser
+        Parse(sql)
+        SplitStatements(sql)
+        Normalize(sql)        optional/dialect-specific
+        ParseRoutineBody(...) optional/dialect-specific
+        GetParserVersion()
+        GetDialectVersion()
+
+Do not expose parser-specific node types throughout Strata core.
+
+5.5 Parser AST storage
+
+Potentially retain:
+    - raw SQL
+    - content hash
+    - parser type/version
+    - database dialect/version target
+    - serialized native AST (optional/cache)
+    - extraction result
+    - parse warnings/errors
+
+Do not assume serialized ASTs remain stable across parser upgrades.
+
+================================================================================
+6. LIVE DATABASE INTROSPECTION
+================================================================================
+
+The live database is a critical source of truth for actual deployed state.
+
+For PostgreSQL, introspection should eventually capture at least:
+
+    Database/server version
+    Schemas
+    Tables
+    Columns
+    Data types
+    Domains
+    Enums
+    Nullability
+    Defaults
+    Generated columns
+    Identity behavior
+    Primary keys
+    Unique constraints
+    Check constraints
+    Foreign keys
+    Indexes
+    Partial indexes
+    Expression indexes
+    Sequences
+    Views
+    Materialized views
+    Functions
+    Procedures
+    Function/procedure signatures
+    Return types
+    Triggers
+    Extensions
+    Partitioned tables
+    Partitions
+    Inheritance if present
+    Row-level security status
+    RLS policies
+    Roles relevant to ownership/access (within safe scope)
+    Object ownership
+    Grants/privileges where policy needs them
+    Collations where relevant
+    Comments/documentation
+    Statistics metadata where safely available
+    Dependencies exposed by catalog
+    Tablespaces only if deployment scope requires it
+
+Explicitly decide what Strata manages versus observes.
+
+Example:
+    Strata may OBSERVE role grants but not initially MANAGE roles.
+    Strata may OBSERVE extensions but require explicit policy before managing
+    extension installation.
+
+Introspection completeness must be reported.
+
+Example:
+
+    completeness:
+        schemas: complete
+        table_metadata: complete
+        functions: complete
+        rls_policies: inaccessible
+        role_membership: not_requested
+
+For high-risk deployment:
+    inaccessible relevant metadata must block execution or require explicit
+    override.
+
+================================================================================
+7. CANONICAL SCHEMA MODEL
+================================================================================
+
+Strata needs its own durable schema model.
+
+This is NOT a universal SQL AST.
+
+It is a semantic representation of database objects and relationships.
+
+Potential model concepts:
+
+    DatabaseId
+    Dialect
+    DialectVersion
+
+    SchemaObjectId
+    QualifiedName
+
+    Table
+    Column
+    TypeRef
+    PrimaryKey
+    ForeignKey
+    UniqueConstraint
+    CheckConstraint
+    Index
+    Sequence
+    View
+    MaterializedView
+    Function
+    Procedure
+    Trigger
+    Extension
+    Partition
+    Policy
+    Grant
+
+Every object should support:
+    - stable logical identity where possible
+    - physical identity/name
+    - source/provenance
+    - managed/unmanaged scope
+    - dialect extensions
+    - evidence
+    - confidence if inferred
+    - content/signature hash where useful
+
+Challenge:
+    Names are not always identity.
+
+A rename must not automatically look like:
+    delete old object + create new object
+
+But Strata also must NOT infer identity from similarity and execute it.
+
+Possible solution:
+    explicit stable Strata IDs for managed schema artifacts, plus
+    rename declarations when transitioning existing unmanaged databases.
+
+================================================================================
+8. SQL CORPUS ANALYSIS
+================================================================================
+
+Strata should analyze SQL beyond the live schema.
+
+Potential sources:
+    - .sql files
+    - migrations
+    - view definitions
+    - function/procedure bodies
+    - embedded SQL discovered by integration adapters
+    - generated SQL captured from known systems
+    - query catalogs
+    - test SQL
+    - application SQL resources
+
+Do not promiscuously scrape arbitrary strings from source code initially.
+
+Each analyzed SQL unit should have:
+    source identifier
+    file/object location
+    statement boundaries
+    content hash
+    dialect
+    parser version
+    parse status
+    semantic extraction status
+
+Extract where deterministically possible:
+
+    Objects read
+    Objects written
+    Columns referenced
+    Columns written
+    Join predicates
+    Filters
+    Grouping
+    Aggregations
+    Window functions
+    CTEs
+    Recursive CTEs
+    Subqueries
+    Set operations
+    Function calls
+    Procedure calls
+    DDL effects
+    Temporary objects
+    Dynamic SQL presence
+    Transaction-control statements
+    Locking clauses
+    Returning/output behavior
+    Sequence usage
+    Object creation/destruction
+    Dependency edges
+
+Preserve unsupported/unknown regions rather than pretending analysis succeeded.
+
+================================================================================
+9. SEMANTIC RELATIONSHIP GRAPH
+================================================================================
+
+Declared relationships:
+    Foreign keys and other schema-declared relationships.
+
+Observed relationships:
+    Repeated join patterns in SQL corpus.
+
+Potential evidence:
+    - FK constraint
+    - repeated equality joins
+    - view definitions
+    - procedure/function joins
+    - unique/key compatibility
+    - column naming
+    - type compatibility
+    - manual declaration
+    - ORM relationship metadata (future)
+
+Relationship classifications might include:
+    Declared
+    Observed
+    Inferred
+    Manual
+    Conflicting
+    Deprecated
+
+Each inferred/observed relationship needs:
+    evidence count
+    evidence sources
+    confidence
+    first seen
+    last seen
+    conflicts
+
+Never convert an observed relationship into a declared database FK
+automatically.
+
+Example:
+
+    Order.CustomerNumber -> Customer.CustomerNumber
+
+    declared_fk: false
+    observed_join_count: 142
+    unique_target: true
+    confidence: high
+    evidence: [view A, proc B, ...]
+
+The graph should support path queries:
+
+    How does Customer connect to Product?
+    What paths connect Invoice to TaxRate?
+    What objects depend on Customer.LegacyNumber?
+
+Path ranking should consider:
+    declared relationships
+    observed frequency
+    uniqueness/cardinality evidence
+    deprecated status
+    domain boundaries if available
+    ambiguity
+
+================================================================================
+10. READ / WRITE / EFFECT MODEL
+================================================================================
+
+A statement should be classified by consequences, not just statement type.
+
+Potential effects:
+
+    Read
+    Insert
+    Update
+    Delete
+    Merge/Upsert
+    DDL Create
+    DDL Alter
+    DDL Drop
+    Truncate
+    Lock
+    Execute routine
+    Dynamic execution
+    Security/privilege change
+    Transaction control
+    Maintenance operation
+    External/extension effect unknown
+
+For each effect capture:
+    target object
+    predicate/boundedness when meaningful
+    estimated scope if known
+    known dependencies
+    data-loss possibility
+    reversibility classification
+    transactional behavior
+    required capability
+
+Example:
+
+    UPDATE Order
+    SET Status = ...
+    WHERE OrderId = @id
+
+could be:
+    write_kind: update
+    bounded_by_unique_key: true
+    maximum_expected_rows: 1
+    risk: lower
+
+Whereas:
+
+    UPDATE Order SET Status = ...
+
+could be:
+    write_kind: update
+    bounded: false
+    potential_rows: entire table
+    risk: critical
+    default_action: block
+
+================================================================================
+11. SQL POLICY / GUARDRAIL SYSTEM
+================================================================================
+
+Policy should be configurable and versioned.
+
+Policy categories:
+
+11.1 Style / maintainability
+    May warn but not necessarily block.
+
+Examples:
+    SELECT *
+    unqualified columns in ambiguous joins
+    excessive nested query depth
+    duplicate projection names
+    suspicious implicit casts
+    unnecessary complexity
+
+11.2 Architecture
+    Examples:
+        cross-domain writes
+        direct access to protected tables
+        bypassing required views/functions
+        writing immutable/audit tables
+        joining across forbidden boundaries
+        modifying reference data outside managed mechanism
+
+11.3 Safety
+    Examples:
+        UPDATE without bounding predicate
+        DELETE without bounding predicate
+        TRUNCATE
+        destructive DDL
+        disabling constraints
+        disabling RLS
+        dropping security policies
+        privilege escalation
+
+11.4 Analyzability
+    Examples:
+        dynamic SQL
+        unknown extension function
+        generated runtime object name
+        EXECUTE of constructed statement
+        unparseable PL/pgSQL branch
+
+These may not be forbidden, but they reduce confidence.
+
+11.5 Deployment
+    Examples:
+        drop column with readers
+        narrow type
+        add NOT NULL without evidence
+        add FK with violating rows
+        create blocking index on large table
+        table rewrite risk
+        incompatible extension change
+
+11.6 Runtime
+    Examples:
+        statement timeout
+        lock timeout
+        row-count ceiling
+        required transaction
+        required read-only transaction
+        maximum execution duration
+        allowed schemas
+
+11.7 Capability profiles
+
+Potential profiles:
+
+    ApplicationRead
+    ApplicationWrite
+    AnalyticsRead
+    Migration
+    ReferenceDataDeploy
+    Administration
+    AgentRead
+    AgentProposedWrite
+    CIValidation
+
+Profiles determine which policies apply and which operations are possible.
+
+Important:
+    Agents should normally propose writes, not possess unrestricted execution
+    credentials.
+
+================================================================================
+12. SQL VALIDATION PIPELINE
+================================================================================
+
+Potential validation pipeline:
+
+    1. Parse
+    2. Verify dialect/version compatibility
+    3. Resolve known object references against schema
+    4. Resolve aliases
+    5. Extract effects
+    6. Check relationships
+    7. Evaluate policy
+    8. Check permissions/capabilities
+    9. Optionally ask live DB to PREPARE/EXPLAIN safely
+    10. Return structured findings
+
+Structured result:
+
+    valid_syntax
+    schema_resolution
+    policy_findings[]
+    dependencies[]
+    reads[]
+    writes[]
+    risk
+    confidence
+    analysis_gaps[]
+    suggested_corrections[]
+    executable: true/false
+
+Never equate parse success with execution safety.
+
+================================================================================
+13. QUERY PLAN / PERFORMANCE ANALYSIS
+================================================================================
+
+AST analysis is insufficient for performance.
+
+Potential live features:
+    EXPLAIN without ANALYZE
+    server statistics
+    index availability
+    cardinality estimates
+    table size
+    pg_stat_statements integration (optional, permission-dependent)
+
+Important safety distinction:
+    EXPLAIN ANALYZE EXECUTES the query.
+
+Therefore:
+    Strata must not use EXPLAIN ANALYZE as a harmless validation step.
+
+Read-only queries can still be expensive.
+
+Potential policy:
+    - static analysis first
+    - EXPLAIN only with controlled timeout
+    - EXPLAIN ANALYZE requires explicit capability and policy
+
+Performance warnings should be evidence-based and not presented as certainty.
+
+================================================================================
+14. AGENT INTERFACE
+================================================================================
+
+Primary goal:
+    Give agents the minimum semantic context needed for the current task.
+
+Potential CLI/API commands:
+
+    strata inspect customer
+    strata inspect schema.sales
+    strata relationships customer
+    strata path customer product
+    strata dependencies customer.legacy_number
+    strata readers customer
+    strata writers customer
+    strata validate proposed.sql
+    strata explain proposed.sql
+    strata diff
+    strata deployment plan
+    strata reference-data diff
+
+Machine-readable equivalent:
+    JSON by default for agent integrations.
+
+Human-readable equivalent:
+    concise terminal output.
+
+Potential agent retrieval operations:
+
+    Find table/object
+    Describe object
+    Find relationship path
+    Find column
+    Explain business/technical evidence
+    Show known readers/writers
+    Show reference-data identities
+    Validate proposed SQL
+    Show policy relevant to a requested operation
+    Explain why a SQL operation was rejected
+    Identify minimum context for a task
+
+Agent should receive provenance when useful.
+
+Example:
+
+    relationship:
+        orders.customer_id -> customer.id
+        source: foreign_key
+        confidence: certain
+
+versus:
+
+    relationship:
+        invoice.customer_number -> customer.customer_number
+        source: observed_join
+        evidence_count: 37
+        confidence: high
+
+Agents must be told when semantic information is incomplete.
+
+================================================================================
+15. AGENT SQL AUTHORING POSTURE
+================================================================================
+
+Do not force agents to author a meta-language.
+
+Preferred modes:
+
+Mode A: Domain/typed operation for simple common behavior
+    Good for:
+        get by key
+        controlled inserts
+        known state transitions
+
+Mode B: Direct SQL
+    Good for:
+        analytics
+        reporting
+        aggregation
+        complex joins
+        window functions
+        CTEs
+        data investigation
+        expert tuning
+
+Both modes pass through semantic validation and policy appropriate to the
+execution capability.
+
+Potential flow:
+
+    Agent proposes SQL
+        ->
+    Strata validates
+        ->
+    Agent receives errors/warnings/context
+        ->
+    Agent revises
+        ->
+    authorized executor runs
+
+This is preferable to:
+    Agent -> unrestricted DB credential -> arbitrary SQL
+
+================================================================================
+16. DESIRED SCHEMA
+================================================================================
+
+Strata needs a representation of intended schema state.
+
+Open design decision:
+    What is the authoritative desired-state authoring format?
+
+Candidates:
+    A. SQL DDL files
+    B. a constrained declarative schema format
+    C. code/F# model
+    D. database project artifact
+    E. hybrid
+
+Initial recommendation:
+    Do NOT invent a full schema DSL until concrete requirements demand it.
+
+A strong first approach:
+    Use canonicalized DDL/schema artifacts plus explicit metadata where SQL
+    cannot express Strata concepts such as stable identity, ownership,
+    deployment policy, or reference-data semantics.
+
+Important metadata may include:
+    stable Strata object ID
+    managed/unmanaged
+    allowed automatic transitions
+    destructive change policy
+    reference-data policy
+    environment scope
+
+================================================================================
+17. ACTUAL VS DESIRED SCHEMA DIFF
+================================================================================
+
+Diff categories:
+
+    Equal
+    Additive
+    Compatible change
+    Potentially destructive
+    Destructive
+    Ambiguous identity
+    Unsupported
+    Unmanaged
+    Drift-only
+    Requires data transition
+
+Examples:
+
+    Add nullable column
+        usually additive
+
+    Add new table
+        usually additive
+
+    Widen text/varchar
+        potentially compatible but dialect/version dependent
+
+    Add NOT NULL
+        requires data precondition
+
+    Add FK
+        requires violation check and lock/impact consideration
+
+    Rename column
+        ambiguous unless explicitly declared
+
+    Drop column
+        destructive
+
+    Narrow type
+        destructive/risky
+
+    Split table
+        data transition
+
+Diff must be structural and semantic where possible.
+
+Textual DDL differences are not sufficient.
+
+================================================================================
+18. DEPLOYMENT MODEL
+================================================================================
+
+Strata should support two complementary deployment mechanisms.
+
+18.1 Convergent transitions
+
+For safe, unambiguous state changes:
+    actual state -> desired state
+
+Examples:
+    create missing table
+    add nullable column
+    add known reference row
+    create some indexes under permitted conditions
+
+18.2 Explicit transition plans
+
+For changes that require intent or staged data movement.
+
+Examples:
+    rename
+    split/merge
+    backfill
+    data type conversion
+    constraint tightening
+    replacing a key
+    changing reference-data identity
+    large-table rewrite
+    destructive cleanup
+
+Transition plan model should include:
+
+    plan ID
+    desired outcome
+    current-state assumptions
+    preconditions
+    ordered steps
+    transaction boundaries
+    nontransactional steps
+    lock expectations
+    failure behavior
+    retry/idempotency behavior
+    checkpoints
+    postconditions
+    reversibility class
+    approval requirements
+    verification
+    cleanup/deferred steps
+
+================================================================================
+19. POSTGRESQL DEPLOYMENT PITFALLS TO ACCOUNT FOR
+================================================================================
+
+Do not assume every PostgreSQL DDL operation behaves identically inside a
+single transaction.
+
+Need dialect-aware handling for examples such as:
+    concurrent index operations
+    enum evolution
+    extension changes
+    table rewrites
+    constraint validation
+    large backfills
+    partition changes
+    function replacement
+    dependency cascades
+    materialized views
+    ownership/privileges
+    RLS changes
+
+Do not casually use CASCADE.
+
+Default posture:
+    CASCADE should be prohibited or require explicit elevated authorization and
+    full impact reporting.
+
+Large-table operations must consider:
+    locking
+    duration
+    rewrite behavior
+    disk usage
+    replication impact
+    transaction log/WAL pressure
+    concurrent application behavior
+
+Initial Strata versions should prefer correctness and visibility over pretending
+to be a zero-downtime migration orchestrator.
+
+================================================================================
+20. RENAME HANDLING
+================================================================================
+
+A schema diff cannot reliably distinguish:
+
+    Drop Customer.Name
+    Add Customer.DisplayName
+
+from:
+
+    Rename Customer.Name -> Customer.DisplayName
+
+Similarity can suggest intent but cannot prove it.
+
+Policy:
+    Rename inference may generate a suggestion.
+    Rename execution requires explicit identity/transition declaration.
+
+Potential declaration:
+
+    rename:
+        object: column
+        from: customer.name
+        to: customer.display_name
+
+This prevents data loss from mistaken rename inference.
+
+================================================================================
+21. DESTRUCTIVE CHANGE POLICY
+================================================================================
+
+Destructive changes need explicit classification.
+
+Potential levels:
+
+    SAFE_AUTO
+    AUTO_WITH_PREFLIGHT
+    REVIEW
+    APPROVAL_REQUIRED
+    MANUAL_PLAN_REQUIRED
+    BLOCKED
+
+Examples:
+
+    add nullable column:
+        SAFE_AUTO or AUTO_WITH_PREFLIGHT
+
+    drop unused index:
+        REVIEW or AUTO_WITH_PREFLIGHT depending policy
+
+    drop column:
+        APPROVAL_REQUIRED or MANUAL_PLAN_REQUIRED
+
+    drop table:
+        MANUAL_PLAN_REQUIRED
+
+    truncate:
+        BLOCKED by default
+
+    disable RLS:
+        BLOCKED by default
+
+    CASCADE drop:
+        BLOCKED by default
+
+Before destructive action, Strata should identify:
+    static dependents
+    observed readers
+    observed writers
+    reference-data dependencies
+    routines
+    views
+    triggers
+    policies
+    known application SQL
+    data volume if available
+    backup/restore posture if required
+
+"Not referenced" must be phrased carefully:
+    "No references found in analyzed sources"
+not:
+    "Unused"
+
+================================================================================
+22. REFERENCE DATA
+================================================================================
+
+Reference data should be a first-class state model.
+
+Reference-data classes:
+
+22.1 Authoritative set
+
+Application owns complete membership.
+
+Example:
+    fixed workflow states
+
+Possible operations:
+    insert missing
+    update managed fields
+    removal only under explicit policy
+
+22.2 Managed minimum set
+
+Certain rows must exist.
+Additional rows are allowed.
+
+Possible operations:
+    insert missing
+    update declared rows
+    never delete unknown rows automatically
+
+22.3 Environment configuration
+
+Shape is managed, values vary by environment.
+
+Examples:
+    external endpoint identifiers
+    feature/environment mapping
+
+Secrets should not be stored in Strata artifacts.
+
+22.4 Business/user data
+
+Never reconciled as reference data by default.
+
+================================================================================
+23. REFERENCE-DATA IDENTITY
+================================================================================
+
+Do not rely blindly on surrogate integer IDs across environments.
+
+Strata reference rows need stable semantic identity.
+
+Possible mechanisms:
+    natural key
+    declared logical key
+    explicit Strata row ID
+
+Example:
+
+    reference_object: order-status.complete
+    table: order_status
+    key:
+        code: COMPLETE
+    values:
+        name: Complete
+        is_active: true
+
+Foreign reference data can point to logical identities:
+
+    from: order-status.processing
+    to: order-status.complete
+
+Strata resolves environment-specific physical IDs.
+
+Need explicit policy for:
+    immutable fields
+    mutable display fields
+    removal
+    deprecation
+    aliases
+    key changes
+
+================================================================================
+24. REFERENCE-DATA DEPLOYMENT SAFETY
+================================================================================
+
+Before updating:
+    detect user/business modifications
+    detect duplicate logical identities
+    verify unique keys
+    verify FK dependencies
+    identify unexpected rows
+    classify ownership
+
+Do not automatically delete unexpected rows merely because they are absent from
+desired state.
+
+For authoritative sets, deletion should still be explicit enough to prevent
+accidental data loss.
+
+Potential safer pattern:
+    deprecate -> verify no usage -> remove later
+
+================================================================================
+25. DATA MIGRATIONS / BACKFILLS
+================================================================================
+
+These should not be hidden inside schema diffs.
+
+Need explicit concept of data transition.
+
+Potential step types:
+    SQL step
+    batched SQL step
+    validation query
+    application dual-write checkpoint
+    wait-for-version checkpoint
+    manual approval checkpoint
+    external verification
+    cleanup step
+
+For large backfills:
+    support batching
+    resumability
+    checkpointing
+    idempotence
+    progress
+    rate limiting
+    lock awareness
+    timeouts
+
+Do not require every transition to be reversible.
+Require its reversibility to be truthfully classified.
+
+================================================================================
+26. MULTI-STAGE / EXPAND-CONTRACT DEPLOYMENTS
+================================================================================
+
+Strata should eventually understand staged transitions.
+
+Example rename/split:
+
+    Phase 1:
+        add display_name nullable
+
+    Phase 2:
+        backfill display_name
+
+    Phase 3:
+        application writes both old and new
+
+    Phase 4:
+        application reads new
+
+    Phase 5:
+        verify old column has no readers/writers
+
+    Phase 6:
+        remove old column in later deployment
+
+The database deployment system should be able to model dependencies on
+application version/deployment state rather than assuming all DB changes happen
+atomically.
+
+This may be later scope, but the architecture must not prevent it.
+
+================================================================================
+27. DRIFT DETECTION
+================================================================================
+
+Strata should distinguish:
+
+    expected managed state
+    actual managed state
+    unmanaged objects
+    environment-specific allowed differences
+    suspicious drift
+
+Drift report should answer:
+    what changed
+    when first observed if history available
+    whether managed
+    whether dangerous
+    whether desired state changed or live DB changed
+    whether deployment can reconcile automatically
+
+Do not delete unmanaged objects simply because they are not in desired state.
+
+Managed scope must be explicit.
+
+================================================================================
+28. DEPLOYMENT EXECUTION
+================================================================================
+
+Execution should be separate from analysis/planning.
+
+Potential commands:
+
+    strata deployment inspect
+    strata deployment diff
+    strata deployment plan
+    strata deployment validate
+    strata deployment execute
+    strata deployment verify
+
+Execution must record:
+    plan hash
+    desired-state hash
+    actual-state-before hash/snapshot identity
+    database identity
+    database version
+    Strata version
+    parser version
+    executed statements
+    timings
+    row counts where meaningful
+    warnings
+    approvals
+    failures
+    post-state verification
+
+Plan changes after approval must invalidate approval.
+
+================================================================================
+29. TRANSACTIONS AND FAILURE SEMANTICS
+================================================================================
+
+Each deployment step should state:
+    transaction required
+    transaction forbidden
+    transaction optional
+
+Do not force a whole deployment into one transaction if a dialect operation
+cannot or should not be executed that way.
+
+Failure categories:
+    precondition failed
+    lock timeout
+    statement timeout
+    permission failure
+    syntax/runtime error
+    constraint violation
+    partial nontransactional progress
+    verification mismatch
+    lost connection / unknown execution status
+
+"Unknown" needs first-class treatment.
+
+After unknown execution state:
+    re-introspect before retrying.
+
+================================================================================
+30. IDEMPOTENCE
+================================================================================
+
+Convergent operations should be idempotent wherever practical.
+
+Explicit migrations should declare whether:
+    repeat-safe
+    checkpointed
+    one-shot
+    unknown
+
+Do not fake idempotence by swallowing every "already exists" error.
+
+Idempotence means resulting state is understood, not merely that errors are
+ignored.
+
+================================================================================
+31. VERIFICATION
+================================================================================
+
+Verification types:
+
+    structural postcondition
+    data postcondition
+    reference-data postcondition
+    dependency postcondition
+    application compatibility checkpoint
+    custom validation query
+
+Examples:
+    column exists with exact type/nullability/default
+    FK exists and validates
+    no null values remain
+    reference rows exist
+    old column has no known writers
+    expected index exists
+
+Deployment completes only after required verification passes.
+
+================================================================================
+32. SECURITY
+================================================================================
+
+Strata must not require unrestricted superuser access for ordinary analysis.
+
+Use least privilege.
+
+Separate identities/capabilities:
+    introspection
+    read validation
+    deployment
+    elevated administration
+
+Agent-facing execution must not expose raw credentials.
+
+Credentials/secrets:
+    never stored in desired-state files
+    never emitted in logs
+    never sent to agents
+    never included in semantic context
+
+Policy must account for:
+    RLS
+    grants
+    ownership
+    SECURITY DEFINER functions
+    search_path behavior
+    schema spoofing risks
+    extension trust
+
+Dynamic SQL in SECURITY DEFINER routines should receive heightened scrutiny.
+
+================================================================================
+33. DATA PRIVACY
+================================================================================
+
+Schema metadata is safer than data but can still reveal sensitive domain
+information.
+
+By default, Strata agent context should not include row samples.
+
+If sample data is ever supported:
+    explicit opt-in
+    masking/redaction
+    PII classification
+    least-necessary rows
+    no secrets
+    audit trail
+
+Prefer metadata, constraints, statistics, and semantic structure over data
+sampling.
+
+================================================================================
+34. DYNAMIC SQL
+================================================================================
+
+Dynamic SQL is a fundamental limit to static analysis.
+
+Potential classifications:
+    none
+    constant dynamic SQL (possibly recoverable)
+    partially constructed SQL
+    fully runtime-dependent SQL
+    external query text
+
+Strata should report:
+    analyzability degraded
+    affected routine/location
+    what parts are known
+    what parts are unknown
+
+Do not universally ban dynamic SQL.
+Do not pretend to fully analyze it.
+
+Potential policy:
+    restricted in application paths
+    permitted with justification in administrative/reporting paths
+
+================================================================================
+35. TRIGGERS AND HIDDEN SIDE EFFECTS
+================================================================================
+
+Triggers are legitimate database features but can hide behavior from callers.
+
+Strata should:
+    enumerate triggers
+    parse/analyze trigger functions where possible
+    attach trigger effects to originating writes
+    show hidden side effects in impact analysis
+
+Example:
+    INSERT order
+        -> trigger writes audit
+        -> trigger updates inventory
+
+An agent asking "what does inserting an order affect?" should see both direct
+and trigger-mediated effects.
+
+Do not automatically forbid triggers.
+Make their effects visible.
+
+================================================================================
+36. FUNCTIONS / PROCEDURES
+================================================================================
+
+Need to distinguish:
+    immutable/stable/volatile behavior where dialect exposes it
+    SQL language routines
+    PL/pgSQL routines
+    external language routines
+    SECURITY DEFINER vs invoker
+    read-only-looking routines with writes
+    dynamic SQL routines
+
+Routine call graph should be part of dependencies.
+
+Unknown routine internals should reduce effect-confidence.
+
+================================================================================
+37. VIEWS AND MATERIALIZED VIEWS
+================================================================================
+
+Views provide strong semantic evidence.
+
+Strata should extract:
+    base objects
+    column lineage where possible
+    filters
+    joins
+    dependencies
+
+Materialized views add deployment/refresh concerns.
+
+Do not assume view column lineage is always trivial.
+
+================================================================================
+38. COLUMN / EXPRESSION LINEAGE
+================================================================================
+
+Long-term valuable capability:
+    trace output fields back to source columns and transformations.
+
+Examples:
+    InvoiceSummary.Total
+        <- SUM(invoice_line.quantity * invoice_line.unit_price)
+
+Potential uses:
+    agent understanding
+    impact analysis
+    reporting correctness
+    migration risk
+    PII propagation
+    deprecation analysis
+
+Full lineage can become complex.
+Start with high-confidence cases and preserve unknowns.
+
+================================================================================
+39. POLICY FINDINGS NEED SEVERITY AND CERTAINTY
+================================================================================
+
+A finding needs separate dimensions:
+
+Severity:
+    Info
+    Warning
+    Error
+    Critical
+
+Certainty:
+    Certain
+    High
+    Medium
+    Low
+    Unknown
+
+Action:
+    Allow
+    AllowWithWarning
+    RequireReview
+    RequireApproval
+    Block
+
+Do not conflate:
+    "high risk if true"
+with
+    "high confidence that this pattern is present."
+
+================================================================================
+40. EXCEPTIONS / JUSTIFICATIONS
+================================================================================
+
+Guardrails require controlled exceptions or they will be bypassed outside the
+system.
+
+Exception should include:
+    rule ID
+    scope
+    object/query hash
+    justification
+    author/approver
+    expiration or review date where appropriate
+
+Avoid permanent broad:
+    disable_rule = true
+
+Prefer narrow exceptions tied to exact evidence.
+
+================================================================================
+41. MACHINE-READABLE OUTPUT
+================================================================================
+
+All major Strata operations should have deterministic structured output.
+
+Likely JSON initially.
+
+Examples:
+    inspect result
+    relationship graph slice
+    validation result
+    diff
+    deployment plan
+    policy report
+    verification report
+
+Schemas should be versioned.
+
+Human terminal output is a projection of the structured model.
+
+Agents should consume stable JSON rather than scrape human prose.
+
+================================================================================
+42. STORAGE / INDEXING
+================================================================================
+
+Open question:
+    Does Strata need a persistent local database/index immediately?
+
+Possible Phase 1:
+    generated semantic snapshot files + hashes
+
+Later:
+    local embedded database/index if corpus scale requires it
+
+Requirements:
+    incremental re-analysis
+    content-addressed caching
+    parser-version invalidation
+    schema-version invalidation
+    deterministic rebuild
+    inspectable cache
+
+Do not introduce a heavy server dependency simply to analyze a repository.
+
+================================================================================
+43. INCREMENTAL ANALYSIS
+================================================================================
+
+For repository use:
+    hash SQL inputs
+    only reparse changed inputs
+    update graph incrementally where safe
+    invalidate dependents when semantics change
+
+For live DB:
+    schema snapshot hash
+    object-level signatures where possible
+    compare changed objects
+
+Need deterministic full rebuild mode to catch index/cache bugs.
+
+================================================================================
+44. VERSIONING
+================================================================================
+
+Track separately:
+    Strata version
+    canonical-model schema version
+    policy version
+    parser version
+    SQL dialect
+    target database major/minor as relevant
+    desired schema version/hash
+    reference-data version/hash
+
+Parser upgrade should trigger compatibility tests and possibly re-index.
+
+================================================================================
+45. MULTI-DIALECT DESIGN
+================================================================================
+
+Core semantic concepts can be common:
+    table
+    column
+    read/write
+    relationship
+    dependency
+    constraint
+    risk
+    policy
+
+Dialect-specific concepts must remain expressible.
+
+Use extension data rather than pretending:
+    PostgreSQL RLS == SQL Server security features
+or
+    PostgreSQL function semantics == T-SQL procedure semantics
+
+Avoid lowest-common-denominator design.
+
+Recommended sequence:
+    PostgreSQL first
+    validate architecture
+    SQL Server second
+    revise abstractions based on real differences
+    only then consider a generalized plugin SDK
+
+================================================================================
+46. F# / .NET IMPLEMENTATION POSTURE
+================================================================================
+
+Potential implementation:
+    F# core domain model and policy engine
+    thin interop/adapters around parser libraries as needed
+    .NET CLI
+    library API for ROS/other systems
+
+Reasons this fits:
+    discriminated unions for states/effects/risk
+    explicit invalid/unknown states
+    typed transition plans
+    strong match exhaustiveness
+
+Do not let language preference force awkward native-library integration.
+A thin C# adapter is acceptable if it materially simplifies interop.
+
+================================================================================
+47. PROPOSED CORE DOMAIN TYPES (ILLUSTRATIVE, NOT REQUIREMENTS)
+================================================================================
+
+Potential concepts:
+
+    AnalysisStatus =
+        | Complete
+        | Partial of AnalysisGap list
+        | Failed of AnalysisError
+
+    Evidence =
+        | CatalogEvidence
+        | DeclaredConstraintEvidence
+        | SqlUsageEvidence
+        | ManualEvidence
+        | InferredEvidence
+
+    ObjectManagement =
+        | Managed
+        | Observed
+        | Ignored
+
+    Effect =
+        | Read
+        | Insert
+        | Update
+        | Delete
+        | Create
+        | Alter
+        | Drop
+        | Truncate
+        | Execute
+        | PrivilegeChange
+        | UnknownEffect
+
+    Risk =
+        | Low
+        | Moderate
+        | High
+        | Critical
+        | UnknownRisk
+
+    TransitionDisposition =
+        | Auto
+        | AutoWithPreflight
+        | Review
+        | ApprovalRequired
+        | ExplicitPlanRequired
+        | Blocked
+
+    Reversibility =
+        | Reversible
+        | Compensatable
+        | RollForwardOnly
+        | BackupRestoreRequired
+        | UnknownReversibility
+
+These are examples of the state distinctions Strata should preserve.
+
+================================================================================
+48. CLI ROADMAP (ILLUSTRATIVE)
+================================================================================
+
+Phase 1 candidate:
+
+    strata db inspect
+    strata object inspect <name>
+    strata sql parse <file>
+    strata sql analyze <file>
+    strata sql validate <file>
+    strata relationships <object>
+    strata path <from> <to>
+
+Phase 2:
+
+    strata schema snapshot
+    strata schema diff
+    strata drift
+    strata refs diff
+
+Phase 3:
+
+    strata deployment plan
+    strata deployment validate
+    strata deployment execute
+    strata deployment verify
+
+Phase 4:
+
+    strata agent serve / API
+    richer retrieval
+    ROS integrations
+
+================================================================================
+49. FIRST IMPLEMENTATION VERTICAL SLICE
+================================================================================
+
+Recommended first vertical slice:
+
+    PostgreSQL only.
+
+Input:
+    live PostgreSQL database
+    directory of SQL files
+
+Output:
+    canonical schema snapshot
+    parsed SQL inventory
+    table/column references
+    read/write effects
+    declared relationships
+    observed joins
+    dependency graph
+    JSON semantic snapshot
+
+Commands:
+    inspect object
+    find path
+    validate SQL against current schema
+
+Do NOT implement deployment execution in the first vertical slice.
+
+Reason:
+    First prove the semantic model is accurate and useful.
+    Deployment multiplies consequences of modeling mistakes.
+
+================================================================================
+50. SECOND VERTICAL SLICE
+================================================================================
+
+Read-only agent context experiment.
+
+Give agent tasks with:
+
+Control:
+    repository SQL files + normal tooling
+
+Treatment A:
+    semantic snapshot
+
+Treatment B:
+    targeted Strata retrieval only
+
+Measure:
+    correctness
+    invalid table/column references
+    incorrect joins
+    tokens
+    tool calls
+    wall-clock duration
+    retries
+    cost
+    amount of SQL corpus opened
+    agent confidence vs actual correctness
+    unsupported-analysis events
+
+Hypothesis:
+    targeted semantic retrieval will outperform large snapshot dumping.
+
+================================================================================
+51. THIRD VERTICAL SLICE
+================================================================================
+
+SQL validation and guardrails.
+
+Implement:
+    syntax validation
+    object resolution
+    read/write classification
+    unbounded UPDATE/DELETE policy
+    destructive DDL classification
+    relationship warnings
+    dynamic-SQL analysis-gap reporting
+
+Run against:
+    existing codebase SQL
+    agent-generated SQL
+    intentionally unsafe fixtures
+
+Measure:
+    true positives
+    false positives
+    bypass pressure
+    developer corrections
+    agent repair loops
+
+================================================================================
+52. FOURTH VERTICAL SLICE
+================================================================================
+
+Schema diff, no execution.
+
+Implement:
+    live snapshot
+    desired snapshot
+    structural diff
+    change risk classification
+    precondition suggestions
+
+Test against synthetic schema evolution cases.
+
+No automatic execution yet.
+
+================================================================================
+53. FIFTH VERTICAL SLICE
+================================================================================
+
+Safe deployment execution.
+
+Allow only narrow allowlisted transitions initially:
+    create table under controlled model
+    add nullable column
+    create simple index where policy permits
+    insert managed-minimum reference rows
+
+Everything else:
+    plan/report only
+
+Re-introspect and verify after execution.
+
+================================================================================
+54. SIXTH VERTICAL SLICE
+================================================================================
+
+Reference-data management.
+
+Implement:
+    logical identities
+    managed-minimum sets
+    authoritative sets
+    insert/update diff
+    unknown-row reporting
+    FK identity resolution
+    removal gated behind explicit policy
+
+================================================================================
+55. SEVENTH VERTICAL SLICE
+================================================================================
+
+Explicit data/schema transition plans.
+
+Implement:
+    preconditions
+    postconditions
+    ordered steps
+    checkpoints
+    staged rename/backfill examples
+    resumable batch migration proof
+
+================================================================================
+56. LATER ROADMAP
+================================================================================
+
+Potential later capabilities:
+
+    SQL Server adapter
+    routine call graph
+    deeper PL/pgSQL analysis
+    richer lineage
+    query plan insights
+    source-code embedded SQL adapters
+    ORM integration
+    migration-framework import
+    CI PR comments
+    IDE integration
+    dependency visualization
+    architecture boundary rules
+    production query telemetry integration
+    deprecation tracking
+    PII lineage
+    zero/low-downtime transition patterns
+    replication-aware deployment
+    database fleet/environment comparison
+    policy packs
+    signed deployment plans
+    approval integration
+    ROS metrics ingestion
+
+These are not initial commitments.
+
+================================================================================
+57. REQUIREMENTS FOR CI/CD
+================================================================================
+
+CI mode should be noninteractive.
+
+Possible checks:
+    parse all managed SQL
+    validate desired schema
+    detect dangerous SQL
+    detect undeclared destructive schema delta
+    detect reference-data inconsistency
+    generate proposed deployment plan
+    compare plan hash with approved plan
+    emit machine-readable artifact
+
+Exit codes should distinguish:
+    success
+    warning threshold exceeded
+    policy violation
+    parse failure
+    incomplete analysis
+    environment unavailable
+    drift detected
+    deployment verification failed
+
+================================================================================
+58. DEPLOYMENT APPROVAL MODEL
+================================================================================
+
+High-risk changes should separate:
+    plan creator
+    plan reviewer/approver
+    execution identity
+
+Even if one person can perform all roles in a small team, the artifact should
+preserve the distinction.
+
+Approval attaches to:
+    exact plan hash
+    exact desired-state hash
+    target environment/database identity
+    policy version
+
+Any material plan change invalidates approval.
+
+================================================================================
+59. BACKUP / RECOVERY INTEGRATION
+================================================================================
+
+Strata should not claim to provide safety merely because it can generate reverse
+DDL.
+
+For certain changes, policy may require evidence:
+    recent backup exists
+    point-in-time recovery available
+    restore procedure tested/known
+    snapshot ID captured
+
+Whether Strata creates backups is a separate capability decision.
+
+Initial recommendation:
+    verify/record backup posture rather than becoming a backup product.
+
+================================================================================
+60. ENVIRONMENTS
+================================================================================
+
+Need explicit handling for:
+    local
+    test
+    staging
+    production
+    ephemeral environments
+
+Desired schema should usually be common.
+Some environment-specific differences may be allowed.
+
+Reference data may be:
+    common
+    environment-specific
+    secret-backed
+
+Do not normalize away legitimate environment differences without declaration.
+
+================================================================================
+61. DATABASE IDENTITY
+================================================================================
+
+Before executing, Strata must strongly identify the target.
+
+Potential identity:
+    server/cluster fingerprint
+    database name
+    environment declaration
+    expected owner
+    configured Strata target ID
+
+Protect against:
+    intending staging, connected to production
+
+High-risk execution should display/record target identity prominently.
+
+================================================================================
+62. CONCURRENCY AND LOCKING
+================================================================================
+
+Deployment planning must consider concurrent application activity.
+
+At minimum:
+    lock timeout
+    statement timeout
+    known lock level where determinable
+    large-table warning
+    active-transaction considerations
+
+Later:
+    inspect blockers
+    deployment windows
+    adaptive batching
+
+Never assume DDL is operationally safe merely because it is logically correct.
+
+================================================================================
+63. OBSERVABILITY
+================================================================================
+
+Strata runs should emit structured telemetry.
+
+Potential metrics:
+
+Analysis:
+    files scanned
+    statements parsed
+    parse failures
+    unsupported statements
+    AST cache hits
+    extraction time
+    graph nodes/edges
+    inferred relationships
+    ambiguous relationships
+
+Agent:
+    retrieval calls
+    objects returned
+    context bytes/tokens
+    validation loops
+    rejected SQL
+    corrected SQL
+    agent task success
+
+Deployment:
+    objects compared
+    changes proposed
+    changes by risk class
+    preconditions
+    statements executed
+    row counts
+    lock waits
+    failures
+    verification mismatches
+    duration
+
+Economics:
+    agent model
+    input/output tokens
+    cache tokens
+    agent cost where available
+    Strata context reduction
+    cost difference vs control
+
+ROS should later ingest these metrics.
+
+================================================================================
+64. SDE EXPERIMENT CONNECTION
+================================================================================
+
+Strata is a strong test case for a broader hypothesis:
+
+    Precompute structural knowledge and expose legal/relevant actions rather
+    than paying agents to rediscover structure repeatedly.
+
+Experiments should test:
+    Does Strata reduce context?
+    Does it reduce incorrect joins?
+    Does it reduce hallucinated columns?
+    Does it reduce SQL repair loops?
+    Can a smaller/cheaper model reach equal correctness?
+    Does it improve task completion time?
+    Does semantic retrieval beat raw AST handoff?
+    Does policy prevent dangerous agent actions without excessive false
+    positives?
+
+Important challenge:
+    Do not attribute improvements to Strata if treatment agents simply receive
+    better curated task instructions.
+
+Experiments need equivalent task information and preregistered metrics.
+
+================================================================================
+65. WHY "HAND THE AGENT AN AST" IS NOT QUITE THE FINAL DESIGN
+================================================================================
+
+An AST is useful but too syntactic.
+
+The agent usually needs:
+    table purpose
+    keys
+    relationships
+    common paths
+    reads/writes
+    dependencies
+    reference identities
+    policy constraints
+    provenance
+
+Therefore likely flow:
+
+    Native parser AST
+        ->
+    semantic extraction
+        ->
+    graph/index
+        ->
+    targeted agent retrieval
+
+AST remains available for deep inspection.
+
+Do not dump a giant native PostgreSQL AST into the prompt unless the task needs
+it.
+
+================================================================================
+66. RELATIONSHIP INFERENCE PITFALLS
+================================================================================
+
+Repeated joins can be wrong.
+
+Legacy code can consistently encode a bug.
+
+A repeated join is evidence, not truth.
+
+Confidence should consider:
+    declared constraints
+    uniqueness
+    nullability
+    type compatibility
+    repeated usage
+    source diversity
+    conflicting joins
+
+Example:
+    100 copies of the same generated query are not 100 independent pieces of
+    evidence.
+
+Evidence should be de-duplicated by origin/template where possible.
+
+================================================================================
+67. SCHEMA COMMENTS / DOCUMENTATION
+================================================================================
+
+Database comments can be valuable semantic context.
+
+Capture them where available.
+
+But comments are untrusted/stale evidence unless corroborated.
+
+Do not treat comments as executable rules.
+
+================================================================================
+68. BUSINESS RULES
+================================================================================
+
+Some business rules are encoded in:
+    checks
+    views
+    procedures
+    repeated filters
+    application SQL
+    reference data
+
+Strata may surface candidate rules:
+
+    "Completed orders are filtered by status='COMPLETE' in 93% of revenue
+    queries."
+
+But that must be labeled observed behavior, not promoted silently to an
+authoritative business rule.
+
+Manual promotion/approval could later create declared semantic rules.
+
+================================================================================
+69. ARCHITECTURE BOUNDARIES
+================================================================================
+
+Potential later integration with system/domain boundaries.
+
+Examples:
+    Billing code may read Customer but not update it.
+    Reporting may read multiple domains but never write.
+    Order module writes Order aggregate tables only.
+
+Strata can validate SQL effects against ownership boundaries.
+
+Boundary definitions should come from an external architecture model or
+explicit Strata configuration, not be guessed from schema naming alone.
+
+================================================================================
+70. STORED DATABASE BEHAVIOR VS APPLICATION BEHAVIOR
+================================================================================
+
+Strata should not assume the database contains all business behavior.
+
+It should distinguish:
+    database-known semantics
+    repository-known semantics
+    unknown external behavior
+
+This prevents false claims such as:
+    "dropping this column is safe"
+when a separate service or BI tool is not indexed.
+
+Impact output should always identify analysis scope.
+
+================================================================================
+71. EXTERNAL CONSUMERS
+================================================================================
+
+Potential unseen consumers:
+    BI tools
+    ETL
+    ad hoc analyst queries
+    third-party integrations
+    direct database clients
+    reporting jobs
+
+This is a major risk for destructive changes.
+
+Potential integrations later:
+    query logs
+    pg_stat_statements
+    data catalog
+    BI metadata
+
+Initial Strata should state:
+    "No dependency found in analyzed sources"
+rather than:
+    "No dependency exists."
+
+================================================================================
+72. POLICY EVOLUTION
+================================================================================
+
+Policy must be versioned and testable.
+
+A policy upgrade can cause new findings without code/schema changes.
+
+CI should report:
+    new violations caused by policy version change
+
+Avoid quietly turning warnings into blockers without explicit versioning.
+
+================================================================================
+73. RULE TESTING
+================================================================================
+
+Every guardrail rule should have:
+    positive fixtures
+    negative fixtures
+    dialect-version fixtures
+    edge cases
+    expected severity/action
+
+High-risk block rules need especially low false-positive ambiguity.
+
+================================================================================
+74. PARSER TESTING
+================================================================================
+
+Maintain corpus covering:
+    ordinary CRUD
+    joins
+    subqueries
+    CTEs
+    recursive CTEs
+    windows
+    aggregates
+    JSON
+    arrays
+    lateral joins
+    VALUES
+    upserts
+    returning
+    DDL
+    extensions
+    functions
+    PL/pgSQL
+    dynamic SQL
+    temp tables
+    partitions
+    RLS
+    triggers
+
+On parser upgrade:
+    re-run corpus
+    compare semantic extraction output
+    flag changed AST/semantics
+
+================================================================================
+75. GOLDEN SEMANTIC SNAPSHOTS
+================================================================================
+
+Create curated databases with known expected semantic graphs.
+
+Tests compare:
+    introspection
+    extraction
+    relationships
+    dependencies
+    diff
+    policy findings
+
+Avoid testing only parser syntax.
+The product risk is semantic misinterpretation.
+
+================================================================================
+76. MUTATION / ADVERSARIAL TESTING
+================================================================================
+
+Generate or hand-author problematic SQL:
+
+    missing WHERE
+    misleading alias
+    same column names across tables
+    accidental Cartesian join
+    dynamic SQL
+    quoted identifiers
+    case-sensitive names
+    search_path ambiguity
+    temporary shadowing
+    schema shadowing
+    overloaded functions
+    implicit casts
+    recursive routines
+    trigger cascades
+    circular dependencies
+
+Test whether Strata:
+    identifies uncertainty
+    refuses unsafe claims
+    remains deterministic
+
+================================================================================
+77. DEPLOYMENT FAILURE TESTING
+================================================================================
+
+Simulate:
+    connection drop after DDL
+    lock timeout
+    statement timeout
+    permission failure mid-plan
+    precondition becoming stale
+    concurrent schema change
+    verification failure
+    partial nontransactional operation
+
+System must recover by re-inspection rather than blind retry.
+
+================================================================================
+78. PROPERTY / INVARIANT TESTS
+================================================================================
+
+Potential invariants:
+
+    Parse failure cannot produce "analysis complete."
+    Unknown effect cannot be classified as safe auto.
+    Destructive action cannot execute without required authorization.
+    Plan hash changes invalidate approval.
+    Verified deployment means all required postconditions passed.
+    Unmanaged object absence from desired state cannot imply deletion.
+    Inaccessible metadata cannot be represented as object absence.
+    Agent cannot elevate its own capability profile.
+
+================================================================================
+79. NON-GOALS FOR INITIAL RELEASES
+================================================================================
+
+NG-001. Replacing PostgreSQL parser.
+
+NG-002. Creating a universal SQL language.
+
+NG-003. Creating an ORM.
+
+NG-004. Creating a visual query builder.
+
+NG-005. Automatically optimizing every query.
+
+NG-006. Automatically rewriting complex expert SQL.
+
+NG-007. Fully inferring business meaning from names.
+
+NG-008. Automatically deleting apparently unused database objects.
+
+NG-009. Zero-downtime deployment for every schema change.
+
+NG-010. Replacing backup/recovery tooling.
+
+NG-011. Being a general secrets manager.
+
+NG-012. Managing every database security/role concern initially.
+
+NG-013. Supporting every SQL dialect at launch.
+
+NG-014. Automatically executing AI-inferred migrations.
+
+NG-015. Replacing domain/application state machines.
+
+================================================================================
+80. THINGS STRATA SHOULD NEVER DO BY DEFAULT
+================================================================================
+
+NEVER:
+    run arbitrary AI-produced SQL with superuser credentials
+    drop unknown/unmanaged objects to "make state match"
+    execute CASCADE destructive DDL silently
+    infer a rename and execute it without explicit intent
+    treat parse success as safety
+    treat no discovered dependency as proof of no dependency
+    treat inaccessible metadata as absent
+    run EXPLAIN ANALYZE assuming it is non-executing
+    delete unexpected reference data by default
+    log credentials or secret values
+    send production row data to an agent by default
+    ignore partial deployment state
+    auto-retry unknown-state DDL without re-inspection
+    pretend rollback is safe when it is not
+    flatten dialect-specific features out of the model
+    make parser-native AST types the core public domain model
+    require complex SQL to be rewritten in a weaker DSL
+    let policy exceptions become invisible permanent bypasses
+
+================================================================================
+81. THINGS STRATA SHOULD RESIST
+================================================================================
+
+Feature creep toward:
+    ORM
+    BI platform
+    generic data catalog
+    full DBA console
+    secrets manager
+    generic workflow engine
+    universal migration framework
+    full observability platform
+
+Some integrations may be valuable, but the core should remain:
+
+    understand relational database state
+    expose semantics
+    validate SQL consequences
+    control evolution
+
+================================================================================
+82. CRITICAL ASSUMPTIONS TO TEST
+================================================================================
+
+A-001.
+Assumption:
+    Semantic context materially reduces agent database archaeology.
+
+Test:
+    controlled tasks raw files vs Strata retrieval.
+
+A-002.
+Assumption:
+    Strata can extract relationships accurately enough to help.
+
+Risk:
+    false relationships may be worse than missing relationships.
+
+A-003.
+Assumption:
+    Live schema + SQL corpus is enough for meaningful impact analysis.
+
+Risk:
+    hidden external consumers.
+
+A-004.
+Assumption:
+    Desired-state convergence improves deployment reliability.
+
+Risk:
+    drift repair can accidentally destroy intentional differences.
+
+A-005.
+Assumption:
+    Guardrails improve safety without making expert SQL frustrating.
+
+Risk:
+    excessive false positives lead users to bypass Strata.
+
+A-006.
+Assumption:
+    A canonical model can remain compact without losing required
+    dialect-specific semantics.
+
+A-007.
+Assumption:
+    PostgreSQL parser AST plus catalog introspection can resolve enough object
+    semantics without reimplementing PostgreSQL's binder/planner.
+
+This is especially important.
+
+A parser AST knows syntax.
+PostgreSQL name/type resolution is more complex and can depend on:
+    search_path
+    overloaded functions
+    operators
+    casts
+    schemas
+    temporary objects
+    session settings
+
+Strata may eventually need the live database for authoritative resolution.
+
+Do not assume AST analysis alone can perfectly bind every query.
+
+A-008.
+Assumption:
+    F#/.NET is operationally straightforward with native parser dependencies.
+
+Need packaging tests:
+    Linux x64/arm64
+    Windows
+    macOS if developer use matters
+    CI containers
+    OCI distribution
+
+================================================================================
+83. MAJOR ARCHITECTURAL CHALLENGE: PARSING VS BINDING
+================================================================================
+
+This is one of the most important technical risks.
+
+Parsing:
+
+    SELECT c.name FROM customer c
+
+can produce an AST.
+
+Binding/resolution determines:
+    which customer relation
+    which name column
+    which function overload
+    which operator
+    which cast
+    which temporary/schema object
+    which search_path result
+
+PostgreSQL's server performs parse analysis beyond raw grammar parsing.
+
+Therefore Strata must distinguish:
+
+    Syntax AST
+    Resolved semantic model
+
+Resolution sources:
+    catalog snapshot
+    controlled resolver
+    live server validation
+    server EXPLAIN/PREPARE where safe
+
+Do not claim complete semantic resolution until this is proven.
+
+This should be an early technical spike.
+
+================================================================================
+84. MAJOR ARCHITECTURAL CHALLENGE: STATIC VS RUNTIME SQL
+================================================================================
+
+Prepared statements, generated queries, ORMs, PL/pgSQL dynamic SQL, and
+application conditional composition can create SQL not present as static files.
+
+Possible strategy:
+    Phase 1 static corpus
+    Later optional runtime query fingerprint ingestion
+
+Runtime fingerprints can show:
+    actual query shapes
+    usage frequency
+    unseen consumers
+
+Privacy/security implications must be considered.
+
+================================================================================
+85. MAJOR ARCHITECTURAL CHALLENGE: SOURCE OF DESIRED STATE
+================================================================================
+
+If the desired-state source is ambiguous, Strata cannot safely deploy.
+
+Need explicit precedence.
+
+Possible model:
+
+    authoritative schema artifacts
+        +
+    explicit transition metadata
+        +
+    reference-data declarations
+        +
+    environment overlay
+
+Migration history may be evidence/history but not necessarily desired-state
+authority.
+
+Live production schema is actual state, not automatically desired state.
+
+This needs a formal decision before deployment work.
+
+================================================================================
+86. MAJOR ARCHITECTURAL CHALLENGE: HUMAN INTENT
+================================================================================
+
+Some diffs are impossible to infer reliably.
+
+Examples:
+    rename vs delete/add
+    split vs unrelated new table
+    preserving old reference row vs deleting it
+    changing datatype semantics
+    replacing a calculated field
+
+Strata must provide a concise way for the human/agent to declare intent without
+requiring a full new language.
+
+Potential direction:
+    small transition metadata records attached to SQL/desired schema.
+
+================================================================================
+87. MAJOR ARCHITECTURAL CHALLENGE: DATA SCALE
+================================================================================
+
+A deployment algorithm safe for 10,000 rows may be unsafe for 2 billion rows.
+
+Risk classification should eventually consider:
+    table size
+    index size
+    row estimate
+    write rate
+    operation rewrite behavior
+    replication
+
+Initial versions should warn when scale information is unavailable.
+
+================================================================================
+88. MAJOR ARCHITECTURAL CHALLENGE: PRODUCTION SAFETY
+================================================================================
+
+Static correctness != operational safety.
+
+Need:
+    target identity confirmation
+    timeouts
+    permissions
+    locks
+    concurrency awareness
+    backup posture
+    verification
+    unknown-state recovery
+
+Execution should arrive late in the roadmap.
+
+================================================================================
+89. QUESTION: SHOULD STRATA GENERATE SQL?
+================================================================================
+
+Answer:
+    Sometimes.
+
+Good generation targets:
+    deterministic known schema transitions
+    reference-data inserts/updates
+    safe boilerplate
+    verified deployment steps
+
+Do not require Strata to generate:
+    every analytical query
+    every application query
+    every complex data migration
+
+Human/agent direct SQL remains valid input.
+
+================================================================================
+90. QUESTION: SHOULD STRATA STORE THE ORIGINAL SQL?
+================================================================================
+
+Likely yes, or at least source reference + content hash with retrievable source.
+
+Reasons:
+    debugging
+    provenance
+    re-analysis
+    explaining findings
+
+But:
+    avoid duplicating secret-bearing SQL/log data without policy.
+
+================================================================================
+91. QUESTION: SHOULD STRATA MODIFY USER SQL?
+================================================================================
+
+Default:
+    no automatic semantic rewriting.
+
+Possible safe features:
+    formatting
+    suggested correction
+    parameterization advice
+    explicitly accepted rewrite
+
+Automatic rewriting can alter query plans or semantics.
+
+================================================================================
+92. QUESTION: SHOULD STRATA AUTO-CREATE FOREIGN KEYS FROM OBSERVED JOINS?
+================================================================================
+
+No.
+
+Observed relationships are valuable agent/context evidence.
+They are not automatically schema constraints.
+
+Adding FK:
+    changes write behavior
+    may fail existing data
+    may add locking/performance consequences
+
+Must be explicit.
+
+================================================================================
+93. QUESTION: SHOULD STRATA AUTO-DROP UNUSED INDEXES?
+================================================================================
+
+Not initially.
+
+"No usage observed" may be incomplete.
+Production workload telemetry windows matter.
+Unique indexes may enforce constraints.
+Rare queries may still be important.
+
+At most:
+    candidate recommendation with evidence.
+
+================================================================================
+94. QUESTION: SHOULD STRATA BLOCK SELECT *?
+================================================================================
+
+Probably configurable warning, not universal block.
+
+There are legitimate cases:
+    ad hoc analysis
+    controlled internal views
+    existence probes in some contexts
+
+Application production code may use a stricter profile.
+
+This illustrates why capability/profile context matters.
+
+================================================================================
+95. QUESTION: SHOULD UNKNOWN JOINS BE BLOCKED?
+================================================================================
+
+No, not globally.
+
+Correct expert SQL may join on derived/non-FK relationships.
+
+Better:
+    known declared relationship -> strong evidence
+    known observed relationship -> supportive
+    unknown relationship -> warning depending profile
+    clearly incompatible types/cardinality -> stronger finding
+
+================================================================================
+96. QUESTION: SHOULD STRATA ALLOW RAW SQL IN DEPLOYMENTS?
+================================================================================
+
+Yes, under explicit transition-plan control.
+
+There will always be data transformations too expressive or special-purpose for
+a schema diff engine.
+
+Raw migration SQL should have:
+    declared purpose
+    capability
+    preconditions
+    postconditions
+    transaction behavior
+    policy analysis
+    approval if required
+
+================================================================================
+97. QUESTION: SHOULD REFERENCE DATA BE WRITTEN AS SQL INSERTS?
+================================================================================
+
+Prefer declarative rows/identity where practical because comparison and
+idempotence become much easier.
+
+But allow explicit migration SQL for complex data transformation.
+
+Reference-data authoring format should remain simple and diffable.
+
+================================================================================
+98. POTENTIAL CONFIGURATION AREAS
+================================================================================
+
+    target database(s)
+    managed schemas
+    ignored schemas
+    parser/dialect target
+    desired-state source
+    reference-data files
+    policy profile
+    environment
+    timeouts
+    analysis sources
+    allowed extensions
+    deployment capability
+    output format
+
+Keep configuration small initially.
+
+================================================================================
+99. SOURCE / EVIDENCE MODEL
+================================================================================
+
+Every graph edge/fact should ideally carry:
+
+    source_kind
+    source_id
+    location
+    observed_at/build_id
+    confidence
+    extractor_version
+
+This supports:
+    explanation
+    debugging
+    stale-evidence removal
+    confidence recalculation
+
+================================================================================
+100. HISTORY
+================================================================================
+
+Potential long-term value in snapshots:
+
+    schema evolution
+    relationship evolution
+    drift history
+    reference-data evolution
+    policy findings over time
+
+But do not make historical storage a Phase 1 dependency.
+
+Git can provide history for generated snapshot artifacts initially.
+
+================================================================================
+101. SERIALIZATION / DIFFABILITY
+================================================================================
+
+Generated snapshots should be deterministic.
+
+Requirements:
+    stable ordering
+    no volatile timestamps inside canonical content hash
+    separate metadata from canonical semantic content
+    normalized names carefully
+    preserve quoted/case-sensitive identities
+
+Goal:
+    meaningful Git diffs
+    reproducible hashes
+
+================================================================================
+102. IDENTIFIER NORMALIZATION PITFALL
+================================================================================
+
+PostgreSQL folds unquoted identifiers but preserves quoted identifiers.
+
+Do not lowercase everything indiscriminately.
+
+Canonical identity must preserve:
+    actual name
+    quoted semantics
+    schema qualification
+
+This needs explicit tests.
+
+================================================================================
+103. SEARCH_PATH PITFALL
+================================================================================
+
+Unqualified object names can resolve differently depending on search_path.
+
+Static corpus analysis must know or declare resolution context.
+
+Potential states:
+    resolved
+    ambiguously resolvable
+    unresolved due missing context
+
+Never guess silently.
+
+================================================================================
+104. TEMP TABLE PITFALL
+================================================================================
+
+Temporary objects may shadow persistent objects and exist only per session.
+
+Analysis needs scope/lifetime semantics.
+
+Deployment should generally not treat temp objects as desired persistent state.
+
+================================================================================
+105. FUNCTION / OPERATOR OVERLOAD PITFALL
+================================================================================
+
+PostgreSQL overload resolution can depend on types and implicit casts.
+
+AST-only matching of function name is insufficient for authoritative resolution.
+
+Preserve unresolved overloads and use server/catalog resolution where needed.
+
+================================================================================
+106. EXTENSION PITFALL
+================================================================================
+
+Extensions introduce:
+    types
+    functions
+    operators
+    indexes
+    background behavior
+
+Strata should identify extension-owned objects and avoid managing them as
+ordinary schema objects unless explicitly supported.
+
+Do not generate destructive diffs against extension-managed internals.
+
+================================================================================
+107. GENERATED / SYSTEM OBJECTS
+================================================================================
+
+Need classification:
+    user-managed
+    Strata-managed
+    extension-managed
+    database/system-managed
+    tool-managed
+    unknown
+
+Unknown should not default to Strata-managed.
+
+================================================================================
+108. MIGRATION FRAMEWORK INTEROPERABILITY
+================================================================================
+
+Existing projects may use:
+    Flyway
+    Liquibase
+    EF migrations
+    DbUp
+    custom scripts
+    other tools
+
+Strata should initially coexist.
+
+Potential modes:
+    analyze existing migrations
+    validate generated migration SQL
+    compare post-migration desired/actual state
+
+Do not require immediate migration-framework replacement.
+
+Long-term Strata deployment may replace portions where it proves better.
+
+================================================================================
+109. ORM INTEROPERABILITY
+================================================================================
+
+ORM metadata can provide useful evidence but should not become core authority
+unless explicitly chosen.
+
+ORM-generated SQL may differ at runtime.
+
+Potential future adapters:
+    ingest mapped entities/relationships
+    capture generated SQL
+    compare ORM model vs live schema
+
+Not Phase 1.
+
+================================================================================
+110. REPOSITORY DISCOVERY
+================================================================================
+
+Need deterministic rules for which SQL files are analyzed.
+
+Avoid scanning:
+    vendored dependencies
+    build outputs
+    test snapshots unless requested
+    generated code unless useful
+
+Support include/exclude patterns.
+
+Record analysis scope.
+
+================================================================================
+111. FILE-TO-OBJECT MAPPING
+================================================================================
+
+When a SQL file defines a view/function/table:
+    map source file to object.
+
+When a file contains queries:
+    map statement to source location.
+
+This enables:
+    "who reads this?"
+    -> exact files/lines/objects
+
+================================================================================
+112. IDE / DEVELOPER EXPERIENCE
+================================================================================
+
+Long-term possibilities:
+    hover table/column semantics
+    show relationship path
+    validate query inline
+    show policy warning before commit
+    show dependency impact for schema edit
+
+Do not prioritize UI before core correctness.
+
+================================================================================
+113. ERROR MESSAGE QUALITY
+================================================================================
+
+Findings should be actionable.
+
+Bad:
+    SQL-WRITE-001 violation.
+
+Better:
+    UPDATE of public.orders has no predicate that bounds affected rows.
+    This profile blocks unbounded updates.
+    Add a key/bounded predicate or use an approved bulk-operation transition.
+
+For agents:
+    return structured correction hints.
+
+================================================================================
+114. PERFORMANCE REQUIREMENTS FOR STRATA ITSELF
+================================================================================
+
+Analysis should be cheap enough to run frequently.
+
+Targets must be established empirically.
+
+Need metrics:
+    parse throughput
+    extraction throughput
+    snapshot time
+    incremental time
+    memory use
+    graph query latency
+
+Do not prematurely optimize before corpus benchmarks.
+
+================================================================================
+115. DEPENDENCY FOOTPRINT
+================================================================================
+
+Preference:
+    minimal external dependencies.
+
+But:
+    do not reimplement complex parsers to avoid a justified dependency.
+
+Native PostgreSQL parser wrapper is a justified dependency if tested and pinned.
+
+Parser should sit behind an adapter so it can be replaced.
+
+================================================================================
+116. DISTRIBUTION
+================================================================================
+
+Potential:
+    .NET tool
+    standalone executable
+    OCI-packaged CLI for CI
+    library package for integration
+
+If native parser binaries complicate distribution, OCI may provide a clean,
+repeatable deployment path.
+
+Need platform matrix before choosing final packaging.
+
+================================================================================
+117. LICENSE / SUPPLY CHAIN
+================================================================================
+
+Record for every dependency:
+    license
+    source repository
+    version
+    native binaries
+    provenance
+    checksum/signature where practical
+    update policy
+
+Native dependencies deserve additional supply-chain review.
+
+================================================================================
+118. FAILURE TO PARSE
+================================================================================
+
+Parse failure should not stop the entire repository analysis unless policy says
+so.
+
+Record:
+    file
+    statement
+    dialect
+    parser version
+    error location
+    error text
+
+Overall snapshot:
+    partial
+
+High-risk operations depending on unparsed sources:
+    block or require explicit override.
+
+================================================================================
+119. UNSUPPORTED SEMANTICS
+================================================================================
+
+Parser may parse syntax Strata does not understand semantically.
+
+Represent:
+    parsed = true
+    semantic_analysis = partial
+    unsupported_nodes = [...]
+
+This distinction is critical.
+
+================================================================================
+120. CONFIDENCE SHOULD NOT BECOME FAKE PRECISION
+================================================================================
+
+Avoid arbitrary decimal confidence such as 0.934 unless calibrated.
+
+Prefer initially:
+    Certain
+    High
+    Medium
+    Low
+    Unknown
+
+If numeric confidence is later introduced:
+    validate/calibrate it empirically.
+
+================================================================================
+121. CHANGE IMPACT ANALYSIS
+================================================================================
+
+Given proposed change, return:
+
+    directly affected object
+    dependents
+    readers
+    writers
+    routines
+    views
+    triggers
+    inferred external risk
+    reference-data effects
+    policies triggered
+    analysis gaps
+
+This may be one of Strata's highest-value developer features.
+
+================================================================================
+122. DEPRECATION WORKFLOW
+================================================================================
+
+Potential future state:
+
+    active
+    deprecated
+    no-new-usage
+    read-only compatibility
+    removal candidate
+    approved for removal
+    removed
+
+Strata could help prove declining usage before destructive cleanup.
+
+================================================================================
+123. QUERY FINGERPRINTS
+================================================================================
+
+Parser/library normalization/fingerprinting can help:
+    de-duplicate query shapes
+    count independent evidence
+    runtime query telemetry
+    compare query usage without storing literals
+
+Be careful:
+    normalized queries can still reveal schema/field semantics.
+
+================================================================================
+124. REFERENCE DATA + DOMAIN STATE
+================================================================================
+
+Reference data may describe legitimate domain states and transitions.
+
+Example:
+    OrderStatus
+    WorkflowTransition
+
+Potential integration:
+    declared state-system definitions generate/validate reference rows.
+
+But:
+    do not assume every reference table is a domain state machine.
+
+Keep this an optional higher-level integration.
+
+================================================================================
+125. AUDITABILITY
+================================================================================
+
+Every deployment should produce an immutable-ish run artifact containing:
+    who/what initiated
+    target
+    exact plan
+    exact SQL
+    policy results
+    approvals
+    execution result
+    verification
+
+This is useful for:
+    debugging
+    compliance
+    ROS
+    R&D evidence
+    incident review
+
+================================================================================
+126. AGENT AUTHORITY MODEL
+================================================================================
+
+Potential states:
+
+    AgentCanReadSemanticModel
+    AgentCanValidateSql
+    AgentCanProposePlan
+    AgentCanExecuteSafeRead
+    AgentCanRequestDeployment
+    AgentCannotSelfApproveDestructiveChange
+
+Authority should be externally assigned.
+Agent cannot alter its own capability profile.
+
+================================================================================
+127. HUMAN AUTHORITY MODEL
+================================================================================
+
+Humans also need guardrails.
+
+"Human wrote it" is not a safety exemption.
+
+Policy can allow elevated overrides, but they should be explicit and logged.
+
+================================================================================
+128. POLICY AS CODE
+================================================================================
+
+Potential long-term:
+    typed policy definitions in Strata core
+    configuration for thresholds
+    project policy packs
+
+Do not make policy a general-purpose scripting engine initially.
+
+Arbitrary policy scripting can recreate hidden behavior.
+
+================================================================================
+129. EXPLICIT ANALYSIS SCOPE
+================================================================================
+
+Every answer/report should know:
+
+    live DB inspected: yes/no
+    repository SQL indexed: paths
+    runtime queries indexed: yes/no
+    external BI indexed: yes/no
+    ORM metadata indexed: yes/no
+
+Impact claims must be bounded by this scope.
+
+================================================================================
+130. UX PRINCIPLE: SHOW THE NEXT SAFE MOVE
+================================================================================
+
+When blocking something, Strata should explain what would make it permissible.
+
+Examples:
+
+    Add NOT NULL blocked because 17 NULL rows exist.
+    Next move:
+        backfill values, verify zero NULLs, then re-plan.
+
+    Drop column blocked because 8 readers found.
+    Next move:
+        migrate readers or explicitly approve staged removal.
+
+This keeps guardrails useful rather than merely obstructive.
+
+================================================================================
+131. OPEN QUESTIONS TO PRESERVE
+================================================================================
+
+Q-001. Exact PostgreSQL .NET parser wrapper after spike?
+Q-002. Minimum PostgreSQL major versions?
+Q-003. Desired schema authoring source?
+Q-004. How are stable managed-object IDs represented?
+Q-005. How much semantic binding can be done offline?
+Q-006. When should Strata use a live server to resolve/validate a query?
+Q-007. What is the first policy profile?
+Q-008. What transitions are safe enough for initial automatic execution?
+Q-009. What reference-data format is simplest?
+Q-010. Where are semantic snapshots stored?
+Q-011. Does Strata need persistent embedded storage in Phase 1?
+Q-012. How should application/domain ownership boundaries be imported?
+Q-013. How do we identify external database consumers?
+Q-014. What approval mechanism integrates best with GitHub/ROS?
+Q-015. What deployment operations require backup evidence?
+Q-016. How does Strata represent expand-contract coordination with app versions?
+Q-017. What runtime query telemetry is acceptable from privacy/security view?
+Q-018. Which metrics prove agent leverage?
+Q-019. How should multi-environment allowed drift be declared?
+Q-020. Should generated semantic snapshots be committed to Git?
+Q-021. When should SQL policy warn versus block unknown relationships?
+Q-022. How do we calibrate relationship confidence?
+Q-023. How do we handle database objects not representable by current model?
+Q-024. How should policy exceptions expire?
+Q-025. Is reference data deployed in same plan as schema or separate plan?
+Q-026. What should Strata do when live DB version differs from parser target?
+Q-027. Can PostgreSQL PREPARE/EXPLAIN safely improve name/type resolution enough
+       to avoid implementing significant binder logic?
+Q-028. Should Strata expose parser AST directly to advanced plugins?
+Q-029. How will native parser dependencies be updated/security-reviewed?
+Q-030. What is the minimal deployment feature that demonstrates value without
+       unacceptable risk?
+
+================================================================================
+132. RECOMMENDED PREREGISTERED TECHNICAL SPIKES
+================================================================================
+
+Spike A: PostgreSQL parser viability
+
+Tasks:
+    integrate candidate .NET libpg_query wrapper
+    parse representative corpus
+    parse PL/pgSQL
+    inspect AST ergonomics from F#
+    test Windows/Linux CI
+    test PostgreSQL versions
+
+Exit:
+    parser chosen or rejected with evidence
+
+Spike B: Binding/resolution
+
+Tasks:
+    resolve aliases/tables/columns offline against catalog snapshot
+    test search_path
+    overloaded functions
+    casts
+    quoted identifiers
+    temp-object edge cases
+    compare to live server behavior
+
+Exit:
+    document what can be resolved deterministically offline and what needs live
+    PostgreSQL assistance
+
+Spike C: Semantic graph usefulness
+
+Tasks:
+    extract FK and joins
+    build path queries
+    compare results to developer knowledge
+
+Exit:
+    accuracy baseline
+
+Spike D: Agent leverage
+
+Tasks:
+    controlled tasks with raw SQL vs semantic retrieval
+
+Exit:
+    token/cost/correctness evidence
+
+Spike E: Diff safety
+
+Tasks:
+    synthetic schema evolution matrix
+
+Exit:
+    categorized transition set, no execution
+
+================================================================================
+133. FORMAL REQUIREMENTS CONVERSION PLAN FOR ROS
+================================================================================
+
+When ROS is ready, convert this notebook into:
+
+    Product requirements
+    Architecture decision records
+    Business/engineering rules
+    Acceptance criteria
+    Nonfunctional requirements
+    Risks
+    Experiments
+    Workstreams
+    Milestones
+    Open questions
+    Explicit non-goals
+
+Suggested requirement groups:
+
+    STRATA-PARSE
+    STRATA-INTROSPECT
+    STRATA-MODEL
+    STRATA-GRAPH
+    STRATA-AGENT
+    STRATA-POLICY
+    STRATA-DIFF
+    STRATA-DEPLOY
+    STRATA-REFDATA
+    STRATA-VERIFY
+    STRATA-SECURITY
+    STRATA-OBSERVE
+    STRATA-DIALECT
+    STRATA-CI
+
+Do not convert every idea here into a MUST.
+Some items are hypotheses or later possibilities.
+
+================================================================================
+134. CHALLENGE PASS #1: WHAT COULD MAKE THE CORE IDEA WRONG?
+================================================================================
+
+Challenge:
+    Maybe agents can already read SQL cheaply enough that Strata is unnecessary.
+
+Response:
+    Must test. Do not assume token reduction equals business value.
+    If agent correctness/cost does not improve materially, agent context should
+    not be used as the sole justification for Strata.
+
+However:
+    deployment safety, impact analysis, drift, and reference-data management may
+    still independently justify the semantic model.
+
+Challenge:
+    Maybe existing schema diff/migration tools already solve deployment.
+
+Response:
+    Many tools solve pieces. Strata must earn differentiation through semantic
+    impact, policy, reference data, agent context, provenance, and integration.
+    Avoid rebuilding mature generic migration capabilities unless required.
+
+Challenge:
+    Maybe relationship inference creates dangerous false confidence.
+
+Response:
+    Treat inferred relations as evidence with provenance, never truth.
+    Prefer missing inference over authoritative false claims.
+
+Challenge:
+    Maybe a universal canonical model becomes an endless taxonomy project.
+
+Response:
+    Keep model deliberately narrow.
+    Preserve native AST/dialect extension.
+    Add concepts only when a user-facing capability requires them.
+
+================================================================================
+135. CHALLENGE PASS #2: WHAT COULD MAKE DEPLOYMENT UNSAFE?
+================================================================================
+
+1. Incomplete permissions make objects invisible.
+2. External consumers are not indexed.
+3. Rename inferred incorrectly.
+4. Concurrent deployment changes the baseline after planning.
+5. Database changes between preflight and execution.
+6. Lock impact underestimated.
+7. Data scale turns a logical safe change operationally dangerous.
+8. Nontransactional operation partially succeeds.
+9. Network failure produces unknown state.
+10. Reference data is misclassified.
+11. Search path or environment points to wrong object.
+12. Wrong database/environment targeted.
+13. Extension-managed object treated as ours.
+14. Generated/system object treated as drift.
+15. Destructive "cleanup" removes a rare but valid dependency.
+
+Required mitigations:
+    explicit analysis scope
+    target identity
+    plan hashes
+    revalidation close to execution
+    locks/timeouts
+    managed-object classification
+    high-risk approvals
+    re-introspection after unknown state
+    no automatic inferred rename
+    no automatic destructive unknown cleanup
+
+================================================================================
+136. CHALLENGE PASS #3: WHAT COULD MAKE GUARDRAILS FAIL SOCIALLY?
+================================================================================
+
+If rules are:
+    noisy
+    opaque
+    doctrinaire
+    slow
+    impossible to override legitimately
+
+developers will route around Strata.
+
+Therefore:
+    findings must be explained
+    severity must match consequence
+    expert escape hatches must exist
+    exceptions must be narrow and auditable
+    policy must distinguish app SQL, analytics SQL, migration SQL, admin SQL
+    false positives must be measured
+
+A guardrail system that gets bypassed is less safe than a narrower system users
+trust.
+
+================================================================================
+137. CHALLENGE PASS #4: WHAT COULD MAKE THE AGENT INTERFACE WORSE?
+================================================================================
+
+A giant semantic snapshot can be another giant prompt.
+
+A raw AST can be less understandable than SQL.
+
+An over-normalized graph can remove context an expert query needs.
+
+Therefore:
+    targeted retrieval first
+    raw SQL remains retrievable
+    native AST remains retrievable
+    semantic answer includes evidence
+    agent can escalate context when needed
+
+Measure context-surface expansion rather than assuming smaller is always better.
+
+================================================================================
+138. CHALLENGE PASS #5: WHAT SHOULD BE DELAYED?
+================================================================================
+
+Delay until the semantic model proves itself:
+
+    automatic destructive deployment
+    universal dialect model
+    IDE UI
+    sophisticated visualization
+    AI migration autonomy
+    automatic optimization
+    full query lineage
+    runtime telemetry ingestion
+    role/security management
+    zero-downtime orchestration
+    broad migration-framework replacement
+
+These are tempting but would obscure whether the core works.
+
+================================================================================
+139. REFINED PRODUCT CENTER
+================================================================================
+
+After challenging the design, the most defensible core is:
+
+    1. Accurate PostgreSQL parsing through a real parser.
+    2. Accurate live-schema introspection.
+    3. Compact semantic representation with provenance.
+    4. Dependency/relationship/effect graph.
+    5. Targeted retrieval for humans and agents.
+    6. Consequence-based SQL policy.
+    7. Safe schema/reference-data diffing.
+    8. Explicit distinction between automatic convergence and intentional
+       migration transitions.
+    9. Deterministic verification.
+    10. Measured evidence of value.
+
+Everything else should build outward from these.
+
+================================================================================
+140. REFINED "WHAT NOT TO BUILD"
+================================================================================
+
+Do not build:
+    another parser
+    another SQL language
+    another ORM
+    a magic AI DBA
+    a tool that guesses destructive intent
+    a schema diff that assumes absence means delete
+    a universal abstraction that erases dialect strengths
+    a migration engine before the semantic model is trustworthy
+    a policy engine that confuses style with safety
+    an agent context mechanism that simply replaces giant SQL files with a
+    giant JSON file
+
+================================================================================
+141. REFINED DESIGN SLOGAN
+================================================================================
+
+Possible internal design statement:
+
+    Preserve SQL's expressive power.
+    Precompute database structure.
+    Make consequences explicit.
+    Constrain dangerous effects.
+    Evolve state deliberately.
+    Verify what actually happened.
+
+Alternative:
+
+    Humans and agents express intent.
+    SQL remains available when it is the right language.
+    Strata supplies structure, evidence, policy, and safe transitions.
+
+================================================================================
+142. INITIAL DECISIONS TO CARRY INTO REQUIREMENTS
+================================================================================
+
+DECIDED / STRONGLY PREFERRED:
+
+D-001. Name: Strata.
+
+D-002. PostgreSQL first.
+
+D-003. Use a real PostgreSQL parser; do not write our own parser.
+
+D-004. libpg_query-based .NET wrapper is the leading parser direction pending
+       a technical spike.
+
+D-005. Native parser AST is not Strata's durable public domain model.
+
+D-006. Strata builds a smaller canonical semantic/schema model.
+
+D-007. Direct SQL remains allowed and important.
+
+D-008. No mandatory meta-query language.
+
+D-009. Guardrails target effects/risk/architecture, not arbitrary SQL
+       complexity.
+
+D-010. Desired-state convergence is used only where safe and unambiguous.
+
+D-011. Explicit transitions remain necessary for complex migrations.
+
+D-012. Reference data is first-class desired state.
+
+D-013. Reference data must have ownership semantics.
+
+D-014. Unexpected reference rows are not deleted by default.
+
+D-015. Renames are never executed solely from similarity inference.
+
+D-016. Deployment execution follows analysis/diff capability in the roadmap.
+
+D-017. Every high-impact decision needs provenance/explanation.
+
+D-018. Unknown/incomplete analysis remains explicit.
+
+D-019. Targeted agent retrieval is preferred over AST/schema dumps.
+
+D-020. Agent leverage must be demonstrated experimentally.
+
+================================================================================
+143. CURRENT EXTERNAL TECHNICAL ANCHORS (VERIFIED 2026-09-07)
+================================================================================
+
+PostgreSQL parser foundation:
+    libpg_query
+    - C library exposing PostgreSQL's parser outside the server
+    - uses actual PostgreSQL server source for parsing
+    - current project branches track PostgreSQL majors
+    - BSD-3-Clause for libpg_query portions, PostgreSQL-licensed PostgreSQL code
+
+.NET PostgreSQL wrapper candidate:
+    pgsqlparser
+    - .NET wrapper around libpg_query
+    - NuGet package
+    - protobuf AST
+    - parsing, normalization, statement splitting
+    - PL/pgSQL parsing
+    - deparse support
+    - packaged native libraries
+    - MIT wrapper license, underlying libpg_query/PostgreSQL licensing applies
+
+Alternative lightweight wrapper observed:
+    PostgresQuery
+    - .NET wrapper around libpg_query
+    - prebuilt native binaries
+    - package notes indicate Windows/macOS builds had not been tested in its
+      published package description, so it should not be selected blindly
+
+SQL Server future:
+    Microsoft.SqlServer.TransactSql.ScriptDom
+    - Microsoft-maintained .NET SQL parser/formatter
+    - used by DacFX
+    - actively updated as of 2026-08-21
+    - MIT license
+
+Dependency choice must still be validated by Strata's own technical spike.
+
+================================================================================
+144. FINAL REFINEMENT PASS
+================================================================================
+
+After reviewing the entire design, the most important additional conclusions are:
+
+1. Parsing and semantic binding must be treated as different systems.
+   This may be the largest hidden technical risk.
+
+2. Strata should not promise "understands the database" when it only parsed
+   syntax. It must report exactly what has been resolved and what has not.
+
+3. Deployment safety depends more on intent, operational conditions, and
+   visibility than on schema-diff cleverness.
+
+4. Automatic convergence should start extremely narrow and expand only after
+   production evidence.
+
+5. Reference data is deceptively dangerous. "Lookup table" must never
+   automatically mean "Strata owns every row."
+
+6. Relationship inference should improve navigation, not create new database
+   truth.
+
+7. The agent value proposition must be measured separately from the deployment
+   value proposition. Either may succeed even if the other is weaker.
+
+8. Strata's strongest durable asset is likely the evidence-backed semantic
+   graph, not SQL generation.
+
+9. The best guardrails are consequence-aware and capability-aware, not
+   syntax-prescriptive.
+
+10. A legitimate expert escape hatch is a safety feature because it reduces the
+    incentive to bypass the system entirely.
+
+11. "No dependency found" must always remain scoped to analyzed evidence.
+
+12. Deployment plans should be immutable/hashable artifacts that can be
+    reviewed separately from execution.
+
+13. Unknown execution state after network/process failure is a first-class state
+    requiring re-inspection.
+
+14. Strata should model management ownership explicitly before it ever performs
+    deletion.
+
+15. The first prototype should be useful even if deployment execution never
+    ships: semantic inspection, agent retrieval, impact analysis, and SQL
+    validation are independently valuable.
+
+No further major design direction emerges without empirical work. The next
+useful step is not more abstract expansion; it is to run the parser/binding
+spikes and agent-context experiment, then revise these ideas from evidence.
+
+================================================================================
+END
+================================================================================
