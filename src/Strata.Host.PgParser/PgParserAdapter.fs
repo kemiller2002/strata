@@ -168,6 +168,26 @@ module PgParserAdapter =
     let private isColumnRef (node: Node) =
         not (isNull (box node)) && not (isNull (box node.ColumnRef))
 
+    /// The operator symbol an `A_Expr` names.
+    ///
+    /// libpg_query reports the operator as a NAME PATH, not a string: `=` is
+    /// `["="]`, but `OPERATOR(pg_catalog.=)` is `["pg_catalog"; "="]`. The
+    /// symbol is the LAST element; anything before it is the schema.
+    ///
+    /// Reading the first element instead is what made a schema-qualified
+    /// equality report itself as an unmodelled "predicate with operator
+    /// 'pg_catalog'" while the join path — which scanned every element for
+    /// `=` — correctly recorded it as a join. The two paths disagreed about
+    /// the same node, so they now share this one reader.
+    let private operatorSymbol (expr: A_Expr) =
+        expr.Name
+        |> Seq.choose (fun n ->
+            if not (isNull (box n.String)) && not (String.IsNullOrEmpty n.String.Sval) then
+                Some n.String.Sval
+            else
+                None)
+        |> Seq.tryLast
+
     let private columnMentionOf (cr: ColumnRef) =
         let parts =
             cr.Fields
@@ -214,13 +234,9 @@ module PgParserAdapter =
     let private joinPredicateOf (expr: A_Expr) =
         if expr.Kind <> A_Expr_Kind.AexprOp then None
         else
-            // Any name part equal to `=` counts, so a schema-qualified operator
-            // such as `OPERATOR(pg_catalog.=)` is still recognised as equality.
-            let isEquality =
-                expr.Name
-                |> Seq.exists (fun n -> not (isNull (box n.String)) && n.String.Sval = "=")
-
-            if not isEquality then None
+            // A schema-qualified operator such as `OPERATOR(pg_catalog.=)` is
+            // still equality: the symbol is the last name element.
+            if operatorSymbol expr <> Some "=" then None
             else
                 match columnParts expr.Lexpr, columnParts expr.Rexpr with
                 | Some (leftQualifier, leftColumn), Some (rightQualifier, rightColumn) ->
@@ -244,13 +260,7 @@ module PgParserAdapter =
     /// These are reported as unmodelled constructs so they become explicit
     /// analysis gaps rather than silent omissions.
     let private unmodelledShapeOf (expr: A_Expr) =
-        let operatorName =
-            expr.Name
-            |> Seq.tryPick (fun n ->
-                if not (isNull (box n.String)) && not (String.IsNullOrEmpty n.String.Sval) then
-                    Some n.String.Sval
-                else
-                    None)
+        let operatorName = operatorSymbol expr
 
         match expr.Kind with
         | A_Expr_Kind.AexprOp ->

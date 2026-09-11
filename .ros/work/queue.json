@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 31,
+  "nextSeq": 32,
   "items": [
     {
       "id": "WI-0001",
@@ -511,6 +511,24 @@
       "attachments": [],
       "createdAt": "2026-09-11T20:00:53Z",
       "updatedAt": "2026-09-11T20:01:01Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0031",
+      "title": "Qualified operator reported as both a join and an unmodelled shape",
+      "description": "libpg_query reports an operator as a name path; OPERATOR(pg_catalog.=) is [pg_catalog; =]. The join path scanned every element for = and recorded a join; the unmodelled path took the first element and reported a gap naming operator 'pg_catalog'. Both ran, so one node was reported two contradictory ways. Share one operator-symbol reader that takes the last element.",
+      "tags": [
+        "strata",
+        "parser",
+        "correctness"
+      ],
+      "priority": "medium",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T20:20:28Z",
+      "updatedAt": "2026-09-11T20:20:28Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null

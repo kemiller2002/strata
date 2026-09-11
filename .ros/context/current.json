@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "claude",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-09-11T20:01:21Z",
+  "updatedAt": "2026-09-11T20:20:37Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -706,6 +706,27 @@
         "EXE-20260911T200103003Z-91a2f364"
       ],
       "completedAt": "2026-09-11T20:01:21Z"
+    },
+    {
+      "id": "WI-0031",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Host.PgParser/PgParserAdapter.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/ParserAdapterTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-11T20:20:37Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T202029941Z-0962a85e"
+      ],
+      "completedAt": "2026-09-11T20:20:37Z"
     }
   ]
 }
