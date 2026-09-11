@@ -24,6 +24,8 @@ COMMANDS
   plan [--project <dir>]           Dry run: diff the project's desired state
                                    against the live database. Exit 0 allow,
                                    1 block, 2 requires approval.
+  apply [--project <dir>]          Execute the plan. Requires --confirm, and
+                                   refuses unless the gate allows every change.
   validate <file.sql>              Check every relation and column in a SQL file
                                    against the live schema. Exit 0 valid,
                                    1 a reference provably does not exist,
@@ -42,6 +44,7 @@ OPTIONS
   --connection <s>   PostgreSQL connection string (or set STRATA_PG)
   --corpus <dir>     Directory of .sql files to index (or set STRATA_CORPUS)
   --project <dir>    Project root: a directory of object files (default: .)
+  --confirm          Required by `apply`. Without it, apply dry-runs and stops.
   --allow-drops      Propose removals. Without it, objects present in the
                      database and absent from the project are REPORTED but
                      never proposed for dropping.
@@ -146,7 +149,13 @@ let main argv =
 
     let wantsPlan =
         match positional with
-        | "plan" :: _ -> true
+        | "plan" :: _
+        | "apply" :: _ -> true
+        | _ -> false
+
+    let wantsApply =
+        match positional with
+        | "apply" :: _ -> true
         | _ -> false
 
     let query =
@@ -170,6 +179,7 @@ let main argv =
         | "writers" :: name :: _ -> Ok(Retrieval.Writers(parseName name))
         | "validate" :: _ -> Error "validate needs a path to a .sql file"
         | "plan" :: _ -> Error "plan takes no positional arguments; use --project"
+        | "apply" :: _ -> Error "apply takes no positional arguments; use --project"
         | command :: _ -> Error(sprintf "unknown or incomplete command: %s" command)
         | [] -> Error "no command given"
 
@@ -212,6 +222,13 @@ let main argv =
 
                 for failure in declared.Failures do
                     eprintfn "warning: %s: %s" failure.Path failure.Reason
+
+                // Taken BEFORE introspection so it covers the whole window in
+                // which the plan is computed, not just the tail of it.
+                let fingerprintBeforePlanning =
+                    match Execution.fingerprint connectionString with
+                    | Ok value -> value
+                    | Microsoft.FSharp.Core.Error _ -> ""
 
                 let actual = CatalogIntrospection.introspect connectionString
 
@@ -258,7 +275,94 @@ let main argv =
                 else
                     printfn "%s" (SchemaDiff.toText diff gate)
 
-                DeploymentGate.Verdict.exitCode gate.Verdict
+                // An empty change list means two different things depending on
+                // where it came from, and the gate cannot tell them apart.
+                //
+                // From a parsed migration script it means "Strata recognised
+                // nothing in what you gave it", which the gate rightly treats
+                // as requires-approval. From a DIFF it means the database
+                // already matches desired state — convergence, which is the
+                // success case a declarative tool exists to reach. Reporting
+                // the second as requires-approval would make every idempotent
+                // re-run look like a problem.
+                let converged = List.isEmpty diff.Changes
+
+                if converged then
+                    printfn ""
+                    printfn "Database already matches desired state; nothing to apply."
+
+                if not wantsApply then
+                    if converged then 0 else DeploymentGate.Verdict.exitCode gate.Verdict
+                elif converged then
+                    0
+                else
+
+                // Everything below is the only irreversible thing Strata does,
+                // so each refusal is separate and each says which one fired.
+                let unwritable =
+                    diff.Statements |> List.filter (fun s -> s.Sql.IsNone)
+
+                if gate.Verdict <> DeploymentGate.Allow then
+                    eprintfn ""
+                    eprintfn "REFUSED: the gate did not allow this plan (%s)." (DeploymentGate.Verdict.tag gate.Verdict)
+                    eprintfn "         Nothing was executed. Address the findings above and re-run."
+                    DeploymentGate.Verdict.exitCode gate.Verdict
+
+                elif not (List.isEmpty unwritable) then
+                    // Running the rest would leave the database matching neither
+                    // the desired state nor the state the plan was computed from.
+                    eprintfn ""
+                    eprintfn "REFUSED: %d change(s) were classified but cannot be written as DDL:" (List.length unwritable)
+
+                    for s in unwritable do
+                        eprintfn "         - %s" (Strata.Analysis.ProposedChange.Change.tag s.Change)
+
+                    eprintfn "         Applying the remainder would leave the database matching neither side."
+                    2
+
+                elif not (List.contains "--confirm" args) then
+                    printfn ""
+                    printfn "Dry run only. Re-run with --confirm to execute these %d statement(s)." (List.length diff.Changes)
+                    2
+
+                else
+
+                // The plan was computed against a snapshot. If the database has
+                // moved since, the plan's assumptions are already falsified —
+                // so it is re-fingerprinted immediately before executing and
+                // compared with the value taken before planning.
+                match Execution.fingerprint connectionString with
+                | Microsoft.FSharp.Core.Error message ->
+                    eprintfn "REFUSED: could not fingerprint the database before applying: %s" message
+                    2
+                | Ok afterPlanning when afterPlanning <> fingerprintBeforePlanning ->
+                    eprintfn ""
+                    eprintfn "REFUSED: the database schema changed while this plan was being computed."
+                    eprintfn "         The plan was built against a state that no longer exists. Re-run."
+                    2
+                | Ok _ ->
+                    let statements = diff.Statements |> List.choose (fun s -> s.Sql)
+                    let result = Execution.apply connectionString statements
+
+                    printfn ""
+
+                    for outcome in result.Outcomes do
+                        match outcome with
+                        | Execution.Executed sql -> printfn "  ok      %s" (sql.Replace("\n", " "))
+                        | Execution.Failed (sql, message) ->
+                            printfn "  FAILED  %s" (sql.Replace("\n", " "))
+                            printfn "          %s" message
+                        | Execution.Skipped sql ->
+                            printfn "  skipped %s" (sql.Replace("\n", " "))
+
+                    printfn ""
+
+                    if result.RolledBack then
+                        printfn "ROLLED BACK. The database is unchanged; no statement took effect."
+                        1
+                    else
+                        printfn "Applied %d statement(s)." (List.length statements)
+                        0
         with ex ->
             eprintfn "error: %s" ex.Message
             2

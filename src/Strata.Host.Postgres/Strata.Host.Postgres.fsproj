@@ -17,6 +17,7 @@
   <ItemGroup>
     <Compile Include="CatalogQueries.fs" />
     <Compile Include="CatalogIntrospection.fs" />
+    <Compile Include="Execution.fs" />
   </ItemGroup>
 
   <ItemGroup>

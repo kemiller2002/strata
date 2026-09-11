@@ -62,9 +62,20 @@ module SchemaDiff =
           Reason: SuppressionReason
           Detail: string }
 
+    /// A change together with the DDL that would effect it.
+    type PlannedStatement =
+        { Change: Change
+          /// `None` is NOT "nothing to do". It is "Strata classified this
+          /// difference and cannot write DDL for it safely", which must stop an
+          /// apply rather than be silently skipped — executing the rest would
+          /// leave the database in a state matching neither side.
+          Sql: string option }
+
     type DiffResult =
         { /// Differences Strata proposes acting on. These go to the gate.
           Changes: Change list
+          /// The same changes, with the DDL that would effect each.
+          Statements: PlannedStatement list
           /// Differences Strata saw and will NOT act on, each with a reason.
           Suppressed: Suppression list
           /// True when the desired snapshot could support a deletion claim at
@@ -203,6 +214,135 @@ module SchemaDiff =
         added @ removed @ altered
 
     /// Compare desired state against actual state.
+    // ---- DDL emission -------------------------------------------------------
+
+    /// Render an identifier for execution.
+    ///
+    /// Always quoted. A name from the catalog is already case-folded, so
+    /// quoting it changes nothing; a name that was quoted in the file keeps the
+    /// case it needs. Emitting unquoted would silently fold a mixed-case
+    /// identifier into a different object.
+    let private quote (identifier: Identifier) =
+        "\"" + identifier.Text.Replace("\"", "\"\"") + "\""
+
+    let private quoteName (name: QualifiedName) =
+        match name.Schema with
+        | Some schema -> sprintf "%s.%s" (quote schema) (quote name.Name)
+        | None -> quote name.Name
+
+    /// A column as it appears in DDL.
+    ///
+    /// The default EXPRESSION is not carried by the semantic model — only the
+    /// fact that one exists — so a column with a default cannot be emitted
+    /// without inventing its value. Callers handle that by refusing to emit,
+    /// not by dropping the default.
+    let private columnDdl (column: Column) =
+        sprintf
+            "%s %s%s"
+            (quote column.Name)
+            (QualifiedName.display column.Type.TypeName)
+            (if column.Type.IsNullable then "" else " NOT NULL")
+
+    /// DDL for one change, or `None` when Strata cannot write it faithfully.
+    ///
+    /// Every `None` here is a deliberate refusal, and each is a gap in the
+    /// semantic model rather than an oversight: the model carries that a
+    /// default or a check constraint EXISTS but not its expression, because
+    /// the catalog reports those already normalised and storing a
+    /// half-understood expression would be worse than storing none. Emitting a
+    /// table without its checks would create an object that differs from what
+    /// the project declared while reporting success.
+    let private emit (desired: Table list) (change: Change) : string option =
+        let desiredTable name = desired |> List.tryFind (fun t -> sameName t.Name name)
+
+        match change with
+        | UnclassifiedChange _ -> None
+
+        | CreateTable name ->
+            match desiredTable name with
+            | None -> None
+            | Some table when not (List.isEmpty table.CheckConstraints) -> None
+            | Some table when table.Columns |> List.exists (fun c -> c.HasDefault) -> None
+            | Some table ->
+                let columns = table.Columns |> List.map columnDdl
+
+                let primaryKey =
+                    match table.PrimaryKey with
+                    | Some pk ->
+                        [ sprintf
+                            "CONSTRAINT %s PRIMARY KEY (%s)"
+                            (quote pk.ConstraintName)
+                            (pk.Columns |> List.map quote |> String.concat ", ") ]
+                    | None -> []
+
+                let uniques =
+                    table.UniqueConstraints
+                    |> List.map (fun u ->
+                        sprintf
+                            "CONSTRAINT %s UNIQUE (%s)"
+                            (quote u.ConstraintName)
+                            (u.Columns |> List.map quote |> String.concat ", "))
+
+                let foreignKeys =
+                    table.ForeignKeys
+                    |> List.map (fun f ->
+                        sprintf
+                            "CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s)"
+                            (quote f.ConstraintName)
+                            (f.Columns |> List.map quote |> String.concat ", ")
+                            (quoteName f.ReferencedTable)
+                            (f.ReferencedColumns |> List.map quote |> String.concat ", "))
+
+                Some(
+                    sprintf
+                        "CREATE TABLE %s (\n    %s\n)"
+                        (quoteName name)
+                        (columns @ primaryKey @ uniques @ foreignKeys |> String.concat ",\n    "))
+
+        | AddColumn (table, column) ->
+            desiredTable table
+            |> Option.bind (fun t -> t.Columns |> List.tryFind (fun c -> Identifier.sameName c.Name column))
+            // A column whose default expression Strata does not carry cannot be
+            // added faithfully: emitting it without the default would populate
+            // existing rows with NULL instead of the declared value.
+            |> Option.filter (fun c -> not c.HasDefault)
+            |> Option.map (fun c -> sprintf "ALTER TABLE %s ADD COLUMN %s" (quoteName table) (columnDdl c))
+
+        | AlterColumnType (table, column, newType) ->
+            Some(
+                sprintf
+                    "ALTER TABLE %s ALTER COLUMN %s TYPE %s"
+                    (quoteName table)
+                    (quote column)
+                    newType)
+
+        | DropColumn (table, column) ->
+            Some(sprintf "ALTER TABLE %s DROP COLUMN %s" (quoteName table) (quote column))
+
+        | DropTable table -> Some(sprintf "DROP TABLE %s" (quoteName table))
+
+        | TruncateTable table -> Some(sprintf "TRUNCATE TABLE %s" (quoteName table))
+
+        // The diff does not currently produce these, and emitting one would
+        // need a definition it does not carry.
+        | AddConstraint _ -> None
+
+    /// Execution order.
+    ///
+    /// Creates before the things that reference them, drops after the things
+    /// that depend on them, and columns dropped before their table so a
+    /// statement never runs against an object the previous one removed.
+    let private orderKey (change: Change) =
+        match change with
+        | CreateTable _ -> 0
+        | AddColumn _ -> 1
+        | AlterColumnType _ -> 2
+        | AddConstraint _ -> 3
+        | TruncateTable _ -> 4
+        | DropColumn _ -> 5
+        | DropTable _ -> 6
+        | UnclassifiedChange _ -> 7
+
     /// Compare desired state against actual state.
     ///
     /// `allowDrops` defaults OFF at every call site, and deliberately. Managed
@@ -269,7 +409,13 @@ module SchemaDiff =
             @ removals allowDrops managedSchemas desiredComplete desiredTables actualTables
             @ columnResults
 
-        { Changes = all |> List.choose (function Ok change -> Some change | Microsoft.FSharp.Core.Error _ -> None)
+        let changes =
+            all
+            |> List.choose (function Ok change -> Some change | Microsoft.FSharp.Core.Error _ -> None)
+            |> List.sortBy orderKey
+
+        { Changes = changes
+          Statements = changes |> List.map (fun c -> { Change = c; Sql = emit desiredTables c })
           Suppressed =
             (all |> List.choose (function Microsoft.FSharp.Core.Error s -> Some s | Ok _ -> None))
             @ unmodelled

@@ -218,3 +218,119 @@ let ``a withheld removal is still reported`` () =
 
     Assert.Contains(result.Suppressed, fun s ->
         QualifiedName.display s.Object = "sales.legacy" && s.Detail.Contains "--allow-drops")
+
+// ---- DDL emission ---------------------------------------------------------
+//
+// A Change alone cannot be executed: AddColumn carries a name, not a type. The
+// diff knows the desired state, so the diff emits. Every `Sql = None` below is
+// a deliberate refusal, and refusing is the point — applying the rest of a plan
+// whose middle statement cannot be written leaves the database matching neither
+// side.
+
+let private sqlFor (result: DiffResult) (predicate: Change -> bool) =
+    result.Statements |> List.find (fun s -> predicate s.Change) |> fun s -> s.Sql
+
+[<Fact>]
+let ``an added column is emitted with its type and nullability`` () =
+    let result =
+        run true managed
+            (complete [ tbl Managed "sales" "orders" (orders @ [ "note", false ]) ])
+            (complete [ tbl Observed "sales" "orders" orders ])
+
+    let sql = sqlFor result (function AddColumn _ -> true | _ -> false)
+    Assert.Equal(Some "ALTER TABLE \"sales\".\"orders\" ADD COLUMN \"note\" text NOT NULL", sql)
+
+[<Fact>]
+let ``a created table carries its primary key`` () =
+    let table =
+        TableObject
+            { Name = qn "sales" "t"
+              Columns = [ col 1 "id" false ]
+              PrimaryKey = Some { ConstraintName = id' "t_pkey"; Columns = [ id' "id" ] }
+              UniqueConstraints = []
+              CheckConstraints = []
+              ForeignKeys = []
+              Indexes = []
+              Scope = Managed }
+
+    let result = run true managed (complete [ table ]) (complete [])
+    let sql = (sqlFor result (function CreateTable _ -> true | _ -> false)).Value
+
+    Assert.Contains("CREATE TABLE \"sales\".\"t\"", sql)
+    Assert.Contains("CONSTRAINT \"t_pkey\" PRIMARY KEY (\"id\")", sql)
+
+[<Fact>]
+let ``identifiers are always quoted`` () =
+    // A catalog name is already case-folded, so quoting changes nothing; a name
+    // that was quoted in the file keeps the case it needs. Emitting unquoted
+    // would silently fold a mixed-case identifier into a different object.
+    let result = run true managed (complete []) (complete [ tbl Observed "sales" "MixedCase" orders ])
+    let sql = (sqlFor result (function DropTable _ -> true | _ -> false)).Value
+
+    Assert.Equal("DROP TABLE \"sales\".\"MixedCase\"", sql)
+
+[<Fact>]
+let ``a table with a check constraint is NOT emitted`` () =
+    // The model carries that a check EXISTS but not its expression, because the
+    // catalog reports those already normalised. Creating the table without its
+    // checks would produce an object differing from what was declared while
+    // reporting success.
+    let table =
+        TableObject
+            { Name = qn "sales" "t"
+              Columns = [ col 1 "id" false ]
+              PrimaryKey = None
+              UniqueConstraints = []
+              CheckConstraints = [ { ConstraintName = id' "ck"; Expression = "" } ]
+              ForeignKeys = []
+              Indexes = []
+              Scope = Managed }
+
+    let result = run true managed (complete [ table ]) (complete [])
+
+    Assert.Equal(None, sqlFor result (function CreateTable _ -> true | _ -> false))
+
+[<Fact>]
+let ``a column with a default is NOT emitted`` () =
+    // Adding it without the default would populate existing rows with NULL
+    // instead of the declared value — a silently different outcome.
+    let withDefault =
+        TableObject
+            { Name = qn "sales" "orders"
+              Columns =
+                [ col 1 "id" false
+                  { col 2 "note" true with HasDefault = true } ]
+              PrimaryKey = None
+              UniqueConstraints = []
+              CheckConstraints = []
+              ForeignKeys = []
+              Indexes = []
+              Scope = Managed }
+
+    let result =
+        run true managed (complete [ withDefault ]) (complete [ tbl Observed "sales" "orders" [ "id", false ] ])
+
+    Assert.Equal(None, sqlFor result (function AddColumn _ -> true | _ -> false))
+
+[<Fact>]
+let ``an unclassified change emits nothing`` () =
+    let result =
+        run true managed
+            (complete [ tbl Managed "sales" "orders" [ "id", false; "total", false ] ])
+            (complete [ tbl Observed "sales" "orders" orders ])
+
+    Assert.Equal(None, sqlFor result (function UnclassifiedChange _ -> true | _ -> false))
+
+[<Fact>]
+let ``creates are ordered before drops`` () =
+    // A statement must never run against an object a later one removes, and
+    // drops must come after everything depending on them.
+    let result =
+        run true managed
+            (complete [ tbl Managed "sales" "new" orders ])
+            (complete [ tbl Observed "sales" "old" orders ])
+
+    let kinds = result.Changes |> List.map Change.tag
+    let indexOf tag = kinds |> List.findIndex (fun k -> k = tag)
+
+    Assert.True(indexOf "create-table" < indexOf "drop-table")

@@ -39,8 +39,8 @@
 | WI-0034 | Slice V: validate candidate SQL against the schema (PR-018) | complete | strata | high |
 | WI-0035 | Slice P: strata.json project file and desired-state loader (PR-025) | complete | strata | high |
 | WI-0036 | Slice D: diff desired against actual with dry-run output (PR-022, PR-023) | complete | strata | high |
-| WI-0037 | Slice X: execute a plan against the database (PR-024) | captured | strata | high |
+| WI-0037 | Slice X: execute a plan against the database (PR-024) | ready | strata | high |
 | WI-0038 | Requirements and decisions for validation and deployment capabilities | complete | strata, requirements | high |
 | WI-0039 | Record PostgreSQL-only scope and the dialect port's known leaks | complete | strata, dialect, scope | medium |
 | WI-0040 | Make the project manifest optional and require opt-in for removals | complete | strata, project | high |
-| WI-0041 | Validate SQL routine bodies instead of reporting them unverifiable | ready | strata, validation | high |
+| WI-0041 | Validate SQL routine bodies instead of reporting them unverifiable | complete | strata, validation | high |
