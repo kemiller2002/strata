@@ -25,4 +25,6 @@
 | WI-0020 | Spike D: measure agent context cost of Strata retrieval versus raw corpus | complete | strata, spike | high |
 | WI-0021 | Reduce repeated scope overhead without weakening the safety property | complete | strata, optimisation | high |
 | WI-0022 | Evaluate whether targeted retrieval loses information the raw context has | complete | strata, spike | high |
-| WI-0023 | Spike D correctness half: run agents under both conditions | ready | strata, spike | high |
+| WI-0023 | Spike D correctness half: run agents under both conditions | complete | strata, spike | high |
+| WI-0024 | Spike D-2: does Strata help with cross-module seam errors? | complete | strata, spike | high |
+| WI-0025 | Column-level reader tracking: answer 'what breaks if I drop this column' | ready | strata, slice-s3 | high |

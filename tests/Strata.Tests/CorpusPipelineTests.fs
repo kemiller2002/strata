@@ -372,3 +372,73 @@ let ``the pipeline scope carries dialect compatibility from the real parser`` ()
     match scope.DialectCompatibility with
     | Diverged (parserMajor, 16) -> Assert.True(parserMajor >= 17)
     | other -> failwithf "expected Diverged against a 16 server, got %A" other
+
+// ---- WI-0025: column-level impact ------------------------------------------
+
+[<Fact>]
+let ``an explicit column reader is attributed to that column`` () =
+    // EV-STRATA-2026-B6F3 T1: the question Strata could not answer.
+    let analysis =
+        analyse
+            [ SqlFile "a.sql", "SELECT o.status FROM sales.orders o"
+              SqlFile "b.sql", "SELECT o.total FROM sales.orders o" ]
+
+    let graph = CorpusPipeline.buildGraph snapshot analysis
+
+    let statusReaders =
+        SemanticGraph.columnReadersOf (qn "sales" "orders") (id' "status") graph |> List.map fst
+
+    Assert.Equal<string list>([ "file:a.sql" ], statusReaders)
+
+[<Fact>]
+let ``a SELECT star reader IS attributed to every column, flagged as wildcard`` () =
+    // This is what a text search cannot do: `SELECT *` contains no column name,
+    // so grepping for the column finds nothing, yet the reader genuinely breaks
+    // when the column is dropped (RK-002).
+    let analysis = analyse [ SqlFile "star.sql", "SELECT * FROM sales.orders" ]
+    let graph = CorpusPipeline.buildGraph snapshot analysis
+
+    let readers = SemanticGraph.columnReadersOf (qn "sales" "orders") (id' "status") graph
+
+    Assert.Single readers |> ignore
+    let sourceId, viaWildcard = List.head readers
+    Assert.Equal("file:star.sql", sourceId)
+    Assert.True(viaWildcard, "a SELECT * reader must be flagged as wildcard-derived")
+
+[<Fact>]
+let ``an explicit reader is not flagged as wildcard`` () =
+    // Control for the flag itself.
+    let analysis = analyse [ SqlFile "e.sql", "SELECT o.status FROM sales.orders o" ]
+    let graph = CorpusPipeline.buildGraph snapshot analysis
+
+    let _, viaWildcard =
+        SemanticGraph.columnReadersOf (qn "sales" "orders") (id' "status") graph |> List.head
+
+    Assert.False viaWildcard
+
+[<Fact>]
+let ``a column no source touches has no readers`` () =
+    // Control: the query must discriminate, not return everything.
+    let analysis = analyse [ SqlFile "a.sql", "SELECT o.status FROM sales.orders o" ]
+    let graph = CorpusPipeline.buildGraph snapshot analysis
+
+    Assert.Empty(SemanticGraph.columnReadersOf (qn "sales" "orders") (id' "total") graph)
+
+[<Fact>]
+let ``an UPDATE attributes its columns as writes, not reads`` () =
+    // Attributing a write as a read would understate a drop's blast radius.
+    let analysis =
+        analyse [ SqlFile "w.sql", "UPDATE sales.orders SET status = 'x' WHERE order_id = 1" ]
+
+    let graph = CorpusPipeline.buildGraph snapshot analysis
+
+    Assert.NotEmpty(SemanticGraph.columnWritersOf (qn "sales" "orders") (id' "status") graph)
+    Assert.Empty(SemanticGraph.columnReadersOf (qn "sales" "orders") (id' "status") graph)
+
+[<Fact>]
+let ``column matching respects identifier folding`` () =
+    let analysis = analyse [ SqlFile "a.sql", "SELECT o.status FROM sales.orders o" ]
+    let graph = CorpusPipeline.buildGraph snapshot analysis
+
+    // Unquoted identifiers fold to lower case, so STATUS finds it.
+    Assert.NotEmpty(SemanticGraph.columnReadersOf (qn "sales" "orders") (id' "STATUS") graph)

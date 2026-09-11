@@ -1,0 +1,2 @@
+-- PROPOSED, not yet applied. Billing believes legacy_code is unused.
+-- ALTER TABLE billing.invoice DROP COLUMN legacy_code;

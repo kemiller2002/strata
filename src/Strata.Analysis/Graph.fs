@@ -79,15 +79,39 @@ module Graph =
           Kind: DependencyKind
           Evidence: EvidenceItem list }
 
+    /// A dependency on a specific COLUMN.
+    ///
+    /// Table-level dependencies answer "who touches this table". They cannot
+    /// answer "what breaks if I drop this column", which `EV-STRATA-2026-B6F3`
+    /// found is the seam question Strata was unable to answer while a plain
+    /// text search could. That is the notebook's own flagship example (§130,
+    /// "Drop column blocked because 8 readers found").
+    ///
+    /// `ViaWildcard` records that the dependency came from expanding `SELECT *`
+    /// rather than from an explicit mention. Both are real dependencies — a
+    /// `SELECT *` reader of a dropped column does break — but a human reviewing
+    /// an impact report needs to tell them apart, because a wildcard reader may
+    /// tolerate the change while an explicit one certainly will not.
+    type ColumnDependency =
+        { SourceId: string
+          Table: QualifiedName
+          Column: Identifier
+          Kind: DependencyKind
+          ViaWildcard: bool }
+
     /// The graph.
     type SemanticGraph =
         { Relationships: Relationship list
-          Dependencies: Dependency list }
+          Dependencies: Dependency list
+          ColumnDependencies: ColumnDependency list }
 
     [<RequireQualifiedAccess>]
     module SemanticGraph =
 
-        let empty = { Relationships = []; Dependencies = [] }
+        let empty =
+            { Relationships = []
+              Dependencies = []
+              ColumnDependencies = [] }
 
         /// Declared relationships, straight from the catalog's foreign keys.
         let declaredFrom (snapshot: SchemaSnapshot) : Relationship list =
@@ -232,6 +256,36 @@ module Graph =
 
             graph.Dependencies
             |> List.filter (fun d -> d.Kind = Writes && QualifiedName.display d.Target = target)
+            |> List.map (fun d -> d.SourceId)
+            |> List.distinct
+            |> List.sort
+
+        /// Sources that read a specific column.
+        ///
+        /// This is the impact query for a proposed column drop. Wildcard-derived
+        /// dependencies are included, because a `SELECT *` reader genuinely does
+        /// break — omitting them is the `RK-002` failure.
+        let columnReadersOf (table: QualifiedName) (column: Identifier) (graph: SemanticGraph) =
+            let target = QualifiedName.display table
+
+            graph.ColumnDependencies
+            |> List.filter (fun d ->
+                d.Kind = Reads
+                && QualifiedName.display d.Table = target
+                && Identifier.sameName d.Column column)
+            |> List.map (fun d -> d.SourceId, d.ViaWildcard)
+            |> List.distinct
+            |> List.sortBy fst
+
+        /// Sources that write a specific column.
+        let columnWritersOf (table: QualifiedName) (column: Identifier) (graph: SemanticGraph) =
+            let target = QualifiedName.display table
+
+            graph.ColumnDependencies
+            |> List.filter (fun d ->
+                d.Kind = Writes
+                && QualifiedName.display d.Table = target
+                && Identifier.sameName d.Column column)
             |> List.map (fun d -> d.SourceId)
             |> List.distinct
             |> List.sort

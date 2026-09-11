@@ -33,6 +33,9 @@ module CorpusPipeline =
     type CorpusAnalysis =
         { Index: CorpusIndex
           Dependencies: Dependency list
+          /// Column-level dependencies, so an impact query can answer "what
+          /// breaks if this column is dropped" (EV-STRATA-2026-B6F3, T1).
+          ColumnDependencies: ColumnDependency list
           /// Join predicates resolved to real relations, ready for
           /// `SemanticGraph.observedFrom`.
           ObservedJoins: (QualifiedName * Identifier * QualifiedName * Identifier * string) list
@@ -112,7 +115,7 @@ module CorpusPipeline =
 
         let sourceId = SqlOrigin.sourceId origin
         let relations = dependencyEdgeCandidates searchPath extraction
-        let _, columnGaps = columnDependencies snapshot searchPath extraction
+        let resolvedColumns, columnGaps = columnDependencies snapshot searchPath extraction
 
         // Reads versus writes, from the statement's own shape. A statement that
         // writes also reads its source relations, which is why INSERT ... SELECT
@@ -168,6 +171,28 @@ module CorpusPipeline =
                 // inter-table relationship.
                 | _ -> None)
 
+        // A statement's column dependencies take the statement's own direction:
+        // an UPDATE's columns are written, a SELECT's are read. Attributing a
+        // write as a read would understate a drop's blast radius.
+        let columnKind =
+            match extraction.Shape with
+            | InsertShape
+            | UpdateShape
+            | DeleteShape -> Writes
+            | SelectShape
+            | DdlShape _
+            | UtilityShape _
+            | UnsupportedShape _ -> Reads
+
+        let columnDeps =
+            resolvedColumns
+            |> List.map (fun c ->
+                { SourceId = sourceId
+                  Table = c.Relation
+                  Column = c.Column
+                  Kind = columnKind
+                  ViaWildcard = c.FromWildcard })
+
         let analyzabilityGaps = Effect.analyzabilityGaps effects
 
         // Constructs the adapter recognised but does not model — including join
@@ -198,7 +223,7 @@ module CorpusPipeline =
               for effect in analyzabilityGaps -> sprintf "%s: %A degrades analyzability" sourceId effect.Kind
               for construct in unmodelled -> sprintf "%s: %s" sourceId construct ]
 
-        indexed, dependencies, joins, gapMessages
+        indexed, dependencies, joins, columnDeps, gapMessages
 
     /// Analyse a whole corpus.
     ///
@@ -218,6 +243,7 @@ module CorpusPipeline =
         let mutable index = CorpusIndex.empty
         let dependencies = ResizeArray<Dependency>()
         let joins = ResizeArray<QualifiedName * Identifier * QualifiedName * Identifier * string>()
+        let columnDeps = ResizeArray<ColumnDependency>()
         let gaps = ResizeArray<string>()
 
         for origin, text in sources do
@@ -253,17 +279,19 @@ module CorpusPipeline =
                         | Ok value -> Some value
                         | Error _ -> None
 
-                    let indexed, statementDependencies, statementJoins, statementGaps =
+                    let indexed, statementDependencies, statementJoins, statementColumns, statementGaps =
                         analyseStatement snapshot searchPath origin parserVersion statementText location extraction fingerprint
 
                     index <- CorpusIndex.add indexed index
                     dependencies.AddRange statementDependencies
                     joins.AddRange statementJoins
+                    columnDeps.AddRange statementColumns
                     gaps.AddRange statementGaps
 
         { Index = index
           Dependencies = List.ofSeq dependencies
           ObservedJoins = List.ofSeq joins
+          ColumnDependencies = List.ofSeq columnDeps
           Gaps = List.ofSeq gaps }
 
     /// Build the full graph from a snapshot plus a corpus analysis.
@@ -272,7 +300,8 @@ module CorpusPipeline =
             SemanticGraph.combine
                 (SemanticGraph.declaredFrom snapshot)
                 (SemanticGraph.observedFrom analysis.ObservedJoins)
-          Dependencies = analysis.Dependencies }
+          Dependencies = analysis.Dependencies
+          ColumnDependencies = analysis.ColumnDependencies }
 
     /// The analysis scope a corpus run establishes.
     ///

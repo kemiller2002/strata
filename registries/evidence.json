@@ -47,6 +47,31 @@
     "title": "Targeted retrieval was lossy on three of nine tasks; fixing the loss cost almost nothing, so the context reduction is real"
   },
   {
+    "confidence": "medium",
+    "contradicts": [],
+    "created_by_agent": "claude",
+    "evidence_type": "test-result",
+    "id": "EV-STRATA-2026-B6F3",
+    "path": "research/evidence/EV-STRATA-2026-B6F3--cross-module-seam-errors.md",
+    "related_theories": [],
+    "research_area": "strata-agent-leverage",
+    "retrieved": "2026-09-11",
+    "source_author": "claude",
+    "source_date": "2026-09-11",
+    "source_title": "Strata Spike D part 4 — cross-module seam errors",
+    "source_uri": "six subagent runs, 2026-09-11; four-module fixture in examples/seams",
+    "supports": [],
+    "tags": [
+      "strata",
+      "agent-leverage",
+      "spike-d",
+      "seam-errors",
+      "boundary",
+      "correctness"
+    ],
+    "title": "On cross-module seam questions Strata and raw context each win one task decisively, in opposite directions"
+  },
+  {
     "confidence": "high",
     "contradicts": [],
     "created_by_agent": "claude",

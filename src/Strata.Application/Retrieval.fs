@@ -27,6 +27,10 @@ module Retrieval =
         | Path of from: QualifiedName * to': QualifiedName
         | Readers of QualifiedName
         | Writers of QualifiedName
+        /// What breaks if this column is dropped or changed. The seam question
+        /// `EV-STRATA-2026-B6F3` found Strata could not answer, because readers
+        /// were tracked at table granularity only.
+        | ColumnImpact of table: QualifiedName * column: Identifier
         /// The analysis scope alone. Exists so a session can fetch the scope
         /// once and then use brief answers, rather than paying for it per query.
         | ScopeOnly
@@ -47,6 +51,7 @@ module Retrieval =
         | Path _ -> "path"
         | Readers _ -> "readers"
         | Writers _ -> "writers"
+        | ColumnImpact _ -> "impact"
         | ScopeOnly -> "scope"
 
     let private queryTarget (query: Query) =
@@ -56,6 +61,7 @@ module Retrieval =
         | Readers n
         | Writers n -> QualifiedName.display n
         | Path (a, b) -> QualifiedName.display a + " -> " + QualifiedName.display b
+        | ColumnImpact (table, column) -> QualifiedName.display table + "." + column.Display
         | ScopeOnly -> "(analysis scope)"
 
     /// Render a table compactly: enough to act on, not the whole snapshot.
@@ -204,6 +210,7 @@ module Retrieval =
             | Readers _
             | Writers _
             | Relationships _ -> true
+            | ColumnImpact _ -> true
             | Inspect _
             | Path _
             | ScopeOnly -> false
@@ -255,6 +262,35 @@ module Retrieval =
             | Readers name -> JArray(SemanticGraph.readersOf name graph |> List.map JString)
 
             | Writers name -> JArray(SemanticGraph.writersOf name graph |> List.map JString)
+
+            | ColumnImpact (table, column) ->
+                let readers = SemanticGraph.columnReadersOf table column graph
+                let writers = SemanticGraph.columnWritersOf table column graph
+
+                // Explicit and wildcard readers are separated because they carry
+                // different review weight: an explicit reader certainly breaks,
+                // a wildcard reader breaks but may be trivially tolerant. Both
+                // are reported — omitting wildcards is the RK-002 failure.
+                let explicitReaders = readers |> List.filter (snd >> not) |> List.map fst
+                let wildcardReaders = readers |> List.filter snd |> List.map fst
+
+                JObject [ "column", JString(QualifiedName.display table + "." + column.Display)
+                          "explicitReaders", JArray(explicitReaders |> List.map JString)
+                          "wildcardReaders", JArray(wildcardReaders |> List.map JString)
+                          "writers", JArray(writers |> List.map JString)
+                          "totalAffectedSources",
+                          JInt(List.length (List.distinct (explicitReaders @ wildcardReaders @ writers)))
+                          // Notebook §130: show the next safe move rather than
+                          // just blocking.
+                          "nextSafeMove",
+                          JString(
+                              if List.isEmpty explicitReaders
+                                 && List.isEmpty wildcardReaders
+                                 && List.isEmpty writers then
+                                  "No dependency found in the analysed scope. This is NOT clearance to drop: see the scope and caveats for what was not analysed."
+                              else
+                                  "Migrate or retire the listed sources, re-run this impact query, then re-plan the change."
+                          ) ]
 
             | ScopeOnly ->
                 // The scope itself travels in the answer's own scope field. The

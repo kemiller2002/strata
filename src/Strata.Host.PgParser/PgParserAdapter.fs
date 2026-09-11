@@ -160,6 +160,30 @@ module PgParserAdapter =
 
         List.ofSeq mentions
 
+    /// Columns an INSERT or UPDATE targets.
+    ///
+    /// These live in `ResTarget.Name`, NOT in a `ColumnRef`, so the generic
+    /// column walk above never sees them. Without this, `UPDATE t SET c = ...`
+    /// contributes no dependency on `c` at all — which would make a column
+    /// impact report omit every writer of the column, understating the blast
+    /// radius of a drop in exactly the direction that causes damage.
+    let private collectTargetColumns (stmt: Node) =
+        let targets =
+            match stmt.NodeCase with
+            | Node.NodeOneofCase.UpdateStmt -> stmt.UpdateStmt.TargetList |> Seq.toList
+            | Node.NodeOneofCase.InsertStmt -> stmt.InsertStmt.Cols |> Seq.toList
+            | _ -> []
+
+        targets
+        |> List.choose (fun node ->
+            if isNull (box node.ResTarget) || String.IsNullOrEmpty node.ResTarget.Name then None
+            else
+                Some
+                    { Qualifier = None
+                      Column = Some(identifierOf node.ResTarget.Name)
+                      IsWildcard = false
+                      QueryLevel = 0 })
+
     let private shapeOf (stmt: Node) =
         match stmt.NodeCase with
         | Node.NodeOneofCase.SelectStmt -> SelectShape
@@ -322,7 +346,7 @@ module PgParserAdapter =
     let extractStatement (stmt: Node) : StatementExtraction =
         { Shape = shapeOf stmt
           Relations = collectRelations stmt
-          Columns = collectColumns stmt
+          Columns = collectColumns stmt @ collectTargetColumns stmt
           UnmodelledConstructs =
             (match shapeOf stmt with
              | UnsupportedShape detail -> [ detail ]

@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "claude",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-09-11T16:19:15.000Z",
+  "updatedAt": "2026-09-11T16:57:40.000Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -541,6 +541,53 @@
       ],
       "completedAt": "2026-09-11T16:19:15.000Z",
       "conclusion": "Six agents, three per condition, identical graded task set. NULL RESULT: 15/15 correct in both conditions, no difference detected, and the Strata condition used 8.7% more tokens. Ceiling effect - an 8KB context is small enough that a capable agent misses nothing, including the designed discriminator. HY-STRATA-2026-2A6F tested and not supported, remains proposed rather than rejected. HY-STRATA-2026-1E5D qualified: it holds for large schemas with targeted queries and is actively false for small schemas with pre-fetched sessions. The crossover schema size is now the largest decision-relevant unknown."
+    },
+    {
+      "id": "WI-0024",
+      "type": "research",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "research-record",
+          "path": "research/evidence/EV-STRATA-2026-B6F3--cross-module-seam-errors.md"
+        }
+      ],
+      "updatedAt": "2026-09-11T16:51:51.000Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T164642888Z-59b23a40"
+      ],
+      "completedAt": "2026-09-11T16:51:51.000Z",
+      "conclusion": "Cross-module seam experiment broke the ceiling that defeated the earlier lookup test. Two of five tasks discriminated in OPPOSITE directions: raw 3/3 and Strata 0/3 on column-level impact (T1, a capability gap - no column-level reader query); Strata 3/3 and raw 0/3 on cross-module unenforced relationships (T5, where raw agents conflated dependency with relationship and over-reported). HY-STRATA-2026-2A6F is too coarse as stated: correctness depends on which seam question is asked. T1's gap is the highest-value fix the experiment found."
+    },
+    {
+      "id": "WI-0025",
+      "type": "implementation",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Analysis/Graph.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Application/CorpusPipeline.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Application/Retrieval.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/CorpusPipelineTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-11T16:57:40.000Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T165153713Z-526f82d5"
+      ],
+      "completedAt": "2026-09-11T16:57:40.000Z"
     }
   ]
 }

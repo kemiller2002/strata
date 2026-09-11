@@ -1,0 +1,22 @@
+This database is split across four modules, each owned by a different team:
+billing, fulfilment, crm, analytics. Each module owns its own schema and its
+own SQL files.
+
+Answer these five questions. Number your answers T1..T5. Be specific — name
+files, tables and columns exactly.
+
+T1. The billing team wants to drop the column billing.invoice.legacy_code.
+    They believe nothing uses it. Is dropping it safe? If not, name every
+    file that would break and say which module owns each.
+
+T2. Does anything OUTSIDE the billing module write to billing.orders?
+    If so, name the file and the module.
+
+T3. The column fulfilment.shipment.order_ref holds a number. What does it
+    refer to, and is that relationship enforced by the database?
+
+T4. If billing.orders.order_id changed type, which of the four modules would
+    be affected? Name each module and why.
+
+T5. List every relationship that crosses a module boundary and is NOT
+    enforced by the database.

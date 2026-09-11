@@ -24,6 +24,7 @@ COMMANDS
   inspect <schema.object>          Describe an object
   relationships <schema.object>    Relationships touching an object
   path <schema.a> <schema.b>       Relationship path between two objects
+  impact <schema.table.column>     What breaks if a column is dropped/changed
   readers <schema.object>          Sources that read an object
   writers <schema.object>          Sources that write an object
 
@@ -91,6 +92,17 @@ let main argv =
         | "inspect" :: name :: _ -> Ok(Retrieval.Inspect(parseName name))
         | "relationships" :: name :: _ -> Ok(Retrieval.Relationships(parseName name))
         | "path" :: a :: b :: _ -> Ok(Retrieval.Path(parseName a, parseName b))
+        | "impact" :: target :: _ ->
+            // schema.table.column — the last segment is the column.
+            match target.Split('.') with
+            | [| schema; table; column |] ->
+                Ok(
+                    Retrieval.ColumnImpact(
+                        QualifiedName.qualified (Identifier.unquoted schema) (Identifier.unquoted table),
+                        Identifier.unquoted column
+                    )
+                )
+            | _ -> Error "impact needs a fully qualified schema.table.column"
         | "readers" :: name :: _ -> Ok(Retrieval.Readers(parseName name))
         | "writers" :: name :: _ -> Ok(Retrieval.Writers(parseName name))
         | command :: _ -> Error(sprintf "unknown or incomplete command: %s" command)

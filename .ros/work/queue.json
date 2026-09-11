@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 24,
+  "nextSeq": 26,
   "items": [
     {
       "id": "WI-0001",
@@ -393,6 +393,40 @@
       "updatedAt": "2026-09-11T16:17:51.000Z",
       "createdBy": "claude",
       "source": "user-request",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0024",
+      "title": "Spike D-2: does Strata help with cross-module seam errors?",
+      "description": "The previous correctness test asked lookup questions and hit a ceiling. Seam errors are consequence-across-a-boundary questions that no single file answers. Build a multi-module schema and corpus with planted seam defects, and test whether Strata's dependency graph helps agents find them. Tests HY-STRATA-2026-2A6F properly.",
+      "tags": [
+        "strata",
+        "spike"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T16:46:37.000Z",
+      "updatedAt": "2026-09-11T16:46:41.000Z",
+      "createdBy": "claude",
+      "source": "user-request",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0025",
+      "title": "Column-level reader tracking: answer 'what breaks if I drop this column'",
+      "description": "EV-STRATA-2026-B6F3 T1: Strata could not answer which files break when a column is dropped, because readers are tracked at table granularity only. CatalogResolution.columnDependencies already resolves column references per statement; they are simply not stored in the graph or exposed. Traces PR-012, PR-016, RK-002.",
+      "tags": [
+        "strata",
+        "slice-s3"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T16:51:52.000Z",
+      "updatedAt": "2026-09-11T16:51:52.000Z",
+      "createdBy": "claude",
+      "source": "spike-finding",
       "sourceReference": null
     }
   ]

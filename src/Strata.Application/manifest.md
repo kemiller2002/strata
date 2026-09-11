@@ -64,7 +64,10 @@ that bounds it. Implements ER-017 / D-019 (retrieval, not dumping) and PR-021
 
 - Owner: Strata
 - Last checked against implementation: 2026-09-11
-- Known gaps: `Path` ranking (§9) is shortest-path only; it does not yet rank by
+- Known gaps: column impact covers the analysed corpus only — a `SELECT *`
+  reader is attributed to every column and flagged `ViaWildcard`, but a column
+  referenced only inside dynamic SQL is invisible and shows as an extraction
+  gap rather than a dependency. `Path` ranking (§9) is shortest-path only; it does not yet rank by
   evidence strength, cardinality or deprecation. `JoinPredicate.QueryLevel` is
   always 0, so a join inside a subquery is not distinguished from one at the top
   level. Join detection covers equality predicates only — `BETWEEN`, `IN
