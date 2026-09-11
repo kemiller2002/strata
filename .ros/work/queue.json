@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 40,
+  "nextSeq": 41,
   "items": [
     {
       "id": "WI-0001",
@@ -664,6 +664,23 @@
       "attachments": [],
       "createdAt": "2026-09-11T21:30:30Z",
       "updatedAt": "2026-09-11T21:30:30Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0040",
+      "title": "Make the project manifest optional and require opt-in for removals",
+      "description": "Pointing at a directory is the normal case. Infer managed schemas from the directory tree rather than repeating them in a manifest. Removals become opt-in behind --allow-drops, matching SSDT, sqldef, migra and pg-schema-diff, because inferred scope plus default drops would let creating a directory imply owning a schema.",
+      "tags": [
+        "strata",
+        "project"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T21:50:22Z",
+      "updatedAt": "2026-09-11T21:50:22Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null

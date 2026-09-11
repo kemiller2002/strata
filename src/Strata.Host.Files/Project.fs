@@ -112,44 +112,86 @@ module Project =
                     "expected <schema>/<object-type>/<name>.sql under the schema root, found %d path segment(s)"
                     segments.Length)
 
+    /// Schemas inferred from the directory tree.
+    ///
+    /// The layout already names them — `schema/<schema>/tables/x.sql` — so
+    /// requiring a manifest to repeat them would be asking for the same fact
+    /// twice and creating a way for the two to disagree.
+    let private inferSchemas (schemaRoot: string) =
+        Directory.GetDirectories schemaRoot
+        |> Array.map Path.GetFileName
+        |> Array.sortWith (fun a b -> String.CompareOrdinal(a, b))
+        |> List.ofArray
+
+    /// Where the object files are, given a project root.
+    ///
+    /// A `schema/` subdirectory if there is one, otherwise the root itself, so
+    /// `strata plan --project ./schema` and `--project .` both work without
+    /// configuration.
+    let private locateSchemaRoot (root: string) (declared: string option) =
+        match declared with
+        | Some relative -> Path.Combine(root, relative)
+        | None ->
+            let conventional = Path.Combine(root, "schema")
+            if Directory.Exists conventional then conventional else root
+
     let read (root: string) : Result<ProjectRead, string> =
         let manifestPath = Path.Combine(root, "strata.json")
 
-        if not (File.Exists manifestPath) then
-            Error(sprintf "no strata.json in %s" root)
-        else
-            match readManifest manifestPath with
-            | Error message -> Error message
-            | Ok manifest ->
-                let schemaRoot = Path.Combine(root, manifest.SchemaRoot)
+        // The manifest is OPTIONAL. Pointing at a directory is the normal case
+        // and a project that needs no configuration should need no file: the
+        // directory tree already says which schemas exist and which files
+        // declare objects. A manifest exists only to say something the tree
+        // cannot.
+        let declaredManifest =
+            if File.Exists manifestPath then
+                match readManifest manifestPath with
+                | Ok manifest -> Ok(Some manifest)
+                | Error message -> Error message
+            else
+                Ok None
 
-                if not (Directory.Exists schemaRoot) then
-                    Error(sprintf "schemaRoot '%s' does not exist" manifest.SchemaRoot)
-                else
-                    let files = ResizeArray<ObjectFile>()
-                    let failures = ResizeArray<string * string>()
+        match declaredManifest with
+        | Error message -> Error message
+        | Ok manifest ->
+            let schemaRoot =
+                locateSchemaRoot root (manifest |> Option.map (fun m -> m.SchemaRoot))
 
-                    // Sorted so a project reads identically on any host
-                    // (NFR-001).
-                    let paths =
-                        Directory.GetFiles(schemaRoot, "*.sql", SearchOption.AllDirectories)
-                        |> Array.sortWith (fun a b -> String.CompareOrdinal(a, b))
+            if not (Directory.Exists schemaRoot) then
+                Error(sprintf "no schema directory found under %s" root)
+            else
+                let files = ResizeArray<ObjectFile>()
+                let failures = ResizeArray<string * string>()
 
-                    for path in paths do
-                        match classify schemaRoot path with
-                        | Error reason -> failures.Add(path, reason)
-                        | Ok (schema, objectType) ->
-                            try
-                                files.Add
-                                    { Path = path
-                                      Schema = schema
-                                      ObjectType = objectType
-                                      Contents = File.ReadAllText path }
-                            with ex ->
-                                failures.Add(path, ex.Message)
+                // Sorted so a project reads identically on any host (NFR-001).
+                let paths =
+                    Directory.GetFiles(schemaRoot, "*.sql", SearchOption.AllDirectories)
+                    |> Array.sortWith (fun a b -> String.CompareOrdinal(a, b))
 
-                    Ok
-                        { Root = root
-                          Manifest = manifest
-                          Files = List.ofSeq files
-                          Failures = List.ofSeq failures }
+                for path in paths do
+                    match classify schemaRoot path with
+                    | Error reason -> failures.Add(path, reason)
+                    | Ok (schema, objectType) ->
+                        try
+                            files.Add
+                                { Path = path
+                                  Schema = schema
+                                  ObjectType = objectType
+                                  Contents = File.ReadAllText path }
+                        with ex ->
+                            failures.Add(path, ex.Message)
+
+                let resolved =
+                    match manifest with
+                    | Some m when not (List.isEmpty m.ManagedSchemas) -> m
+                    | Some m -> { m with ManagedSchemas = inferSchemas schemaRoot }
+                    | None ->
+                        { SchemaRoot = Path.GetFileName schemaRoot
+                          ManagedSchemas = inferSchemas schemaRoot
+                          CorpusRoots = [] }
+
+                Ok
+                    { Root = root
+                      Manifest = resolved
+                      Files = List.ofSeq files
+                      Failures = List.ofSeq failures }

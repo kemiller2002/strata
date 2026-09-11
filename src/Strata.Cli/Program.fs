@@ -41,7 +41,10 @@ COMMANDS
 OPTIONS
   --connection <s>   PostgreSQL connection string (or set STRATA_PG)
   --corpus <dir>     Directory of .sql files to index (or set STRATA_CORPUS)
-  --project <dir>    Strata project root, holding strata.json (default: .)
+  --project <dir>    Project root: a directory of object files (default: .)
+  --allow-drops      Propose removals. Without it, objects present in the
+                     database and absent from the project are REPORTED but
+                     never proposed for dropping.
   --json             Machine-readable output (default is human-readable)
   --brief            With --json, replace the scope block with a digest. Fetch
                      the full scope once via `strata scope`. Caveats that change
@@ -217,10 +220,28 @@ let main argv =
                     | Ok p -> p
                     | Error _ -> []
 
+                // Where the application SQL lives is the one thing the
+                // directory tree cannot say, so it comes from --corpus or from
+                // the manifest. Without it the gate can still run, but it can
+                // only ever answer requires-approval on a removal: "no
+                // dependency found" is not "no dependency exists" when nothing
+                // was searched.
+                let corpusRoots =
+                    match corpusDirectory with
+                    | Some dir -> [ dir ]
+                    | None ->
+                        project.Manifest.CorpusRoots
+                        |> List.map (fun root -> IO.Path.Combine(projectRoot, root))
+
+                if List.isEmpty corpusRoots then
+                    eprintfn "warning: no SQL corpus given (--corpus or corpusRoots in strata.json)."
+                    eprintfn "         Removals cannot be cleared, only approved: with nothing indexed,"
+                    eprintfn "         \"no dependency found\" is not evidence that none exists."
+
                 let corpusSources =
-                    project.Manifest.CorpusRoots
+                    corpusRoots
                     |> List.collect (fun root ->
-                        match FileCorpus.read (IO.Path.Combine(projectRoot, root)) with
+                        match FileCorpus.read root with
                         | Ok r -> r.Sources
                         | Error _ -> [])
 
@@ -228,7 +249,8 @@ let main argv =
                 let graph = CorpusPipeline.buildGraph actual analysis
                 let scope = CorpusPipeline.toScope parser actual analysis
 
-                let diff = SchemaDiff.run project.Manifest.ManagedSchemas desired actual
+                let allowDrops = List.contains "--allow-drops" args
+                let diff = SchemaDiff.run allowDrops project.Manifest.ManagedSchemas desired actual
                 let gate = DeploymentGate.run graph scope diff.Changes
 
                 if List.contains "--json" args then

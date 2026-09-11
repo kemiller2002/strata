@@ -46,20 +46,23 @@ let private partial' = snapshot (Partial "a file did not parse")
 
 let private managed = [ "sales" ]
 
+/// Existing guard tests pass allowDrops=true deliberately: a test that left
+/// drops globally disabled would pass even if the guard it names were deleted.
+
 let private orders = [ "id", false; "total", true ]
 
 // ---- additive ------------------------------------------------------------
 
 [<Fact>]
 let ``a table in desired state and not in the database is created`` () =
-    let result = run managed (complete [ tbl Managed "sales" "orders" orders ]) (complete [])
+    let result = run true managed (complete [ tbl Managed "sales" "orders" orders ]) (complete [])
 
     Assert.Contains(result.Changes, fun c -> c = CreateTable(qn "sales" "orders"))
 
 [<Fact>]
 let ``a column added in desired state is added`` () =
     let result =
-        run managed
+        run true managed
             (complete [ tbl Managed "sales" "orders" (orders @ [ "note", true ]) ])
             (complete [ tbl Observed "sales" "orders" orders ])
 
@@ -68,7 +71,7 @@ let ``a column added in desired state is added`` () =
 [<Fact>]
 let ``identical snapshots produce no changes`` () =
     let result =
-        run managed
+        run true managed
             (complete [ tbl Managed "sales" "orders" orders ])
             (complete [ tbl Observed "sales" "orders" orders ])
 
@@ -78,7 +81,7 @@ let ``identical snapshots produce no changes`` () =
 
 [<Fact>]
 let ``a managed table absent from a COMPLETE desired state is dropped`` () =
-    let result = run managed (complete []) (complete [ tbl Observed "sales" "legacy" orders ])
+    let result = run true managed (complete []) (complete [ tbl Observed "sales" "legacy" orders ])
 
     Assert.Contains(result.Changes, fun c -> c = DropTable(qn "sales" "legacy"))
 
@@ -86,7 +89,7 @@ let ``a managed table absent from a COMPLETE desired state is dropped`` () =
 let ``a table outside the managed schemas is NEVER dropped`` () =
     // §1437 verbatim: "Do not delete unmanaged objects simply because they are
     // not in desired state."
-    let result = run managed (complete []) (complete [ tbl Observed "other" "things" orders ])
+    let result = run true managed (complete []) (complete [ tbl Observed "other" "things" orders ])
 
     Assert.Empty result.Changes
     Assert.Contains(result.Suppressed, fun s -> s.Reason = OutsideManagedSchemas)
@@ -96,7 +99,7 @@ let ``nothing is dropped when desired state did not load completely`` () =
     // THE test. A file that failed to parse removes its object from desired
     // state. Without this guard that parse failure silently becomes a DROP of
     // a table nobody asked to remove.
-    let result = run managed (partial' []) (complete [ tbl Observed "sales" "orders" orders ])
+    let result = run true managed (partial' []) (complete [ tbl Observed "sales" "orders" orders ])
 
     Assert.Empty result.Changes
     Assert.Contains(result.Suppressed, fun s -> s.Reason = DesiredStateIncomplete)
@@ -106,7 +109,7 @@ let ``nothing is dropped when desired state did not load completely`` () =
 let ``an extension-owned table is never dropped`` () =
     // RK-008. It is absent from desired state because the extension owns it,
     // not because anyone wants it gone.
-    let result = run managed (complete []) (complete [ tbl ExtensionOwned "sales" "pg_stat_thing" orders ])
+    let result = run true managed (complete []) (complete [ tbl ExtensionOwned "sales" "pg_stat_thing" orders ])
 
     Assert.Empty result.Changes
     Assert.Contains(result.Suppressed, fun s -> s.Reason = ExtensionOwnedObject)
@@ -114,7 +117,7 @@ let ``an extension-owned table is never dropped`` () =
 [<Fact>]
 let ``a column absent from an incomplete desired state is not dropped`` () =
     let result =
-        run managed
+        run true managed
             (partial' [ tbl Managed "sales" "orders" [ "id", false ] ])
             (complete [ tbl Observed "sales" "orders" orders ])
 
@@ -126,7 +129,7 @@ let ``a column absent from a COMPLETE desired state is dropped`` () =
     // The control for the case above: the guard must not become a blanket
     // refusal, or the tool cannot deploy anything destructive at all.
     let result =
-        run managed
+        run true managed
             (complete [ tbl Managed "sales" "orders" [ "id", false ] ])
             (complete [ tbl Observed "sales" "orders" orders ])
 
@@ -139,7 +142,7 @@ let ``a nullability change is reported as unclassified rather than invented`` ()
     // The Change vocabulary has no nullability case. Reporting it as something
     // else would have the gate judge it by the wrong rules.
     let result =
-        run managed
+        run true managed
             (complete [ tbl Managed "sales" "orders" [ "id", false; "total", false ] ])
             (complete [ tbl Observed "sales" "orders" orders ])
 
@@ -161,14 +164,57 @@ let ``a view in the database is suppressed as not modelled, not proposed for dro
               Definition = "SELECT 1"
               Scope = Observed }
 
-    let result = run managed (complete []) (complete [ view ])
+    let result = run true managed (complete []) (complete [ view ])
 
     Assert.Empty result.Changes
     Assert.Contains(result.Suppressed, fun s -> s.Reason = NotModelled)
 
 [<Fact>]
 let ``suppressions name the object so a clean change list is never mistaken for no difference`` () =
-    let result = run managed (complete []) (complete [ tbl Observed "other" "things" orders ])
+    let result = run true managed (complete []) (complete [ tbl Observed "other" "things" orders ])
 
     Assert.Empty result.Changes
     Assert.Equal("other.things", QualifiedName.display (List.head result.Suppressed).Object)
+
+// ---- removals are opt-in --------------------------------------------------
+
+[<Fact>]
+let ``a drop is NOT proposed unless removals are enabled`` () =
+    // Managed schemas are inferred from the directory tree, so creating
+    // schema/sales/ would otherwise be an implicit claim to own every object in
+    // `sales` and remove anything undeclared. SSDT, sqldef, migra and
+    // pg-schema-diff all default the same way.
+    let result = run false managed (complete []) (complete [ tbl Observed "sales" "legacy" orders ])
+
+    Assert.Empty result.Changes
+    Assert.Contains(result.Suppressed, fun s -> s.Reason = DropsNotEnabled)
+
+[<Fact>]
+let ``a column drop is NOT proposed unless removals are enabled`` () =
+    let result =
+        run false managed
+            (complete [ tbl Managed "sales" "orders" [ "id", false ] ])
+            (complete [ tbl Observed "sales" "orders" orders ])
+
+    Assert.DoesNotContain(result.Changes, fun c -> c = DropColumn(qn "sales" "orders", id' "total"))
+    Assert.Contains(result.Suppressed, fun s -> s.Reason = DropsNotEnabled)
+
+[<Fact>]
+let ``additive changes still happen with removals disabled`` () =
+    // The flag withholds removals, not the whole diff. A tool that refused to
+    // do anything without --allow-drops would just be trained around.
+    let result =
+        run false managed
+            (complete [ tbl Managed "sales" "orders" (orders @ [ "note", true ]) ])
+            (complete [ tbl Observed "sales" "orders" orders ])
+
+    Assert.Contains(result.Changes, fun c -> c = AddColumn(qn "sales" "orders", id' "note"))
+
+[<Fact>]
+let ``a withheld removal is still reported`` () =
+    // The difference is real and the user needs to see it. What is withheld is
+    // the proposal, not the fact.
+    let result = run false managed (complete []) (complete [ tbl Observed "sales" "legacy" orders ])
+
+    Assert.Contains(result.Suppressed, fun s ->
+        QualifiedName.display s.Object = "sales.legacy" && s.Detail.Contains "--allow-drops")

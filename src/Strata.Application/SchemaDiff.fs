@@ -41,6 +41,9 @@ module SchemaDiff =
         | DesiredStateIncomplete
         | ExtensionOwnedObject
         | NotModelled
+        /// The difference is real and Strata would act on it, but removals were
+        /// not enabled for this run.
+        | DropsNotEnabled
 
     [<RequireQualifiedAccess>]
     module SuppressionReason =
@@ -52,6 +55,7 @@ module SchemaDiff =
             | DesiredStateIncomplete -> "desired-state-incomplete"
             | ExtensionOwnedObject -> "extension-owned"
             | NotModelled -> "not-modelled"
+            | DropsNotEnabled -> "drops-not-enabled"
 
     type Suppression =
         { Object: QualifiedName
@@ -92,6 +96,7 @@ module SchemaDiff =
     /// This is the dangerous direction and the only one that can destroy data,
     /// so every guard lives here.
     let private removals
+        (allowDrops: bool)
         (managedSchemas: string list)
         (desiredComplete: bool)
         (desired: Table list)
@@ -117,11 +122,17 @@ module SchemaDiff =
                       Reason = DesiredStateIncomplete
                       Detail =
                         "absent from desired state, but desired state did not load completely, so its absence is not evidence it should be dropped" }
+            elif not allowDrops then
+                Microsoft.FSharp.Core.Error
+                    { Object = a.Name
+                      Reason = DropsNotEnabled
+                      Detail = "would be dropped; pass --allow-drops to propose removals" }
             else
                 Ok(DropTable a.Name))
 
     /// Column-level differences for a table present on both sides.
     let private columnChanges
+        (allowDrops: bool)
         (managedSchemas: string list)
         (desiredComplete: bool)
         (desired: Table)
@@ -153,6 +164,12 @@ module SchemaDiff =
                             sprintf
                                 "column '%s' is absent from desired state, but desired state did not load completely"
                                 a.Name.Text }
+                elif not allowDrops then
+                    Microsoft.FSharp.Core.Error
+                        { Object = desired.Name
+                          Reason = DropsNotEnabled
+                          Detail =
+                            sprintf "column '%s' would be dropped; pass --allow-drops to propose removals" a.Name.Text }
                 else
                     Ok(DropColumn(desired.Name, a.Name)))
 
@@ -186,7 +203,19 @@ module SchemaDiff =
         added @ removed @ altered
 
     /// Compare desired state against actual state.
+    /// Compare desired state against actual state.
+    ///
+    /// `allowDrops` defaults OFF at every call site, and deliberately. Managed
+    /// schemas are inferred from the directory tree, so creating
+    /// `schema/crm/` would otherwise be an implicit claim to own every object
+    /// in `crm` and remove anything undeclared. Every comparable tool made the
+    /// same choice: SSDT's DropObjectsNotInSource is false by default, sqldef
+    /// disabled DROP by default in 2.0.0, migra requires --unsafe, and
+    /// pg-schema-diff requires --allow-hazards. A removal that is not enabled
+    /// is still REPORTED, as a suppression — the difference is real and the
+    /// user needs to see it; what is withheld is the proposal, not the fact.
     let run
+        (allowDrops: bool)
         (managedSchemas: string list)
         (desired: SchemaSnapshot)
         (actual: SchemaSnapshot)
@@ -213,7 +242,7 @@ module SchemaDiff =
             desiredTables
             |> List.collect (fun d ->
                 match actualTables |> List.tryFind (fun a -> sameName a.Name d.Name) with
-                | Some a -> columnChanges managedSchemas desiredComplete d a
+                | Some a -> columnChanges allowDrops managedSchemas desiredComplete d a
                 | None -> [])
 
         // Objects the desired side could not model at all. Reported as
@@ -237,7 +266,7 @@ module SchemaDiff =
 
         let all =
             creations
-            @ removals managedSchemas desiredComplete desiredTables actualTables
+            @ removals allowDrops managedSchemas desiredComplete desiredTables actualTables
             @ columnResults
 
         { Changes = all |> List.choose (function Ok change -> Some change | Microsoft.FSharp.Core.Error _ -> None)
