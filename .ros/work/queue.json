@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 39,
+  "nextSeq": 40,
   "items": [
     {
       "id": "WI-0001",
@@ -646,6 +646,24 @@
       "attachments": [],
       "createdAt": "2026-09-11T21:16:34Z",
       "updatedAt": "2026-09-11T21:16:34Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0039",
+      "title": "Record PostgreSQL-only scope and the dialect port's known leaks",
+      "description": "Other engines are phase two. Record that the port boundary already holds (no engine packages above Tier 4) and list the three places PostgreSQL has leaked past it, so phase two is a known quantity rather than a discovery.",
+      "tags": [
+        "strata",
+        "dialect",
+        "scope"
+      ],
+      "priority": "medium",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T21:30:30Z",
+      "updatedAt": "2026-09-11T21:30:30Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null

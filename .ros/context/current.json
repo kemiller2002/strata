@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "claude",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-09-11T21:28:25Z",
+  "updatedAt": "2026-09-11T21:30:30Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -815,6 +815,27 @@
         "EXE-20260911T211636570Z-a6976f8f"
       ],
       "completedAt": "2026-09-11T21:28:25Z"
+    },
+    {
+      "id": "WI-0039",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "research/decisions/DF-STRATA-2026-E8C1--postgresql-only-for-now.md"
+        },
+        {
+          "type": "tests",
+          "path": "research/decisions/DF-STRATA-2026-E8C1--postgresql-only-for-now.md"
+        }
+      ],
+      "updatedAt": "2026-09-11T21:30:30Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T213031054Z-951246cb"
+      ],
+      "completedAt": "2026-09-11T21:30:30Z"
     }
   ]
 }

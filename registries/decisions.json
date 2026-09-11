@@ -108,5 +108,26 @@
     ],
     "title": "Strata adopts SDE four-tier architecture with a mechanically checked semantic tier",
     "updated": "2026-09-11"
+  },
+  {
+    "confidence": "high",
+    "created": "2026-09-11",
+    "created_by_agent": "claude",
+    "decision_type": "architecture",
+    "evidence": [],
+    "id": "DF-STRATA-2026-E8C1",
+    "path": "research/decisions/DF-STRATA-2026-E8C1--postgresql-only-for-now.md",
+    "status": "accepted",
+    "superseded_by": [],
+    "supersedes": [],
+    "tags": [
+      "strata",
+      "dialect",
+      "ports",
+      "scope",
+      "phase-two"
+    ],
+    "title": "PostgreSQL is the only supported engine; the port boundary is kept honest now so other engines stay possible later, but nothing is built for them",
+    "updated": "2026-09-11"
   }
 ]
