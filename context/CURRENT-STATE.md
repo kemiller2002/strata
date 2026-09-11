@@ -44,7 +44,14 @@ introspection, under the four-tier architecture of `DF-STRATA-2026-D3F8`.
 
 ## Largest decision-relevant unknown
 
-**Whether the agent thesis has a defensible form at all.** The crossover
+**The agent thesis is rejected** (`HY-STRATA-2026-2A6F`, `EV-STRATA-2026-E3D7`):
+four regimes, thirteen agent runs, no correctness advantage anywhere. The
+remaining justification for the program is `HY-STRATA-2026-6F14` — that
+deployment-safety value stands independently — **which has never been tested**.
+Testing it, or deciding the program on its absence, is now the only question
+that matters.
+
+Superseded framing: The crossover
 question is now settled the wrong way: `EV-STRATA-2026-D7B2` shows that at the
 scale where Strata was supposed to win, `grep` wins on both cost and
 correctness. Two things must exist before the thesis can be retested — a cached

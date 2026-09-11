@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 28,
+  "nextSeq": 29,
   "items": [
     {
       "id": "WI-0001",
@@ -461,6 +461,23 @@
       "updatedAt": "2026-09-11T17:55:47.000Z",
       "createdBy": "claude",
       "source": "self-correction",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0028",
+      "title": "Spike D-4: messy corpus — unqualified names, shadowing, dynamic SQL, cross-schema collisions",
+      "description": "EV-STRATA-2026-D7B2 showed grep wins on a uniformly schema-qualified corpus, which is grep's best case and a resolver's worst. Build the opposite: bare table names resolved by search_path, the same table name in three schemas, CTE shadowing, alias-obscured columns, comment-only mentions, SELECT *, and dynamic SQL. Decides whether the cached index and corpus-wide query are worth building. Tests HY-STRATA-2026-2A6F in the regime it was designed for.",
+      "tags": [
+        "strata",
+        "spike"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T18:22:14.000Z",
+      "updatedAt": "2026-09-11T18:22:16.000Z",
+      "createdBy": "claude",
+      "source": "user-request",
       "sourceReference": null
     }
   ]

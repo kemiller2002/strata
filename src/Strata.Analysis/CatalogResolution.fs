@@ -183,6 +183,43 @@ module CatalogResolution =
     ///
     /// Returns the resolved set plus the gaps encountered. A caller must report
     /// both: the column list alone would look complete (PR-021, §144.11).
+    /// Relations a statement references, resolved against the CATALOG.
+    ///
+    /// `ScopeResolution.dependencyEdgeCandidates` is catalog-blind: with more
+    /// than one schema on the `search_path` it must return `Ambiguous` for every
+    /// bare name, because from the statement alone it cannot know which schema
+    /// actually holds the table. The catalog can. `EV-STRATA-2026-E3D7` found
+    /// that using the blind path here made Strata miss every bare-name reader of
+    /// a column — the exact case a messy corpus is full of.
+    ///
+    /// Scope resolution still runs FIRST and still decides what is a database
+    /// object at all, so a CTE-shadowed name is excluded before the catalog is
+    /// consulted. Losing that ordering would reintroduce `RK-001`.
+    let private catalogResolvedRelations
+        (snapshot: SchemaSnapshot)
+        (searchPath: Identifier list)
+        (extraction: StatementExtraction)
+        : QualifiedName list =
+
+        resolveRelations searchPath extraction
+        |> List.choose (fun (mention, outcome) ->
+            match outcome with
+            // A real database-object reference. Which object is the catalog's
+            // question, not scope resolution's.
+            | DatabaseObject _ -> Some mention.Name
+            // Bound by the statement itself: a CTE, an alias target, or a temp
+            // relation. Never a database object.
+            | LocallyBound _
+            | BindingSite _ -> None)
+        |> List.choose (fun name ->
+            match resolveRelationName snapshot searchPath name with
+            | Resolved resolved -> Some resolved
+            | PartiallyResolved _
+            | Ambiguous _
+            | Unsupported _
+            | Unresolved _ -> None)
+        |> List.distinct
+
     let columnDependencies
         (snapshot: SchemaSnapshot)
         (searchPath: Identifier list)
@@ -190,7 +227,7 @@ module CatalogResolution =
         : ResolvedColumn list * ResolutionGap list =
 
         let relations =
-            dependencyEdgeCandidates searchPath extraction
+            catalogResolvedRelations snapshot searchPath extraction
 
         let resolvedColumns = ResizeArray<ResolvedColumn>()
         let gaps = ResizeArray<ResolutionGap>()

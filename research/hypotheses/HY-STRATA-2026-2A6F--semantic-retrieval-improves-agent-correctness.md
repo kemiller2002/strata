@@ -1,7 +1,7 @@
 ---
 id: HY-STRATA-2026-2A6F
 title: Semantic retrieval improves agent SQL correctness
-status: proposed
+status: rejected
 confidence: low
 created: 2026-09-11
 updated: 2026-09-11
@@ -68,3 +68,24 @@ uniformly schema-qualified SQL, which is close to the best case for text search
 and the worst case for a resolver. The untested regime — unqualified names,
 dynamic SQL, names reused across schemas — is where a resolved graph should
 still win.
+
+## Status — 2026-09-11 (REJECTED)
+
+`EV-STRATA-2026-E3D7` tested the last regime that plausibly favoured this
+hypothesis — unqualified names, CTE shadowing, cross-schema name collisions,
+comment noise, `SELECT *` and dynamic SQL. Agents scored **6/6 recall, 6/6
+precision**, identical to Strata, rejecting every trap with accurate reasons.
+
+Four regimes, thirteen agent runs, no regime where semantic retrieval improved
+agent correctness. Moving to `rejected`.
+
+The reason is now clear: **the hard part of these questions is reasoning, not
+retrieval, and the agent already has that.** Strata expands `SELECT *` against a
+catalog; the agent knows what `SELECT *` means. Strata excludes a CTE by scope
+resolution; the agent excludes it by reading three lines.
+
+What survives rejection, and is NOT covered by this hypothesis: Strata is
+deterministic and machine-readable. It returns the same typed, evidenced answer
+every run, which can be diffed, asserted on in CI and audited. An agent gave the
+right answer twice. A CI gate cannot be built on a probabilistic answer. That is
+a different claim and needs its own hypothesis if anyone wants to pursue it.

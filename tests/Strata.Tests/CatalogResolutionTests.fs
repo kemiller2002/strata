@@ -134,3 +134,85 @@ let ``columnDependencies reports gaps alongside resolved columns`` () =
 
     Assert.Equal(3, List.length columns)
     Assert.Single gaps |> ignore
+
+// ---- catalog-aware relation resolution in the column path -------------------
+
+[<Fact>]
+let ``a bare table name resolves to a column dependency via the catalog`` () =
+    // EV-STRATA-2026-E3D7. columnDependencies previously used the CATALOG-BLIND
+    // resolver, which must return Ambiguous for a bare name whenever more than
+    // one schema is on the search_path — so every bare-name reader of a column
+    // contributed nothing. A messy corpus is full of bare names.
+    let extraction =
+        { StatementExtraction.empty SelectShape with
+            Relations =
+                [ { Name = QualifiedName.unqualified (id' "orders")
+                    Role = RelationReference
+                    Alias = None
+                    QueryLevel = 0 } ]
+            Columns =
+                [ { Qualifier = None
+                    Column = Some(id' "status")
+                    IsWildcard = false
+                    QueryLevel = 0 } ] }
+
+    // TWO schemas on the path; only `sales` actually holds `orders`.
+    let columns, _ = columnDependencies snapshot [ id' "sales"; id' "public" ] extraction
+
+    let resolved = Assert.Single columns
+    Assert.Equal("sales.orders", QualifiedName.display resolved.Relation)
+    Assert.Equal("status", resolved.Column.Text)
+
+[<Fact>]
+let ``a bare name genuinely ambiguous across schemas still yields no dependency`` () =
+    // Control: the fix must not turn a REAL ambiguity into a guess. Here two
+    // schemas on the path both hold `orders`, so the catalog cannot choose
+    // either — and must not.
+    let twoOrders =
+        { snapshot with
+            Objects =
+                snapshot.Objects
+                @ [ table "archive" "orders" [ "order_id"; "status" ] ] }
+
+    let extraction =
+        { StatementExtraction.empty SelectShape with
+            Relations =
+                [ { Name = QualifiedName.unqualified (id' "orders")
+                    Role = RelationReference
+                    Alias = None
+                    QueryLevel = 0 } ]
+            Columns =
+                [ { Qualifier = None
+                    Column = Some(id' "status")
+                    IsWildcard = false
+                    QueryLevel = 0 } ] }
+
+    let columns, _ = columnDependencies twoOrders [ id' "sales"; id' "archive" ] extraction
+
+    Assert.Empty columns
+
+[<Fact>]
+let ``a CTE shadowing a bare name still contributes no column dependency`` () =
+    // The fix consults the catalog only AFTER scope resolution has decided what
+    // is a database object at all. Losing that ordering would reintroduce RK-001
+    // in the column path.
+    let extraction =
+        { StatementExtraction.empty SelectShape with
+            Relations =
+                [ { Name = QualifiedName.unqualified (id' "orders")
+                    Role = CommonTableExpressionDefinition
+                    Alias = None
+                    QueryLevel = 0 }
+                  { Name = QualifiedName.unqualified (id' "orders")
+                    Role = RelationReference
+                    Alias = None
+                    QueryLevel = 0 } ]
+            Columns =
+                [ { Qualifier = None
+                    Column = Some(id' "status")
+                    IsWildcard = false
+                    QueryLevel = 0 } ] }
+
+    let columns, _ = columnDependencies snapshot [ id' "sales" ] extraction
+
+    Assert.Empty columns

@@ -197,6 +197,33 @@
   },
   {
     "confidence": "high",
+    "contradicts": [
+      "HY-STRATA-2026-2A6F"
+    ],
+    "created_by_agent": "claude",
+    "evidence_type": "test-result",
+    "id": "EV-STRATA-2026-E3D7",
+    "path": "research/evidence/EV-STRATA-2026-E3D7--messy-corpus-no-advantage.md",
+    "related_theories": [],
+    "research_area": "strata-agent-leverage",
+    "retrieved": "2026-09-11",
+    "source_author": "claude",
+    "source_date": "2026-09-11",
+    "source_title": "Strata Spike D part 7 — messy corpus",
+    "source_uri": "512-file messy fixture; two interactive agent runs; PostgreSQL 16.15",
+    "supports": [],
+    "tags": [
+      "strata",
+      "agent-leverage",
+      "spike-d",
+      "messy-corpus",
+      "null-result",
+      "bug-found"
+    ],
+    "title": "Even on a deliberately messy corpus agents match Strata exactly (6/6 both); the fixture did find a real Strata bug"
+  },
+  {
+    "confidence": "high",
     "contradicts": [],
     "created_by_agent": "claude",
     "evidence_type": "test-result",
