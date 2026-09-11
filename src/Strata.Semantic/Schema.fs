@@ -27,6 +27,14 @@ module Schema =
           /// deterministic serialization (NFR-001).
           Position: int
           HasDefault: bool
+          /// The default EXPRESSION as the catalog renders it, when known.
+          ///
+          /// `None` on a declared column: a file says `DEFAULT 'open'` and the
+          /// catalog says `'open'::text`, so the declared text is not
+          /// comparable until the server has rendered it. `HasDefault` stays
+          /// the reliable presence signal; this is the comparable value when
+          /// there is one.
+          DefaultExpression: string option
           IsGenerated: bool
           IsIdentity: bool }
 

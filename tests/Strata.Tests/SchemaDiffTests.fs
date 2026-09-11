@@ -22,6 +22,7 @@ let private col position name nullable =
       Type = { TypeName = QualifiedName.unqualified (id' "text"); IsNullable = nullable }
       Position = position
       HasDefault = false
+      DefaultExpression = None
       IsGenerated = false
       IsIdentity = false }
 
@@ -51,7 +52,7 @@ let private managed = [ "sales" ]
 /// These tests build snapshots directly and have no files, so they pass none
 /// and exercise the reconstruction path deliberately.
 let private run allowDrops managedSchemas desired actual =
-    Strata.Application.SchemaDiff.run allowDrops managedSchemas [] [] desired actual
+    Strata.Application.SchemaDiff.run allowDrops managedSchemas [] [] [] desired actual
 
 /// Existing guard tests pass allowDrops=true deliberately: a test that left
 /// drops globally disabled would pass even if the guard it names were deleted.
@@ -598,7 +599,7 @@ let private viewDefined name definition =
           Scope = Managed }
 
 let private runWithViews normalised desired actual =
-    Strata.Application.SchemaDiff.run true managed [] normalised desired actual
+    Strata.Application.SchemaDiff.run true managed [] normalised [] desired actual
 
 [<Fact>]
 let ``a view whose normalised definition differs is redefined`` () =
@@ -712,3 +713,111 @@ let ``redefining a routine is destructive, so the gate weighs its callers`` () =
     // Every caller gets the new behaviour immediately, and a body change that
     // compiles reports nothing.
     Assert.True(Change.isPotentiallyDestructive (ReplaceRoutine(qn "sales" "f")))
+
+// ---- default and check expressions ----------------------------------------
+//
+// `DEFAULT 'open'` is stored and reported as `'open'::text`, and
+// `CHECK (balance >= 0)` as `CHECK ((balance >= (0)::numeric))`. Neither
+// matches what the author wrote, which is why both were disclosed rather than
+// compared. ShadowNormalisation round-trips the declared DDL through the server
+// so both sides carry the same rendering; these tests take that as given.
+
+let private tableWithDefault name column deployedDefault =
+    TableObject
+        { Name = qn "sales" name
+          Columns =
+            [ { Name = id' column
+                Type = { TypeName = QualifiedName.unqualified (id' "text"); IsNullable = true }
+                Position = 1
+                HasDefault = true
+                DefaultExpression = deployedDefault
+                IsGenerated = false
+                IsIdentity = false } ]
+          PrimaryKey = None
+          UniqueConstraints = []
+          CheckConstraints = []
+          ForeignKeys = []
+          Indexes = []
+          Scope = Managed }
+
+let private runWithTables normalisedTables desired actual =
+    Strata.Application.SchemaDiff.run true managed [] [] normalisedTables desired actual
+
+let private normalisedTable name defaults checks : Strata.Application.SchemaDiff.NormalisedTable =
+    { Table = name; Defaults = defaults; Checks = checks }
+
+[<Fact>]
+let ``a default whose rendered expression differs is reported`` () =
+    let result =
+        runWithTables
+            [ normalisedTable "sales.t" [ "status", "'pending'::text" ] [] ]
+            (complete [ tableWithDefault "t" "status" None ])
+            (complete [ tableWithDefault "t" "status" (Some "'active'::text") ])
+
+    Assert.Contains(result.Changes, fun c ->
+        match c with
+        | UnclassifiedChange d -> d.Contains "'pending'::text" && d.Contains "'active'::text"
+        | _ -> false)
+
+[<Fact>]
+let ``a default whose rendered expression matches produces nothing AND no disclosure`` () =
+    let result =
+        runWithTables
+            [ normalisedTable "sales.t" [ "status", "'active'::text" ] [] ]
+            (complete [ tableWithDefault "t" "status" None ])
+            (complete [ tableWithDefault "t" "status" (Some "'active'::text") ])
+
+    Assert.Empty result.Changes
+    Assert.DoesNotContain(result.Suppressed, fun s -> s.Reason = NotCompared)
+
+[<Fact>]
+let ``a sequence default is excluded from comparison and disclosed instead`` () =
+    // A serial column's default names its SEQUENCE, and the shadow table's
+    // sequence is named after the shadow table — so the renderings can never
+    // match however identical the declarations are. Comparing would report a
+    // permanent difference on every serial column in the schema.
+    let result =
+        runWithTables
+            [ normalisedTable "sales.t" [ "status", "nextval('_strata_shadow_x.t_y_seq'::regclass)" ] [] ]
+            (complete [ tableWithDefault "t" "status" None ])
+            (complete [ tableWithDefault "t" "status" (Some "nextval('sales.t_status_seq'::regclass)") ])
+
+    Assert.Empty result.Changes
+    Assert.Contains(result.Suppressed, fun s -> s.Reason = NotCompared)
+
+[<Fact>]
+let ``a check whose rendered definition differs is reported`` () =
+    let withCheck expression =
+        TableObject
+            { Name = qn "sales" "t"
+              Columns = [ col 1 "id" false ]
+              PrimaryKey = None
+              UniqueConstraints = []
+              CheckConstraints = [ { ConstraintName = id' "ck"; Expression = expression } ]
+              ForeignKeys = []
+              Indexes = []
+              Scope = Managed }
+
+    let result =
+        runWithTables
+            [ normalisedTable "sales.t" [] [ "ck", "CHECK ((balance > (0)::numeric))" ] ]
+            (complete [ withCheck "" ])
+            (complete [ withCheck "CHECK ((balance >= (0)::numeric))" ])
+
+    Assert.Contains(result.Changes, fun c ->
+        match c with
+        | UnclassifiedChange d -> d.Contains "check constraint 'ck'" && d.Contains "balance > "
+        | _ -> false)
+
+[<Fact>]
+let ``a table that could not be normalised keeps its disclosure`` () =
+    // No CREATE privilege, a read-only target, or DDL the server rejected. The
+    // fallback must stay "I could not check", never "it matches".
+    let result =
+        runWithTables
+            []
+            (complete [ tableWithDefault "t" "status" None ])
+            (complete [ tableWithDefault "t" "status" (Some "'active'::text") ])
+
+    Assert.Empty result.Changes
+    Assert.Contains(result.Suppressed, fun s -> s.Reason = NotCompared)

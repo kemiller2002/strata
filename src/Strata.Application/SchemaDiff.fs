@@ -421,7 +421,23 @@ module SchemaDiff =
     ///
     /// What can be compared faithfully is compared. What cannot is reported as
     /// `NotCompared` — never passed over.
-    let private constraintChanges (desired: Table) (actual: Table) =
+    /// Declared defaults and checks as the SERVER renders them, for one table.
+    type NormalisedTable =
+        { Table: string
+          Defaults: (string * string) list
+          Checks: (string * string) list }
+
+    let private constraintChanges (normalised: NormalisedTable list) (desired: Table) (actual: Table) =
+        let rendered =
+            normalised |> List.tryFind (fun n -> n.Table = QualifiedName.display desired.Name)
+
+        // A serial column's default names its SEQUENCE, and the shadow table's
+        // sequence is named after the shadow table — so the two renderings can
+        // never match however identical the declarations are. The type already
+        // carries what serial means, so these are excluded from comparison
+        // rather than reported as a permanent difference.
+        let isSequenceDefault (expression: string) =
+            expression.TrimStart().StartsWith("nextval(", StringComparison.OrdinalIgnoreCase)
         let columnList (columns: Identifier list) =
             columns |> List.map (fun c -> Identifier.folded c) |> String.concat ","
 
@@ -531,6 +547,27 @@ module SchemaDiff =
                 actual.Columns
                 |> List.tryFind (fun a -> Identifier.sameName a.Name d.Name)
                 |> Option.bind (fun a ->
+                    let declaredExpression =
+                        rendered
+                        |> Option.bind (fun n ->
+                            n.Defaults |> List.tryPick (fun (c, e) -> if Identifier.sameName (Identifier.unquoted c) d.Name then Some e else None))
+
+                    match declaredExpression, a.DefaultExpression with
+                    | Some declared, Some deployed when
+                        not (isSequenceDefault declared)
+                        && not (isSequenceDefault deployed)
+                        && declared.Trim() <> deployed.Trim() ->
+                        Some(
+                            Ok(
+                                UnclassifiedChange(
+                                    sprintf
+                                        "%s.%s: default is %s in desired state and %s in the database"
+                                        (QualifiedName.display desired.Name)
+                                        d.Name.Text
+                                        declared
+                                        deployed)))
+                    | _ ->
+
                     if d.HasDefault <> a.HasDefault then
                         Some(
                             Ok(
@@ -543,6 +580,29 @@ module SchemaDiff =
                                         (if a.HasDefault then "present" else "absent"))))
                     else
                         None))
+
+        let checkRedefinitions =
+            match rendered with
+            | None -> []
+            | Some n ->
+                actual.CheckConstraints
+                |> List.choose (fun a ->
+                    n.Checks
+                    |> List.tryPick (fun (name, definition) ->
+                        if named (Identifier.unquoted name) = named a.ConstraintName then Some definition else None)
+                    |> Option.bind (fun declared ->
+                        if declared.Trim() <> a.Expression.Trim() then
+                            Some(
+                                Ok(
+                                    UnclassifiedChange(
+                                        sprintf
+                                            "%s: check constraint '%s' is %s in desired state and %s in the database"
+                                            (QualifiedName.display desired.Name)
+                                            a.ConstraintName.Text
+                                            declared
+                                            a.Expression)))
+                        else
+                            None))
 
         // Indexes are never compared: CREATE INDEX is a separate statement and
         // the declared side therefore always reports none. Comparing them would
@@ -565,17 +625,34 @@ module SchemaDiff =
         // read might still differ, and saying so is the difference between a
         // bounded result and a false clean.
         let notCompared =
+            let comparedCheck (name: Identifier) =
+                match rendered with
+                | None -> false
+                | Some n -> n.Checks |> List.exists (fun (c, _) -> named (Identifier.unquoted c) = named name)
+
             let sharedChecks =
                 desired.CheckConstraints
                 |> List.filter (fun d ->
-                    actual.CheckConstraints |> List.exists (fun a -> named a.ConstraintName = named d.ConstraintName))
+                    actual.CheckConstraints |> List.exists (fun a -> named a.ConstraintName = named d.ConstraintName)
+                    && not (comparedCheck d.ConstraintName))
 
             let sharedDefaults =
                 desired.Columns
                 |> List.filter (fun d ->
                     d.HasDefault
                     && actual.Columns
-                       |> List.exists (fun a -> Identifier.sameName a.Name d.Name && a.HasDefault))
+                       |> List.exists (fun a -> Identifier.sameName a.Name d.Name && a.HasDefault)
+                    && (match rendered with
+                        | None -> true
+                        | Some n ->
+                            // Compared, unless the rendering is a sequence
+                            // default that can never match across schemas.
+                            n.Defaults
+                            |> List.tryPick (fun (c, e) ->
+                                if Identifier.sameName (Identifier.unquoted c) d.Name then Some e else None)
+                            |> function
+                               | Some e -> isSequenceDefault e
+                               | None -> true))
 
             [ if not (List.isEmpty sharedChecks) then
                   { Object = desired.Name
@@ -599,7 +676,7 @@ module SchemaDiff =
                           "%d index(es) exist in the database; CREATE INDEX is not read as desired state, so indexes were NOT compared"
                           (List.length uncomparedIndexes) } ]
 
-        primaryKey @ uniques @ foreignKeys @ checks @ defaults, notCompared
+        primaryKey @ uniques @ foreignKeys @ checks @ defaults @ checkRedefinitions, notCompared
 
     /// Views and routines, compared by PRESENCE only.
     ///
@@ -787,6 +864,7 @@ module SchemaDiff =
         (managedSchemas: string list)
         (declarations: (QualifiedName * string) list)
         (normalisedViews: (string * string) list)
+        (normalisedTables: NormalisedTable list)
         (desired: SchemaSnapshot)
         (actual: SchemaSnapshot)
         : DiffResult =
@@ -820,7 +898,7 @@ module SchemaDiff =
             |> List.collect (fun (d, a) -> columnChanges allowDrops managedSchemas desiredComplete d a)
 
         let constraintResults =
-            shared |> List.map (fun (d, a) -> constraintChanges d a)
+            shared |> List.map (fun (d, a) -> constraintChanges normalisedTables d a)
 
         let constraintChangeResults = constraintResults |> List.collect fst
         let notCompared = constraintResults |> List.collect snd

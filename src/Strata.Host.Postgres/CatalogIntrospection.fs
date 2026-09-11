@@ -173,6 +173,12 @@ module CatalogIntrospection =
                           IsNullable = boolOf r "is_nullable" }
                       Position = intOf r "ordinal"
                       HasDefault = boolOf r "has_default"
+                      DefaultExpression =
+                        // Empty means no default, which `HasDefault` already
+                        // says; the option carries only a real expression.
+                        match str r "default_expression" with
+                        | "" -> None
+                        | expression -> Some expression
                       IsGenerated = boolOf r "is_generated"
                       IsIdentity = boolOf r "is_identity" } })
             |> categoryResult "columns"

@@ -298,12 +298,43 @@ let main argv =
 
                         []
 
+                // Declared defaults and checks rendered the way the catalog
+                // renders them, by the same rolled-back transaction.
+                let normalisedTables =
+                    let declaredTables =
+                        declared.Snapshot.Objects
+                        |> List.choose (fun o ->
+                            match o with
+                            | TableObject t ->
+                                declared.Declarations
+                                |> List.tryPick (fun (name, text) ->
+                                    if QualifiedName.display name = QualifiedName.display t.Name then
+                                        Some(QualifiedName.display t.Name, text)
+                                    else
+                                        None)
+                            | _ -> None)
+
+                    match ShadowNormalisation.normaliseTables connectionString declaredTables with
+                    | Ok normalised ->
+                        normalised
+                        |> List.map (fun n ->
+                            ({ Table = n.Table
+                               Defaults = n.Defaults
+                               Checks = n.Checks }: SchemaDiff.NormalisedTable))
+                    | Microsoft.FSharp.Core.Error message ->
+                        if not (List.isEmpty declaredTables) then
+                            eprintfn "warning: could not normalise declared tables (%s)." message
+                            eprintfn "         Defaults and check expressions will be reported as not-compared."
+
+                        []
+
                 let diff =
                     SchemaDiff.run
                         allowDrops
                         project.Manifest.ManagedSchemas
                         declared.Declarations
                         normalisedViews
+                        normalisedTables
                         desired
                         actual
                 let gate = DeploymentGate.run graph scope diff.Changes

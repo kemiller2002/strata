@@ -18,6 +18,7 @@ let private col name position =
       Type = { TypeName = QualifiedName.unqualified (id' "text"); IsNullable = true }
       Position = position
       HasDefault = false
+      DefaultExpression = None
       IsGenerated = false
       IsIdentity = false }
 

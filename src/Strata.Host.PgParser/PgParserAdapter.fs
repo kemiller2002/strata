@@ -644,6 +644,10 @@ module PgParserAdapter =
           // A serial column always has a nextval default, which the catalog
           // reports and the file does not write.
           HasDefault = hasKind ConstrType.ConstrDefault || serial.IsSome
+          // A declared default is not comparable until the SERVER has rendered
+          // it: the file says DEFAULT 'open', the catalog says 'open'::text.
+          // ShadowNormalisation supplies the comparable form.
+          DefaultExpression = None
           IsGenerated = hasKind ConstrType.ConstrGenerated
           IsIdentity = hasKind ConstrType.ConstrIdentity }
 

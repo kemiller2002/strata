@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 48,
+  "nextSeq": 49,
   "items": [
     {
       "id": "WI-0001",
@@ -801,6 +801,23 @@
       "attachments": [],
       "createdAt": "2026-09-11T23:11:53Z",
       "updatedAt": "2026-09-11T23:11:53Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0048",
+      "title": "Compare default and check expressions via shadow normalisation",
+      "description": "Defaults and check constraints were disclosed as not-compared because the catalog renders them differently from the file. Round-trip the declared table through a rolled-back transaction and compare the server's rendering of both sides. Sequence defaults are excluded: a shadow table's sequence can never match.",
+      "tags": [
+        "strata",
+        "diff"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:18:26Z",
+      "updatedAt": "2026-09-11T23:18:26Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null

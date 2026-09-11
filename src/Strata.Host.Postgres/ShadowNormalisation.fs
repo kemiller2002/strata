@@ -49,6 +49,14 @@ module ShadowNormalisation =
     let private shadowSchema () =
         sprintf "_strata_shadow_%s" (Guid.NewGuid().ToString("N").Substring(0, 12))
 
+    /// What the server made of a declared table.
+    type TableNormalisation =
+        { Table: string
+          /// Column name -> default expression, as the catalog renders it.
+          Defaults: (string * string) list
+          /// Constraint name -> check definition, as the catalog renders it.
+          Checks: (string * string) list }
+
     /// Normalise declared view DDL into the catalog's rendering.
     ///
     /// Takes `(name, ddl)` pairs and returns `(name, normalisedDefinition)` for
@@ -122,6 +130,109 @@ module ShadowNormalisation =
                             None)
 
                 // ALWAYS. There is no success path that commits.
+                transaction.Rollback()
+                Ok normalised
+            with ex ->
+                try transaction.Rollback() with _ -> ()
+                Error ex.Message
+        with ex ->
+            Error ex.Message
+
+    /// Normalise declared table DDL, returning the catalog's rendering of its
+    /// defaults and check constraints.
+    ///
+    /// `DEFAULT 'open'` is stored and reported as `'open'::text`, and
+    /// `CHECK (balance >= 0)` as `CHECK ((balance >= (0)::numeric))`. Neither
+    /// matches what the author wrote, which is why both were disclosed rather
+    /// than compared. Round-tripping the declared DDL through the server puts
+    /// both sides in the same form.
+    ///
+    /// Same transaction discipline as views: one transaction, always rolled
+    /// back, a savepoint per table so one rejected definition does not lose the
+    /// rest.
+    let normaliseTables
+        (connectionString: string)
+        (tables: (string * string) list)
+        : Result<TableNormalisation list, string> =
+
+        if List.isEmpty tables then Ok []
+        else
+
+        try
+            use connection = new NpgsqlConnection(connectionString)
+            connection.Open()
+            use transaction = connection.BeginTransaction()
+
+            try
+                let schema = shadowSchema ()
+
+                let exec (sql: string) =
+                    use command = new NpgsqlCommand(sql, connection, transaction)
+                    command.ExecuteNonQuery() |> ignore
+
+                let queryPairs (sql: string) =
+                    use command = new NpgsqlCommand(sql, connection, transaction)
+                    use reader = command.ExecuteReader()
+
+                    [ while reader.Read() do
+                        if not (reader.IsDBNull 0) && not (reader.IsDBNull 1) then
+                            yield reader.GetString 0, reader.GetString 1 ]
+
+                exec (sprintf "CREATE SCHEMA %s" schema)
+
+                let normalised =
+                    tables
+                    |> List.choose (fun (name, ddl) ->
+                        let savepoint = "sp_" + Guid.NewGuid().ToString("N").Substring(0, 8)
+
+                        try
+                            exec (sprintf "SAVEPOINT %s" savepoint)
+
+                            // The column list starts at the first `(`. Anything
+                            // before it is the name, which is replaced by the
+                            // shadow one; the author's body is untouched.
+                            // `CREATE TABLE x AS SELECT ...` has no such body
+                            // and is skipped rather than mangled.
+                            let bodyStart = ddl.IndexOf '('
+
+                            if bodyStart < 0 then None
+                            else
+                                let shadowName =
+                                    sprintf "%s.t_%s" schema (Guid.NewGuid().ToString("N").Substring(0, 12))
+
+                                exec (sprintf "CREATE TABLE %s %s" shadowName (ddl.Substring bodyStart))
+
+                                let quoted = shadowName.Replace("'", "''")
+
+                                let defaults =
+                                    queryPairs (
+                                        sprintf
+                                            """
+                                            SELECT a.attname,
+                                                   pg_catalog.pg_get_expr(d.adbin, d.adrelid)
+                                            FROM pg_catalog.pg_attribute a
+                                            JOIN pg_catalog.pg_attrdef d
+                                              ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+                                            WHERE a.attrelid = '%s'::regclass AND a.attnum > 0
+                                            """
+                                            quoted)
+
+                                let checks =
+                                    queryPairs (
+                                        sprintf
+                                            """
+                                            SELECT con.conname,
+                                                   pg_catalog.pg_get_constraintdef(con.oid)
+                                            FROM pg_catalog.pg_constraint con
+                                            WHERE con.conrelid = '%s'::regclass AND con.contype = 'c'
+                                            """
+                                            quoted)
+
+                                Some { Table = name; Defaults = defaults; Checks = checks }
+                        with _ ->
+                            try exec (sprintf "ROLLBACK TO SAVEPOINT %s" savepoint) with _ -> ()
+                            None)
+
                 transaction.Rollback()
                 Ok normalised
             with ex ->

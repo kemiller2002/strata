@@ -49,4 +49,5 @@
 | WI-0044 | Create tables from the declaring file; canonicalise serial pseudo-types | complete | strata, deployment | high |
 | WI-0045 | Views and routines as desired state; disclose uncompared indexes | complete | strata, desired-state | high |
 | WI-0046 | Compare view definitions by normalising declared DDL through the server | complete | strata, diff | high |
-| WI-0047 | Compare routine bodies directly from prosrc | ready | strata, diff | high |
+| WI-0047 | Compare routine bodies directly from prosrc | complete | strata, diff | high |
+| WI-0048 | Compare default and check expressions via shadow normalisation | ready | strata, diff | high |

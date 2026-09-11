@@ -65,6 +65,7 @@ module CatalogQueries =
                NOT a.attnotnull                             AS is_nullable,
                a.attnum                                     AS ordinal,
                (a.atthasdef AND ad.adbin IS NOT NULL)       AS has_default,
+               COALESCE(pg_catalog.pg_get_expr(ad.adbin, ad.adrelid), '') AS default_expression,
                (a.attgenerated <> '')                       AS is_generated,
                (a.attidentity <> '')                        AS is_identity
         FROM pg_catalog.pg_attribute a

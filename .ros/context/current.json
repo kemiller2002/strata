@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "claude",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-09-11T23:11:53Z",
+  "updatedAt": "2026-09-11T23:18:26Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -1075,6 +1075,27 @@
         "EXE-20260911T231154131Z-071905e6"
       ],
       "completedAt": "2026-09-11T23:11:53Z"
+    },
+    {
+      "id": "WI-0048",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Host.Postgres/ShadowNormalisation.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/SchemaDiffTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-11T23:18:26Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T231827654Z-f9372121"
+      ],
+      "completedAt": "2026-09-11T23:18:26Z"
     }
   ]
 }
