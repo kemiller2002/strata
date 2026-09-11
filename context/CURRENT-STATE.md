@@ -37,12 +37,20 @@ analyzed into a requirements corpus; implementation has begun.
 Slice S1: PostgreSQL semantic inspection — canonical semantic model and catalog
 introspection, under the four-tier architecture of `DF-STRATA-2026-D3F8`.
 
+- `EV-STRATA-2026-D7B2`: at 3,009 files the agent advantage **does not
+  survive**. `grep` is ~16,000x faster and answered every seam question
+  correctly. Strata has no corpus-wide seam query — `relationships` is
+  per-object, so "where are the seams?" would need 200 invocations (~14 hours).
+
 ## Largest decision-relevant unknown
 
-**Where is the crossover?** `EV-STRATA-2026-F4C6` shows Strata 46x–101x cheaper
-at 200 tables; `EV-STRATA-2026-D8E1` shows it 8.7% more expensive at 4. Nothing
-locates the schema size where that flips, and until it is located the agent
-value proposition cannot be stated to anyone.
+**Whether the agent thesis has a defensible form at all.** The crossover
+question is now settled the wrong way: `EV-STRATA-2026-D7B2` shows that at the
+scale where Strata was supposed to win, `grep` wins on both cost and
+correctness. Two things must exist before the thesis can be retested — a cached
+index (`Q-010`, `Q-011`, `Q-020`) and a corpus-wide seam query — and the retest
+must use a corpus with unqualified names and dynamic SQL, where text search
+degrades and a resolved graph should not.
 
 Previously largest, still open: `Q-005`/`Q-027`, how much semantic binding
 Strata must implement versus delegate to a live server.

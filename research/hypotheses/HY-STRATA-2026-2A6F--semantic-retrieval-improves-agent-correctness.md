@@ -51,3 +51,20 @@ regime Strata is designed for.
 
 Per notebook §134, agent context must not now be used as the sole justification
 for Strata.
+
+## Status — 2026-09-11 (scale test: contradicted)
+
+`EV-STRATA-2026-D7B2` retested at 3,009 files / 2.37M tokens, with both
+conditions interactive.
+
+**The advantage did not survive.** Agents with `grep` answered all four seam
+questions correctly, including the `SELECT *` case designed to be Strata-only.
+`grep` answered in **15 ms** against Strata's **247,000 ms**. The relationship-
+typing win from `EV-STRATA-2026-B6F3` did not reproduce — forced to search
+rather than read, the raw agents were *more* disciplined, not less.
+
+Status stays `proposed` rather than `rejected` for one reason: the fixture is
+uniformly schema-qualified SQL, which is close to the best case for text search
+and the worst case for a resolver. The untested regime — unqualified names,
+dynamic SQL, names reused across schemas — is where a resolved graph should
+still win.

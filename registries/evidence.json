@@ -147,6 +147,32 @@
   },
   {
     "confidence": "high",
+    "contradicts": [
+      "HY-STRATA-2026-2A6F"
+    ],
+    "created_by_agent": "claude",
+    "evidence_type": "test-result",
+    "id": "EV-STRATA-2026-D7B2",
+    "path": "research/evidence/EV-STRATA-2026-D7B2--advantage-does-not-survive-scale.md",
+    "related_theories": [],
+    "research_area": "strata-agent-leverage",
+    "retrieved": "2026-09-11",
+    "source_author": "claude",
+    "source_date": "2026-09-11",
+    "source_title": "Strata Spike D part 6 — seam correctness at infeasible-to-read scale",
+    "source_uri": "200-table / 3,009-file corpus; two interactive agent runs; PostgreSQL 16.15",
+    "supports": [],
+    "tags": [
+      "strata",
+      "agent-leverage",
+      "spike-d",
+      "scale",
+      "negative-result"
+    ],
+    "title": "At 3,009 files the advantage does not survive — grep is ~16,000x faster and agents using it answered every seam question correctly, including the case designed to be Strata-only"
+  },
+  {
+    "confidence": "high",
     "contradicts": [],
     "created_by_agent": "claude",
     "evidence_type": "test-result",

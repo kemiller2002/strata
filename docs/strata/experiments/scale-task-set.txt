@@ -1,0 +1,12 @@
+S1. The billing team wants to drop the column
+    billing.t_07.legacy_settlement_ref. They believe nothing uses it.
+    Name EVERY file that would break, and say which module owns each.
+
+S2. Does anything OUTSIDE the billing module write to billing.t_02?
+    If so, name the file and module.
+
+S3. The column fulfilment.t_03.billing_order_ref holds a number.
+    What does it refer to, and is that relationship enforced by the database?
+
+S4. List every relationship that crosses a module boundary and is NOT
+    enforced by the database (no foreign key).
