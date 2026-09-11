@@ -47,6 +47,30 @@
     "title": "Targeted retrieval was lossy on three of nine tasks; fixing the loss cost almost nothing, so the context reduction is real"
   },
   {
+    "confidence": "high",
+    "contradicts": [],
+    "created_by_agent": "claude",
+    "evidence_type": "test-result",
+    "id": "EV-STRATA-2026-A7C3",
+    "path": "research/evidence/EV-STRATA-2026-A7C3--indexing-cost-is-not-where-i-said.md",
+    "related_theories": [],
+    "research_area": "strata-scale",
+    "retrieved": "2026-09-11",
+    "source_author": "claude",
+    "source_date": "2026-09-11",
+    "source_title": "Strata indexing-cost profile and single-pass extraction",
+    "source_uri": "3,000-file / 10,521-statement synthetic corpus; PostgreSQL 16.15; .NET 8.0.131 Release",
+    "supports": [],
+    "tags": [
+      "strata",
+      "performance",
+      "profiling",
+      "caching",
+      "correction"
+    ],
+    "title": "Indexing cost was 85% reflective string formatting of gap messages nothing reads, not parsing and not the absence of a cache — 34.9s to 8.0s with byte-identical output"
+  },
+  {
     "confidence": "medium",
     "contradicts": [],
     "created_by_agent": "claude",

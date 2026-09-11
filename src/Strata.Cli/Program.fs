@@ -64,8 +64,21 @@ let private valueOf (flag: string) (argv: string list) =
     |> List.pairwise
     |> List.tryPick (fun (a, b) -> if a = flag then Some b else None)
 
+/// A Debug binary is roughly 1.6x slower than a Release one on the extraction
+/// path. Two published timings were taken from a Debug build without anyone
+/// noticing, because nothing in the invocation or the output said so. Saying
+/// it here, on stderr, means a timing cannot be recorded silently again;
+/// stderr keeps it out of `--json` output, which stays byte-identical.
+let private announceBuildConfiguration () =
+#if DEBUG
+    eprintfn "strata: DEBUG build - timings from this binary are not representative of Release"
+#else
+    ()
+#endif
+
 [<EntryPoint>]
 let main argv =
+    announceBuildConfiguration ()
     let args = List.ofArray argv
 
     if List.isEmpty args || List.contains "--help" args || List.contains "-h" args then

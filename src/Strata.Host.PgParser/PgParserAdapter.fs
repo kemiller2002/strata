@@ -14,9 +14,24 @@ open Strata.Analysis.DialectPort
 /// Everything protobuf-shaped stops here. The walk below is the only code in
 /// Strata that knows what a `RangeVar` or `ColumnRef` is.
 ///
-/// The role assignment in `collectRelations` is the correctness-critical part:
+/// The role assignment in `relationsOf` is the correctness-critical part:
 /// it is what lets Tier 2 tell a CTE name from a table reference, which
 /// EV-STRATA-2026-B9C4 showed a naive walk cannot do.
+///
+/// ## One traversal, not six
+///
+/// The tree is walked exactly once. Reflective descent over the protobuf
+/// message graph costs about 2.6 us per node and is the dominant cost of
+/// extraction -- far above parsing itself, which is roughly 7% of the total.
+/// An earlier version of this module ran six independent `descend` passes
+/// (CTE names, relations, columns, join predicates, unmodelled shapes,
+/// dynamic SQL), paying that reflective cost six times over for six
+/// accumulators that are all functions of the same node stream.
+///
+/// `foldTree` threads one immutable `Gathered` state through a single visit.
+/// Everything that is a pure field read on the statement root -- shape, ALTER
+/// actions, INSERT/UPDATE target columns, DROP targets, WHERE presence --
+/// stays outside the walk, because none of it needs a traversal at all.
 module PgParserAdapter =
 
     /// Quoting is not recoverable from the parse tree: libpg_query normalises
@@ -37,9 +52,52 @@ module PgParserAdapter =
         else
             QualifiedName.qualified (identifierOf schema) (identifierOf name)
 
-    /// Generic descent over the protobuf message tree.
-    let rec private descend (msg: Google.Protobuf.IMessage) (visit: Google.Protobuf.IMessage -> unit) =
-        visit msg
+    /// A relation mention as it comes off the tree, before the CTE set is known.
+    ///
+    /// Role assignment needs the complete set of WITH bindings, which is only
+    /// final once the whole statement has been walked. Keeping the raw shape
+    /// here is what lets the walk run once: gather first, decide afterwards.
+    type private RawRelation =
+        { Schema: string
+          Relname: string
+          Alias: Identifier option
+          IsTemporary: bool }
+
+    /// Everything the single traversal accumulates.
+    ///
+    /// Lists are built in reverse and flipped once at the end, so each matched
+    /// node costs O(1) rather than O(n). Nodes that match nothing -- the large
+    /// majority -- return the state unchanged and allocate nothing.
+    type private Gathered =
+        { Ctes: string list
+          Relations: RawRelation list
+          Columns: ColumnMention list
+          JoinPredicates: JoinPredicate list
+          UnmodelledShapes: string list
+          ContainsDynamicSql: bool }
+
+    module private Gathered =
+
+        let empty =
+            { Ctes = []
+              Relations = []
+              Columns = []
+              JoinPredicates = []
+              UnmodelledShapes = []
+              ContainsDynamicSql = false }
+
+    /// Generic fold over the protobuf message tree.
+    ///
+    /// `visit` is pure: it takes a state and a node and returns the next state.
+    /// The single mutable local is the accumulator threaded across the child
+    /// loop; making it a `Seq.fold` instead would allocate an enumerator per
+    /// field on the hottest path in the system for no behavioural gain.
+    let rec private foldTree
+        (visit: 'State -> Google.Protobuf.IMessage -> 'State)
+        (state: 'State)
+        (msg: Google.Protobuf.IMessage)
+        : 'State =
+        let mutable acc = visit state msg
 
         for field in msg.Descriptor.Fields.InFieldNumberOrder() do
             match field.IsRepeated, field.FieldType with
@@ -48,14 +106,16 @@ module PgParserAdapter =
                 | :? System.Collections.IEnumerable as items ->
                     for item in items do
                         match item with
-                        | :? Google.Protobuf.IMessage as m -> descend m visit
+                        | :? Google.Protobuf.IMessage as m -> acc <- foldTree visit acc m
                         | _ -> ()
                 | _ -> ()
             | false, Google.Protobuf.Reflection.FieldType.Message ->
                 match field.Accessor.GetValue msg with
-                | :? Google.Protobuf.IMessage as m when not (isNull (box m)) -> descend m visit
+                | :? Google.Protobuf.IMessage as m when not (isNull (box m)) -> acc <- foldTree visit acc m
                 | _ -> ()
             | _ -> ()
+
+        acc
 
     /// Relations named by a DROP statement.
     ///
@@ -86,121 +146,243 @@ module PgParserAdapter =
                     | _ -> None)
             |> List.ofSeq
 
-    /// Names bound by WITH clauses anywhere in the statement.
+    /// A `ColumnRef`'s name parts, for join-predicate matching.
+    let private columnParts (node: Node) =
+        if isNull (box node) || isNull (box node.ColumnRef) then None
+        else
+            let names =
+                node.ColumnRef.Fields
+                |> Seq.choose (fun f ->
+                    if not (isNull (box f.String)) && not (String.IsNullOrEmpty f.String.Sval) then
+                        Some f.String.Sval
+                    else
+                        None)
+                |> List.ofSeq
+
+            match names with
+            | [ column ] -> Some(None, identifierOf column)
+            | qualifier :: rest when not rest.IsEmpty ->
+                Some(Some(identifierOf qualifier), identifierOf (List.last rest))
+            | _ -> None
+
+    let private isColumnRef (node: Node) =
+        not (isNull (box node)) && not (isNull (box node.ColumnRef))
+
+    let private columnMentionOf (cr: ColumnRef) =
+        let parts =
+            cr.Fields
+            |> Seq.map (fun node ->
+                if not (isNull (box node.String)) && not (String.IsNullOrEmpty node.String.Sval) then
+                    Choice1Of2 node.String.Sval
+                else
+                    Choice2Of2())
+            |> List.ofSeq
+
+        let names = parts |> List.choose (function Choice1Of2 s -> Some s | Choice2Of2 _ -> None)
+        let hasStar = parts |> List.exists (function Choice2Of2 _ -> true | Choice1Of2 _ -> false)
+
+        match names, hasStar with
+        | [], true ->
+            { Qualifier = None; Column = None; IsWildcard = true; QueryLevel = 0 }
+        | [ qualifier ], true ->
+            // `t.*` — qualified wildcard.
+            { Qualifier = Some(identifierOf qualifier)
+              Column = None
+              IsWildcard = true
+              QueryLevel = 0 }
+        | [ column ], false ->
+            { Qualifier = None
+              Column = Some(identifierOf column)
+              IsWildcard = false
+              QueryLevel = 0 }
+        | qualifier :: rest, false when not rest.IsEmpty ->
+            { Qualifier = Some(identifierOf qualifier)
+              Column = Some(identifierOf (List.last rest))
+              IsWildcard = false
+              QueryLevel = 0 }
+        | _ ->
+            { Qualifier = None; Column = None; IsWildcard = hasStar; QueryLevel = 0 }
+
+    /// Join predicates contributed by one `A_Expr`.
     ///
-    /// Collected separately and up front, because a CTE defined in a WITH clause
-    /// shadows a table of the same name in the statement body, and the body's
-    /// RangeVar carries nothing to distinguish it.
-    let private cteNames (stmt: Google.Protobuf.IMessage) =
-        let names = ResizeArray<string>()
+    /// Equality predicates between two column references. This deliberately
+    /// catches both `JOIN ... ON a.x = b.y` and `WHERE a.x = b.y`, since the
+    /// latter is a join in older SQL style.
+    ///
+    /// A comparison against a literal or parameter is NOT a join predicate and
+    /// is skipped: only column-to-column equality is relationship evidence.
+    let private joinPredicateOf (expr: A_Expr) =
+        if expr.Kind <> A_Expr_Kind.AexprOp then None
+        else
+            // Any name part equal to `=` counts, so a schema-qualified operator
+            // such as `OPERATOR(pg_catalog.=)` is still recognised as equality.
+            let isEquality =
+                expr.Name
+                |> Seq.exists (fun n -> not (isNull (box n.String)) && n.String.Sval = "=")
 
-        descend stmt (fun m ->
-            match m with
-            | :? CommonTableExpr as cte when not (String.IsNullOrEmpty cte.Ctename) -> names.Add cte.Ctename
-            | _ -> ())
+            if not isEquality then None
+            else
+                match columnParts expr.Lexpr, columnParts expr.Rexpr with
+                | Some (leftQualifier, leftColumn), Some (rightQualifier, rightColumn) ->
+                    Some
+                        { LeftQualifier = leftQualifier
+                          LeftColumn = leftColumn
+                          RightQualifier = rightQualifier
+                          RightColumn = rightColumn
+                          QueryLevel = 0 }
+                | _ -> None
 
-        set names
+    /// Predicates that relate two columns but which Strata does not model as
+    /// join evidence.
+    ///
+    /// Join detection above is equality-only. Without this, a corpus written
+    /// with range joins or `IN (SELECT ...)` yields FEWER relationships with no
+    /// indication anything was missed — making "no relationship found"
+    /// indistinguishable from "that shape is not analysed", which is exactly
+    /// the collapse ER-008 forbids.
+    ///
+    /// These are reported as unmodelled constructs so they become explicit
+    /// analysis gaps rather than silent omissions.
+    let private unmodelledShapeOf (expr: A_Expr) =
+        let operatorName =
+            expr.Name
+            |> Seq.tryPick (fun n ->
+                if not (isNull (box n.String)) && not (String.IsNullOrEmpty n.String.Sval) then
+                    Some n.String.Sval
+                else
+                    None)
+
+        match expr.Kind with
+        | A_Expr_Kind.AexprOp ->
+            // A non-equality operator relating two columns is a range
+            // join. Real relationship evidence Strata does not model.
+            if isColumnRef expr.Lexpr && isColumnRef expr.Rexpr then
+                match operatorName with
+                | Some "=" -> None
+                | Some op -> Some(sprintf "column-to-column predicate with operator '%s' is not modelled as join evidence" op)
+                | None -> Some "column-to-column predicate with an unnamed operator is not modelled as join evidence"
+            else None
+        | A_Expr_Kind.AexprBetween
+        | A_Expr_Kind.AexprNotBetween
+        | A_Expr_Kind.AexprBetweenSym
+        | A_Expr_Kind.AexprNotBetweenSym ->
+            if isColumnRef expr.Lexpr then Some "BETWEEN predicate is not modelled as join evidence"
+            else None
+        | A_Expr_Kind.AexprIn ->
+            if isColumnRef expr.Lexpr then Some "IN predicate is not modelled as join evidence"
+            else None
+        | _ -> None
+
+    /// The single visit.
+    ///
+    /// Every accumulator that used to own a traversal is a branch here. The
+    /// `A_Expr` case feeds two of them, which is why they share one type test
+    /// rather than two walks.
+    let private gather (acc: Gathered) (m: Google.Protobuf.IMessage) : Gathered =
+        match m with
+        | :? CommonTableExpr as cte when not (String.IsNullOrEmpty cte.Ctename) ->
+            { acc with Ctes = cte.Ctename :: acc.Ctes }
+
+        | :? RangeVar as rv when not (String.IsNullOrEmpty rv.Relname) ->
+            let alias =
+                if isNull (box rv.Alias) || String.IsNullOrEmpty rv.Alias.Aliasname then None
+                else Some(identifierOf rv.Alias.Aliasname)
+
+            // relpersistence 't' marks a temporary relation. Distinguishing it
+            // here keeps a temp table from being treated as a managed object.
+            let raw =
+                { Schema = rv.Schemaname
+                  Relname = rv.Relname
+                  Alias = alias
+                  IsTemporary = rv.Relpersistence = "t" }
+
+            { acc with Relations = raw :: acc.Relations }
+
+        | :? ColumnRef as cr ->
+            { acc with Columns = columnMentionOf cr :: acc.Columns }
+
+        | :? A_Expr as expr ->
+            let withJoin =
+                match joinPredicateOf expr with
+                | Some predicate -> { acc with JoinPredicates = predicate :: acc.JoinPredicates }
+                | None -> acc
+
+            match unmodelledShapeOf expr with
+            | Some shape -> { withJoin with UnmodelledShapes = shape :: withJoin.UnmodelledShapes }
+            | None -> withJoin
+
+        | :? SubLink as sublink ->
+            // `x IN (SELECT ...)`, `EXISTS (SELECT ...)` and friends relate
+            // the outer query to an inner one. Strata extracts the inner
+            // relations as references but does not derive a relationship.
+            let shape =
+                match sublink.SubLinkType with
+                | SubLinkType.AnySublink -> Some "IN (SELECT ...) subquery is not modelled as join evidence"
+                | SubLinkType.ExistsSublink -> Some "EXISTS (SELECT ...) subquery is not modelled as join evidence"
+                | SubLinkType.AllSublink -> Some "ALL (SELECT ...) subquery is not modelled as join evidence"
+                | _ -> None
+
+            match shape with
+            | Some s -> { acc with UnmodelledShapes = s :: acc.UnmodelledShapes }
+            | None -> acc
+
+        | :? ExecuteStmt -> { acc with ContainsDynamicSql = true }
+
+        | _ -> acc
 
     /// Relations mentioned, each tagged with the role that decides its meaning.
-    let private collectRelations (stmt: Node) =
-        let ctes = cteNames stmt
-        let mentions = ResizeArray<RelationMention>()
+    ///
+    /// Roles are assigned here rather than during the walk because a CTE
+    /// defined in a WITH clause shadows a table of the same name in the
+    /// statement body, and the body's `RangeVar` carries nothing to
+    /// distinguish it — so the decision needs the complete set of WITH
+    /// bindings, which only exists once the walk is done.
+    let private relationsOf (stmt: Node) (gathered: Gathered) =
+        let ctes = Set.ofList gathered.Ctes
 
         // CTE definition sites, so Tier 2 can build bindings from them.
-        for name in ctes do
-            mentions.Add
+        let definitions =
+            ctes
+            |> Seq.map (fun name ->
                 { Name = QualifiedName.unqualified (identifierOf name)
                   Role = CommonTableExpressionDefinition
                   Alias = None
-                  QueryLevel = 0 }
+                  QueryLevel = 0 })
+            |> List.ofSeq
 
-        descend stmt (fun m ->
-            match m with
-            | :? RangeVar as rv when not (String.IsNullOrEmpty rv.Relname) ->
-                let alias =
-                    if isNull (box rv.Alias) || String.IsNullOrEmpty rv.Alias.Aliasname then None
-                    else Some(identifierOf rv.Alias.Aliasname)
-
-                // relpersistence 't' marks a temporary relation. Distinguishing it
-                // here keeps a temp table from being treated as a managed object.
-                let isTemporary = rv.Relpersistence = "t"
-
+        let references =
+            gathered.Relations
+            |> List.rev
+            |> List.map (fun raw ->
                 let role =
-                    if isTemporary then TemporaryRelationDefinition
-                    elif String.IsNullOrEmpty rv.Schemaname && ctes.Contains rv.Relname then
+                    if raw.IsTemporary then TemporaryRelationDefinition
+                    elif String.IsNullOrEmpty raw.Schema && ctes.Contains raw.Relname then
                         // A bare name matching a WITH binding. Reported as a
                         // reference; Tier 2's scope chain resolves it to the CTE
                         // rather than to a table. This is the RK-001 case.
                         RelationReference
                     else RelationReference
 
-                mentions.Add
-                    { Name = qualifiedNameOf rv.Schemaname rv.Relname
-                      Role = role
-                      Alias = alias
-                      QueryLevel = 0 }
-            | _ -> ())
+                { Name = qualifiedNameOf raw.Schema raw.Relname
+                  Role = role
+                  Alias = raw.Alias
+                  QueryLevel = 0 })
 
         // DROP targets are not RangeVar nodes and must be added explicitly.
-        for name in dropTargets stmt do
-            mentions.Add
+        let drops =
+            dropTargets stmt
+            |> List.map (fun name ->
                 { Name = name
                   Role = RelationReference
                   Alias = None
-                  QueryLevel = 0 }
+                  QueryLevel = 0 })
 
-        List.ofSeq mentions
-
-    let private collectColumns (stmt: Google.Protobuf.IMessage) =
-        let mentions = ResizeArray<ColumnMention>()
-
-        descend stmt (fun m ->
-            match m with
-            | :? ColumnRef as cr ->
-                let parts =
-                    cr.Fields
-                    |> Seq.map (fun node ->
-                        if not (isNull (box node.String)) && not (String.IsNullOrEmpty node.String.Sval) then
-                            Choice1Of2 node.String.Sval
-                        else
-                            Choice2Of2())
-                    |> List.ofSeq
-
-                let names = parts |> List.choose (function Choice1Of2 s -> Some s | Choice2Of2 _ -> None)
-                let hasStar = parts |> List.exists (function Choice2Of2 _ -> true | Choice1Of2 _ -> false)
-
-                let mention =
-                    match names, hasStar with
-                    | [], true ->
-                        { Qualifier = None; Column = None; IsWildcard = true; QueryLevel = 0 }
-                    | [ qualifier ], true ->
-                        // `t.*` — qualified wildcard.
-                        { Qualifier = Some(identifierOf qualifier)
-                          Column = None
-                          IsWildcard = true
-                          QueryLevel = 0 }
-                    | [ column ], false ->
-                        { Qualifier = None
-                          Column = Some(identifierOf column)
-                          IsWildcard = false
-                          QueryLevel = 0 }
-                    | qualifier :: rest, false when not rest.IsEmpty ->
-                        { Qualifier = Some(identifierOf qualifier)
-                          Column = Some(identifierOf (List.last rest))
-                          IsWildcard = false
-                          QueryLevel = 0 }
-                    | _ ->
-                        { Qualifier = None; Column = None; IsWildcard = hasStar; QueryLevel = 0 }
-
-                mentions.Add mention
-            | _ -> ())
-
-        List.ofSeq mentions
+        definitions @ references @ drops
 
     /// Columns an INSERT or UPDATE targets.
     ///
     /// These live in `ResTarget.Name`, NOT in a `ColumnRef`, so the generic
-    /// column walk above never sees them. Without this, `UPDATE t SET c = ...`
+    /// column walk never sees them. Without this, `UPDATE t SET c = ...`
     /// contributes no dependency on `c` at all — which would make a column
     /// impact report omit every writer of the column, understating the blast
     /// radius of a drop in exactly the direction that causes damage.
@@ -283,117 +465,6 @@ module PgParserAdapter =
         | Node.NodeOneofCase.TransactionStmt -> UtilityShape "TRANSACTION"
         | other -> UnsupportedShape(string other)
 
-    /// Equality predicates between two column references.
-    ///
-    /// Walks `A_Expr` nodes whose operator is `=` and whose both sides are
-    /// `ColumnRef`. This deliberately catches both `JOIN ... ON a.x = b.y` and
-    /// `WHERE a.x = b.y`, since the latter is a join in older SQL style.
-    ///
-    /// A comparison against a literal or parameter is NOT a join predicate and
-    /// is skipped: only column-to-column equality is relationship evidence.
-    let private collectJoinPredicates (stmt: Google.Protobuf.IMessage) =
-        let predicates = ResizeArray<JoinPredicate>()
-
-        let columnParts (node: Node) =
-            if isNull (box node) || isNull (box node.ColumnRef) then None
-            else
-                let names =
-                    node.ColumnRef.Fields
-                    |> Seq.choose (fun f ->
-                        if not (isNull (box f.String)) && not (String.IsNullOrEmpty f.String.Sval) then
-                            Some f.String.Sval
-                        else
-                            None)
-                    |> List.ofSeq
-
-                match names with
-                | [ column ] -> Some(None, identifierOf column)
-                | qualifier :: rest when not rest.IsEmpty ->
-                    Some(Some(identifierOf qualifier), identifierOf (List.last rest))
-                | _ -> None
-
-        descend stmt (fun m ->
-            match m with
-            | :? A_Expr as expr when expr.Kind = A_Expr_Kind.AexprOp ->
-                let isEquality =
-                    expr.Name
-                    |> Seq.exists (fun n ->
-                        not (isNull (box n.String)) && n.String.Sval = "=")
-
-                if isEquality then
-                    match columnParts expr.Lexpr, columnParts expr.Rexpr with
-                    | Some (leftQualifier, leftColumn), Some (rightQualifier, rightColumn) ->
-                        predicates.Add
-                            { LeftQualifier = leftQualifier
-                              LeftColumn = leftColumn
-                              RightQualifier = rightQualifier
-                              RightColumn = rightColumn
-                              QueryLevel = 0 }
-                    | _ -> ()
-            | _ -> ())
-
-        List.ofSeq predicates
-
-    /// Predicates that relate two columns but which Strata does not model as
-    /// join evidence.
-    ///
-    /// Join detection above is equality-only. Without this, a corpus written
-    /// with range joins or `IN (SELECT ...)` yields FEWER relationships with no
-    /// indication anything was missed — making "no relationship found"
-    /// indistinguishable from "that shape is not analysed", which is exactly
-    /// the collapse ER-008 forbids.
-    ///
-    /// These are reported as unmodelled constructs so they become explicit
-    /// analysis gaps rather than silent omissions.
-    let private collectUnmodelledJoinShapes (stmt: Google.Protobuf.IMessage) =
-        let shapes = ResizeArray<string>()
-
-        let isColumnRef (node: Node) =
-            not (isNull (box node)) && not (isNull (box node.ColumnRef))
-
-        descend stmt (fun m ->
-            match m with
-            | :? A_Expr as expr ->
-                let operatorName =
-                    expr.Name
-                    |> Seq.tryPick (fun n ->
-                        if not (isNull (box n.String)) && not (String.IsNullOrEmpty n.String.Sval) then
-                            Some n.String.Sval
-                        else
-                            None)
-
-                match expr.Kind with
-                | A_Expr_Kind.AexprOp ->
-                    // A non-equality operator relating two columns is a range
-                    // join. Real relationship evidence Strata does not model.
-                    if isColumnRef expr.Lexpr && isColumnRef expr.Rexpr then
-                        match operatorName with
-                        | Some "=" -> ()
-                        | Some op -> shapes.Add(sprintf "column-to-column predicate with operator '%s' is not modelled as join evidence" op)
-                        | None -> shapes.Add "column-to-column predicate with an unnamed operator is not modelled as join evidence"
-                | A_Expr_Kind.AexprBetween
-                | A_Expr_Kind.AexprNotBetween
-                | A_Expr_Kind.AexprBetweenSym
-                | A_Expr_Kind.AexprNotBetweenSym ->
-                    if isColumnRef expr.Lexpr then
-                        shapes.Add "BETWEEN predicate is not modelled as join evidence"
-                | A_Expr_Kind.AexprIn ->
-                    if isColumnRef expr.Lexpr then
-                        shapes.Add "IN predicate is not modelled as join evidence"
-                | _ -> ()
-            | :? SubLink as sublink ->
-                // `x IN (SELECT ...)`, `EXISTS (SELECT ...)` and friends relate
-                // the outer query to an inner one. Strata extracts the inner
-                // relations as references but does not derive a relationship.
-                match sublink.SubLinkType with
-                | SubLinkType.AnySublink -> shapes.Add "IN (SELECT ...) subquery is not modelled as join evidence"
-                | SubLinkType.ExistsSublink -> shapes.Add "EXISTS (SELECT ...) subquery is not modelled as join evidence"
-                | SubLinkType.AllSublink -> shapes.Add "ALL (SELECT ...) subquery is not modelled as join evidence"
-                | _ -> ()
-            | _ -> ())
-
-        shapes |> Seq.distinct |> List.ofSeq
-
     /// Does this statement carry a WHERE predicate?
     ///
     /// Read from the statement node's own whereClause rather than by searching
@@ -407,35 +478,30 @@ module PgParserAdapter =
         | Node.NodeOneofCase.DeleteStmt -> not (isNull (box stmt.DeleteStmt.WhereClause))
         | _ -> false
 
-    /// Does this statement execute dynamically constructed SQL?
-    let private containsDynamicSql (stmt: Google.Protobuf.IMessage) =
-        let mutable found = false
-
-        descend stmt (fun m ->
-            match m with
-            | :? ExecuteStmt -> found <- true
-            | _ -> ())
-
-        found
-
     let private errorOf (e: PgSqlParser.Error) =
         { Message = e.Message
           CursorPosition = e.CursorPos
           Context = if String.IsNullOrEmpty e.Context then None else Some e.Context }
 
     /// Extract one statement into the dialect-neutral shape.
+    ///
+    /// One traversal, then assembly from what it gathered plus the root-node
+    /// field reads that never needed a traversal.
     let extractStatement (stmt: Node) : StatementExtraction =
-        { Shape = shapeOf stmt
-          Relations = collectRelations stmt
-          Columns = collectColumns stmt @ collectTargetColumns stmt
+        let gathered = foldTree gather Gathered.empty stmt
+        let shape = shapeOf stmt
+
+        { Shape = shape
+          Relations = relationsOf stmt gathered
+          Columns = (gathered.Columns |> List.rev) @ collectTargetColumns stmt
           UnmodelledConstructs =
-            (match shapeOf stmt with
+            (match shape with
              | UnsupportedShape detail -> [ detail ]
              | SelectShape | InsertShape | UpdateShape | DeleteShape
              | DdlShape _ | UtilityShape _ -> [])
-            @ collectUnmodelledJoinShapes stmt
-          ContainsDynamicSql = containsDynamicSql stmt
-          JoinPredicates = collectJoinPredicates stmt
+            @ (gathered.UnmodelledShapes |> List.rev |> List.distinct)
+          ContainsDynamicSql = gathered.ContainsDynamicSql
+          JoinPredicates = gathered.JoinPredicates |> List.rev
           AlterActions = collectAlterActions stmt
           HasWherePredicate = hasWhereClause stmt }
 

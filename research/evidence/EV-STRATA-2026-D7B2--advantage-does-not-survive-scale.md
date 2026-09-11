@@ -167,3 +167,23 @@ another module plus one `SELECT *` reader, then give an agent shell access and
 the four questions. Compare against `strata impact` and `strata relationships`.
 The decisive measurements are the two `grep` timings against the one `strata`
 timing. Verified 2026-09-11.
+
+## Amendment — 2026-09-11 (build configuration and cost attribution)
+
+The indexing timing in this record was taken from a **Debug** build. Nothing in
+the invocation said so — `dotnet build` defaults to Debug — and nothing here
+recorded it, which makes the figure unreproducible as stated. Release is worth
+roughly 1.6x on this path.
+
+`EV-STRATA-2026-A7C3` then profiled indexing and found the attribution wrong in
+kind, not just in magnitude. The dominant cost was neither parsing nor the
+absence of a cache: it was `sprintf "%A"` building 58,578 gap-message strings
+per run that no code path reads. With that and a six-times-redundant parse-tree
+walk removed, the same query on a comparable corpus runs 4.4x faster with
+byte-identical output.
+
+**The number in this record is therefore inflated by an unknown amount.** It is
+not restated here, because the corpus behind it no longer exists and the new
+measurement uses a different one — substituting that figure would be a second
+unreproducible claim. What stands is the qualitative finding about scale; the
+specific seconds should not be quoted without re-measurement.

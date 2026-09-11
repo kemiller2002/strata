@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 30,
+  "nextSeq": 31,
   "items": [
     {
       "id": "WI-0001",
@@ -495,6 +495,24 @@
       "updatedAt": "2026-09-11T18:33:13.000Z",
       "createdBy": "claude",
       "source": "user-request",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0030",
+      "title": "Profile and fix indexing cost: single-pass extraction and hand-written gap formatting",
+      "description": "Indexing was attributed to parser cost and the absence of a cache. Profiling shows 85% of analyse was sprintf \"%A\" building 58,578 gap-message strings per run that no code path reads, plus six redundant reflective walks of every parse tree. Replace %A with hand-written describe functions, collapse the six walks into one fold, default builds to Release, and record the measurement.",
+      "tags": [
+        "strata",
+        "performance",
+        "profiling"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T20:00:53Z",
+      "updatedAt": "2026-09-11T20:01:01Z",
+      "createdBy": "claude",
+      "source": "manual",
       "sourceReference": null
     }
   ]

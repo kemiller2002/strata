@@ -28,8 +28,12 @@ and `.sde/architecture/FOUR-TIER-ARCHITECTURE.md`.
 - Boundary checks: `tests/Strata.Tests/WireTests.fs` asserts the hand-written
   wire vocabulary exactly, so a renamed tag fails a test rather than silently
   changing Strata's output contract.
-- Build: `dotnet build Strata.sln`
-- Tests: `dotnet test tests/Strata.Tests/Strata.Tests.fsproj`
+- Build: `scripts/build.sh` (Release). A bare `dotnet build Strata.sln` produces
+  a **Debug** build: the solution metaproject passes `Configuration=Debug` as a
+  global property that `Directory.Build.props` cannot override. Debug is ~1.6x
+  slower on the extraction path, so never take a timing from one — a Debug
+  `strata` binary says so on stderr.
+- Tests: `dotnet test tests/Strata.Tests/Strata.Tests.fsproj -c Release`
 - Live integration tests: set `STRATA_TEST_PG` to a PostgreSQL connection string;
   without it those tests **skip** rather than pass silently.
 

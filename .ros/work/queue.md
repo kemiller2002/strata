@@ -31,4 +31,5 @@
 | WI-0026 | Spike D-3: seam correctness at a scale where reading everything is infeasible | complete | strata, spike | high |
 | WI-0027 | Correct the indexing-time figure in the scale evidence records | complete | strata, documentation | low |
 | WI-0028 | Spike D-4: messy corpus — unqualified names, shadowing, dynamic SQL, cross-schema collisions | complete | strata, spike | high |
-| WI-0029 | Build a deterministic pre-deployment gate and test HY-STRATA-2026-6F14 | ready | strata, slice-s4 | high |
+| WI-0029 | Build a deterministic pre-deployment gate and test HY-STRATA-2026-6F14 | complete | strata, slice-s4 | high |
+| WI-0030 | Profile and fix indexing cost: single-pass extraction and hand-written gap formatting | ready | strata, performance, profiling | high |

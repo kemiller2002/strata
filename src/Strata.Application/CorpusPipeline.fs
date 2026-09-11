@@ -5,6 +5,7 @@ open System.Security.Cryptography
 open System.Text
 open Strata.Semantic.Identity
 open Strata.Semantic.Schema
+open Strata.Semantic.Resolution
 open Strata.Semantic.AnalysisScope
 open Strata.Analysis.StatementReferences
 open Strata.Analysis.DialectPort
@@ -219,8 +220,9 @@ module CorpusPipeline =
               Status = status }
 
         let gapMessages =
-            [ for gap in columnGaps -> sprintf "%s: %A" sourceId gap
-              for effect in analyzabilityGaps -> sprintf "%s: %A degrades analyzability" sourceId effect.Kind
+            [ for gap in columnGaps -> sprintf "%s: %s" sourceId (ResolutionGap.describe gap)
+              for effect in analyzabilityGaps ->
+                  sprintf "%s: %s degrades analyzability" sourceId (EffectKind.describe effect.Kind)
               for construct in unmodelled -> sprintf "%s: %s" sourceId construct ]
 
         indexed, dependencies, joins, columnDeps, gapMessages

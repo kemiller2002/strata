@@ -64,6 +64,31 @@ module Effects =
         | RestoreFromBackupRequired
         | ReversibilityUnknown
 
+    module EffectKind =
+
+        /// Human-readable description of an effect kind.
+        ///
+        /// Hand-written rather than `sprintf "%A"` for the reason given on
+        /// `ResolutionGap.describe`: `%A` is reflection-based formatting that
+        /// exposes union-case spelling as if it were a vocabulary, and it is
+        /// slow enough to dominate corpus analysis when called per gap.
+        let describe (kind: EffectKind) =
+            match kind with
+            | Read -> "read"
+            | Insert -> "insert"
+            | Update -> "update"
+            | Delete -> "delete"
+            | MergeUpsert -> "merge/upsert"
+            | DdlCreate -> "DDL create"
+            | DdlAlter -> "DDL alter"
+            | DdlDrop -> "DDL drop"
+            | Truncate -> "truncate"
+            | ExecuteRoutine -> "routine execution"
+            | DynamicExecution -> "dynamic execution"
+            | PrivilegeChange -> "privilege change"
+            | TransactionControl -> "transaction control"
+            | UnknownEffect detail -> sprintf "unknown effect (%s)" detail
+
     /// One classified effect.
     type Effect =
         { Kind: EffectKind
