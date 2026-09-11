@@ -65,6 +65,54 @@ module Schema =
           /// Partial-index predicate text, if any.
           Predicate: string option }
 
+    /// When a trigger fires relative to the statement that provoked it.
+    ///
+    /// Qualified access: `Before` and `After` are words a caller is likely to
+    /// bind to something else, and `Schema` is opened widely.
+    [<RequireQualifiedAccess>]
+    type TriggerTiming =
+        | Before
+        | After
+        | InsteadOf
+
+    /// How often a trigger fires: once per affected row, or once per statement.
+    [<RequireQualifiedAccess>]
+    type TriggerLevel =
+        | Row
+        | Statement
+
+    /// A trigger, as both a declaring file and the catalog can describe it.
+    type Trigger =
+        { Name: Identifier
+          Timing: TriggerTiming
+          /// The events that fire it, lowercase, in the fixed order
+          /// insert, delete, update, truncate.
+          ///
+          /// A list because `AFTER INSERT OR UPDATE` is ONE trigger with two
+          /// events, not two triggers. The order is fixed so two sides that
+          /// agree always compare equal: PostgreSQL stores these as a bitmask
+          /// in both `CreateTrigStmt.events` and `pg_trigger.tgtype`, so
+          /// neither side preserves the order the author wrote.
+          Events: string list
+          Level: TriggerLevel
+          /// Columns an `UPDATE OF` restricts firing to. Empty means every
+          /// column, which is what an unrestricted UPDATE trigger means.
+          UpdateColumns: Identifier list
+          /// The function the trigger executes.
+          Function: QualifiedName
+          /// Literal arguments passed to that function, in order.
+          Arguments: string list
+          /// Whether a `WHEN` clause restricts firing.
+          ///
+          /// Presence only, and deliberately. The expression is unavailable on
+          /// BOTH sides: a file's `WHEN` clause is a parse tree Strata does not
+          /// deparse, and the catalog refuses to render `tgqual` at all --
+          /// `pg_get_expr` fails with "expression contains variables of more
+          /// than one relation" because OLD and NEW are two relations. So the
+          /// EXISTENCE of a condition is comparable and its text is not, and
+          /// the two must not be confused (ER-008).
+          HasCondition: bool }
+
     type Table =
         { Name: QualifiedName
           Columns: Column list
@@ -73,6 +121,7 @@ module Schema =
           CheckConstraints: CheckConstraint list
           ForeignKeys: ForeignKey list
           Indexes: Index list
+          Triggers: Trigger list
           Scope: ManagementScope }
 
     type View =

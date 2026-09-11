@@ -46,7 +46,21 @@ module DesiredState =
           /// Only single-declaration files are recorded. Executing a file that
           /// declares two tables to create ONE of them would create the other
           /// as a side effect, which is a change nobody planned.
-          Declarations: (QualifiedName * string) list }
+          Declarations: (QualifiedName * string) list
+
+          /// The verbatim text that declared each trigger, keyed by the table
+          /// it fires on and its own name.
+          ///
+          /// Kept apart from `Declarations` because a trigger name is not a
+          /// `QualifiedName`: trigger names are scoped to a TABLE, not to a
+          /// schema, so two tables may each carry a trigger called
+          /// `set_updated_at` and neither is the other.
+          ///
+          /// Verbatim for a stronger reason than tables have. A trigger's
+          /// `WHEN` clause and its `UPDATE OF` column list are not recoverable
+          /// from the model, so a reconstruction would silently create a
+          /// trigger that fires more often than the file asked for.
+          TriggerDeclarations: ((QualifiedName * Identifier) * string) list }
 
     /// Declared schema names, from the objects actually loaded.
     let private declaredSchemas (objects: SchemaObject list) =
@@ -65,6 +79,8 @@ module DesiredState =
         let failures = ResizeArray<LoadFailure>()
         let declarations' = ResizeArray<QualifiedName * string>()
         let indexes = ResizeArray<QualifiedName * Index>()
+        let triggers = ResizeArray<QualifiedName * Trigger>()
+        let triggerDeclarations = ResizeArray<(QualifiedName * Identifier) * string>()
 
         for path, contents in files do
             let declarations = parser.ParseObjectDefinitions contents
@@ -80,6 +96,7 @@ module DesiredState =
                     |> List.choose (function
                         | Declared o -> Some o
                         | DeclaredIndex _
+                        | DeclaredTrigger _
                         | Unmodelled _
                         | DeclarationFailed _ -> None)
 
@@ -87,6 +104,7 @@ module DesiredState =
                     match declaration with
                     | Declared object' -> objects.Add object'
                     | DeclaredIndex (table, index) -> indexes.Add(table, index)
+                    | DeclaredTrigger (table, trigger) -> triggers.Add(table, trigger)
                     | Unmodelled detail -> failures.Add { Path = path; Reason = detail }
                     | DeclarationFailed error ->
                         failures.Add
@@ -100,6 +118,19 @@ module DesiredState =
                 // reconstruction.
                 | _ -> ()
 
+                // Same rule for a trigger file, and the same reason: a file
+                // holding two CREATE TRIGGERs cannot have its text attributed
+                // to either, so executing it to create one would create both.
+                match
+                    declarations
+                    |> List.choose (function
+                        | DeclaredTrigger (table, trigger) -> Some(table, trigger)
+                        | _ -> None)
+                with
+                | [ (table, trigger) ] when List.isEmpty declaredHere ->
+                    triggerDeclarations.Add((table, trigger.Name), contents)
+                | _ -> ()
+
         // Indexes are declared in their own files but live on a table, so they
         // are attached once every file has been read.
         //
@@ -108,6 +139,15 @@ module DesiredState =
         // something it does not own, and acting on half of that is worse than
         // acting on none of it.
         let declaredIndexes = List.ofSeq indexes
+        let declaredTriggers = List.ofSeq triggers
+
+        let declaresTable (name: QualifiedName) =
+            objects
+            |> Seq.exists (fun o ->
+                match o with
+                | TableObject t -> QualifiedName.display t.Name = QualifiedName.display name
+                | ViewObject _
+                | RoutineObject _ -> false)
 
         let orphanIndexes =
             declaredIndexes
@@ -123,6 +163,23 @@ module DesiredState =
                         "index '%s' is declared on a table this project does not declare"
                         index.Name.Text })
 
+        // A trigger on an object the project does not declare AS A TABLE.
+        // Triggers on views are legal PostgreSQL — `INSTEAD OF` triggers only
+        // exist on views — and Strata models triggers on tables alone, so a
+        // trigger on a declared view lands here too. That is the right place
+        // for it: a failure the project can see, rather than a declaration
+        // that quietly disappears.
+        let orphanTriggers =
+            declaredTriggers
+            |> List.filter (fun (table, _) -> not (declaresTable table))
+            |> List.map (fun (table, trigger) ->
+                { Path = QualifiedName.display table
+                  Reason =
+                    sprintf
+                        "trigger '%s' is declared on '%s', which this project does not declare as a table"
+                        trigger.Name.Text
+                        (QualifiedName.display table) })
+
         let withIndexes =
             objects
             |> Seq.map (fun o ->
@@ -134,7 +191,20 @@ module DesiredState =
                             QualifiedName.display table = QualifiedName.display t.Name)
                         |> List.map snd
 
-                    if List.isEmpty attached then o else TableObject { t with Indexes = attached }
+                    let attachedTriggers =
+                        declaredTriggers
+                        |> List.filter (fun (table, _) ->
+                            QualifiedName.display table = QualifiedName.display t.Name)
+                        |> List.map snd
+
+                    if List.isEmpty attached && List.isEmpty attachedTriggers then
+                        o
+                    else
+                        TableObject
+                            { t with
+                                Indexes = (if List.isEmpty attached then t.Indexes else attached)
+                                Triggers =
+                                    (if List.isEmpty attachedTriggers then t.Triggers else attachedTriggers) }
                 | ViewObject _
                 | RoutineObject _ -> o)
             |> List.ofSeq
@@ -153,7 +223,7 @@ module DesiredState =
                 { Path = name
                   Reason = sprintf "declared %d times across the project" count })
 
-        let allFailures = loadFailures @ duplicates @ orphanIndexes
+        let allFailures = loadFailures @ duplicates @ orphanIndexes @ orphanTriggers
 
         let state reason =
             if List.isEmpty allFailures then Complete else Partial reason
@@ -181,10 +251,18 @@ module DesiredState =
                       "indexes",
                       (if List.isEmpty declaredIndexes then NotRequested
                        else state "index declarations are only as complete as the files that parsed")
+                      // Identical rule, identical reason. A project with no
+                      // trigger file says nothing about triggers; declaring
+                      // one takes ownership of all of them on the tables it
+                      // declares.
+                      "triggers",
+                      (if List.isEmpty declaredTriggers then NotRequested
+                       else state "trigger declarations are only as complete as the files that parsed")
                       "view_definitions", NotRequested
                       "routines", NotRequested ] }
           Failures = allFailures
-          Declarations = List.ofSeq declarations' }
+          Declarations = List.ofSeq declarations'
+          TriggerDeclarations = List.ofSeq triggerDeclarations }
 
     /// Schemas the project actually declared objects in.
     ///

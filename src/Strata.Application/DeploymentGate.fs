@@ -200,6 +200,79 @@ module DeploymentGate =
               AffectedSources = []
               NextSafeMove = "Confirm no query depends on this index for its plan, then approve explicitly." }
 
+        | CreateTrigger (table, trigger) ->
+            // The writers, not the readers. A trigger changes what a write
+            // does; a SELECT never fires one.
+            let writers = SemanticGraph.writersOf table graph
+
+            { Change = change
+              Verdict = if List.isEmpty writers && scopeSupportsAbsence then Allow else RequiresApproval
+              Detected =
+                sprintf
+                    "creates trigger %s on %s, which %d source(s) write to"
+                    trigger.Display
+                    (QualifiedName.display table)
+                    (List.length writers)
+              Rationale =
+                if List.isEmpty writers then cleanResultRationale
+                else
+                    "The trigger is new; the behaviour it changes is not. Every listed write gets it at once, \
+                     and a trigger can raise, rewrite the row, or cascade."
+              AffectedSources = writers
+              NextSafeMove =
+                if List.isEmpty writers then cleanResultNextMove
+                else "Confirm each listed write still behaves correctly with the trigger firing, then approve." }
+
+        | DropTrigger (table, trigger) ->
+            let writers = SemanticGraph.writersOf table graph
+
+            { Change = change
+              // The writers are the whole question. A trigger fires only when
+              // something writes the table, so a table nothing writes carries
+              // an inert trigger and removing it removes nothing. Where there
+              // ARE writers, no analysis can help: a trigger's effect is
+              // invisible to the SQL that provokes it, so Strata could never
+              // find the code that depended on it.
+              Verdict = if List.isEmpty writers && scopeSupportsAbsence then Allow else RequiresApproval
+              Detected =
+                sprintf
+                    "drops trigger %s on %s, which %d source(s) write to"
+                    trigger.Display
+                    (QualifiedName.display table)
+                    (List.length writers)
+              Rationale =
+                if List.isEmpty writers then cleanResultRationale
+                else
+                    "Every write that relied on its effect — an audit row, a maintained timestamp — \
+                     silently stops getting it, and nothing errors. Strata cannot tell which relied on it."
+              AffectedSources = writers
+              NextSafeMove =
+                if List.isEmpty writers then cleanResultNextMove
+                else "Confirm nothing depends on this trigger's effect, then approve explicitly." }
+
+        | ReplaceTrigger (table, trigger) ->
+            let writers = SemanticGraph.writersOf table graph
+
+            { Change = change
+              // Same reasoning as the drop: a trigger on a table nothing writes
+              // never fires, so redefining it changes nothing observable.
+              Verdict = if List.isEmpty writers && scopeSupportsAbsence then Allow else RequiresApproval
+              Detected =
+                sprintf
+                    "redefines trigger %s on %s, which %d source(s) write to"
+                    trigger.Display
+                    (QualifiedName.display table)
+                    (List.length writers)
+              Rationale =
+                if List.isEmpty writers then cleanResultRationale
+                else
+                    "Both a drop and a create at once: the old effect stops and a new one starts, \
+                     and every write to the table gets the change with no error either way."
+              AffectedSources = writers
+              NextSafeMove =
+                if List.isEmpty writers then cleanResultNextMove
+                else "Review the new definition against what the old one did, then approve explicitly." }
+
         | CreateView view ->
             { Change = change
               Verdict = Allow

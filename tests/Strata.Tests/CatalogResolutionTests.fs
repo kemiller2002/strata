@@ -31,6 +31,7 @@ let private table schema name columns =
           CheckConstraints = []
           ForeignKeys = []
           Indexes = []
+          Triggers = []
           Scope = Observed }
 
 let private snapshot =

@@ -40,6 +40,7 @@ let private table schema name columns fks =
           CheckConstraints = []
           ForeignKeys = fks
           Indexes = []
+          Triggers = []
           Scope = ManagementScope.Observed }
 
 let private snapshot =

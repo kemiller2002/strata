@@ -276,6 +276,7 @@ module SchemaDiff =
     /// the project declared while reporting success.
     let private emit
         (declarations: (QualifiedName * string) list)
+        (triggerDeclarations: ((QualifiedName * Identifier) * string) list)
         (desired: Table list)
         (change: Change)
         : string option =
@@ -284,6 +285,11 @@ module SchemaDiff =
         let declaredText name =
             declarations
             |> List.tryPick (fun (declared, text) -> if sameName declared name then Some text else None)
+
+        let declaredTriggerText table trigger =
+            triggerDeclarations
+            |> List.tryPick (fun ((t, n), text) ->
+                if sameName t table && Identifier.sameName n trigger then Some text else None)
 
         match change with
         // Most unclassified changes cannot be written — they describe a
@@ -414,6 +420,29 @@ module SchemaDiff =
 
         | TruncateTable table -> Some(sprintf "TRUNCATE TABLE %s" (quoteName table))
 
+        // A trigger is created by executing the file that declares it, for a
+        // stronger reason than a view is. A `WHEN` clause and an `UPDATE OF`
+        // column list are not in the model, so a reconstruction would create a
+        // trigger that fires MORE OFTEN than the file asked for — and it would
+        // report success while doing it.
+        | CreateTrigger (table, trigger) -> declaredTriggerText table trigger
+
+        // Drop and recreate, not CREATE OR REPLACE TRIGGER.
+        //
+        // Both reach the same state, but `CREATE OR REPLACE TRIGGER` needs
+        // PostgreSQL 14, and this form needs nothing. The two statements are
+        // atomic regardless: `Execution.apply` runs the whole plan in one
+        // transaction, and PostgreSQL rolls DDL back like anything else.
+        | ReplaceTrigger (table, trigger) ->
+            declaredTriggerText table trigger
+            |> Option.map (fun text ->
+                sprintf "DROP TRIGGER %s ON %s;\n%s" (quote trigger) (quoteName table) text)
+
+        // A trigger is dropped by naming it AND its table: trigger names are
+        // scoped to the table, not to the schema.
+        | DropTrigger (table, trigger) ->
+            Some(sprintf "DROP TRIGGER %s ON %s" (quote trigger) (quoteName table))
+
         // The diff does not currently produce these, and emitting one would
         // need a definition it does not carry.
         | AddConstraint _ -> None
@@ -443,10 +472,18 @@ module SchemaDiff =
         | ReplaceView _ -> 4
         | ReplaceRoutine _ -> 4
         | CreateRoutine _ -> 4
-        | TruncateTable _ -> 5
-        | DropColumn _ -> 6
-        | DropTable _ -> 7
-        | UnclassifiedChange _ -> 8
+        // After routines, and strictly after: a trigger names the function it
+        // executes, and PostgreSQL rejects a CREATE TRIGGER whose function does
+        // not exist yet. Sharing key 4 with CreateRoutine would not be enough —
+        // the sort is stable, and trigger changes are assembled before routine
+        // ones, so they would run first.
+        | CreateTrigger _ -> 5
+        | ReplaceTrigger _ -> 5
+        | DropTrigger _ -> 5
+        | TruncateTable _ -> 6
+        | DropColumn _ -> 7
+        | DropTable _ -> 8
+        | UnclassifiedChange _ -> 9
 
     /// Constraint and default differences for a table present on both sides.
     ///
@@ -483,6 +520,7 @@ module SchemaDiff =
         (allowDrops: bool)
         (desiredComplete: bool)
         (indexesDeclared: bool)
+        (triggersDeclared: bool)
         (normalised: NormalisedTable list)
         (desired: Table)
         (actual: Table)
@@ -739,6 +777,104 @@ module SchemaDiff =
 
         let uncomparedIndexes = if indexesDeclared then [] else deployedIndexes
 
+        // ---- triggers ------------------------------------------------------
+        //
+        // Same ownership rule as indexes, and for the same reason: a project
+        // with no trigger file is saying nothing about triggers, not that the
+        // table should have none. Shipping this without the distinction would
+        // propose dropping every trigger in every existing database.
+        //
+        // Note what is NOT here: an internal trigger. Every foreign key is
+        // implemented as a pair of them, and the catalog query filters them out
+        // by `tgisinternal` — without that filter a table with two foreign keys
+        // would show four undeclared triggers to drop.
+        let triggerIdentity (t: Trigger) =
+            // Everything the model carries, in one comparable string. A
+            // condition is compared by PRESENCE only, because its text is
+            // unavailable on both sides.
+            String.concat
+                "|"
+                [ (match t.Timing with
+                   | TriggerTiming.Before -> "before"
+                   | TriggerTiming.After -> "after"
+                   | TriggerTiming.InsteadOf -> "instead")
+                  t.Events |> String.concat ","
+                  (match t.Level with
+                   | TriggerLevel.Row -> "row"
+                   | TriggerLevel.Statement -> "statement")
+                  t.UpdateColumns |> List.map named |> String.concat ","
+                  // The function is matched on its NAME only. A declared
+                  // trigger names `touch()` and the catalog reports
+                  // `public.touch`, so an unqualified declaration would never
+                  // match a qualified deployment however identical they are.
+                  named t.Function.Name
+                  t.Arguments |> String.concat ","
+                  (if t.HasCondition then "when" else "always") ]
+
+        let triggerChanges =
+            if not triggersDeclared then []
+            else
+                let created =
+                    desired.Triggers
+                    |> List.filter (fun d ->
+                        not (actual.Triggers |> List.exists (fun a -> named a.Name = named d.Name)))
+                    |> List.map (fun d -> Ok(CreateTrigger(desired.Name, d.Name)))
+
+                let dropped =
+                    actual.Triggers
+                    |> List.filter (fun a ->
+                        not (desired.Triggers |> List.exists (fun d -> named d.Name = named a.Name)))
+                    |> List.map (fun a ->
+                        if not desiredComplete then
+                            Microsoft.FSharp.Core.Error
+                                { Object = desired.Name
+                                  Reason = DesiredStateIncomplete
+                                  Detail =
+                                    sprintf
+                                        "trigger '%s' is absent from desired state, but desired state did not load completely"
+                                        a.Name.Text }
+                        elif not allowDrops then
+                            Microsoft.FSharp.Core.Error
+                                { Object = desired.Name
+                                  Reason = DropsNotEnabled
+                                  Detail =
+                                    sprintf "trigger '%s' would be dropped; pass --allow-drops" a.Name.Text }
+                        else
+                            Ok(DropTrigger(desired.Name, a.Name)))
+
+                // Same name, different definition. Unlike an index, this IS
+                // proposed as a change: a trigger is dropped and recreated from
+                // the declaring file, which is exactly what the file asks for.
+                let redefined =
+                    desired.Triggers
+                    |> List.choose (fun d ->
+                        actual.Triggers
+                        |> List.tryFind (fun a -> named a.Name = named d.Name)
+                        |> Option.bind (fun a ->
+                            if triggerIdentity d <> triggerIdentity a then
+                                Some(Ok(ReplaceTrigger(desired.Name, d.Name)))
+                            else
+                                None))
+
+                created @ dropped @ redefined
+
+        let uncomparedTriggers = if triggersDeclared then [] else actual.Triggers
+
+        // A trigger with a WHEN clause on both sides, whose definitions
+        // otherwise agree. Its condition may still differ and nothing here can
+        // tell: `pg_get_expr` will not render `tgqual` at all.
+        let uncomparedConditions =
+            if not triggersDeclared then []
+            else
+                desired.Triggers
+                |> List.filter (fun d ->
+                    d.HasCondition
+                    && actual.Triggers
+                       |> List.exists (fun a ->
+                           named a.Name = named d.Name
+                           && a.HasCondition
+                           && triggerIdentity a = triggerIdentity d))
+
         // Everything above establishes PRESENCE. Two expressions Strata cannot
         // read might still differ, and saying so is the difference between a
         // bounded result and a false clean.
@@ -792,9 +928,31 @@ module SchemaDiff =
                     Detail =
                       sprintf
                           "%d index(es) exist in the database and this project declares none, so indexes were NOT compared. Declaring any index file takes ownership of them."
-                          (List.length uncomparedIndexes) } ]
+                          (List.length uncomparedIndexes) }
+              if not (List.isEmpty uncomparedTriggers) then
+                  { Object = desired.Name
+                    Reason = NotModelled
+                    Detail =
+                      sprintf
+                          "%d trigger(s) exist in the database and this project declares none, so triggers were NOT compared. Declaring any trigger file takes ownership of them."
+                          (List.length uncomparedTriggers) }
+              if not (List.isEmpty uncomparedConditions) then
+                  { Object = desired.Name
+                    Reason = NotCompared
+                    Detail =
+                      sprintf
+                          "%d trigger(s) carry a WHEN clause on both sides; the conditions were NOT compared, so they may differ"
+                          (List.length uncomparedConditions) } ]
 
-        primaryKey @ uniques @ foreignKeys @ checks @ defaults @ checkRedefinitions @ indexChanges, notCompared
+        primaryKey
+        @ uniques
+        @ foreignKeys
+        @ checks
+        @ defaults
+        @ checkRedefinitions
+        @ indexChanges
+        @ triggerChanges,
+        notCompared
 
     /// Views and routines, compared by PRESENCE only.
     ///
@@ -981,6 +1139,7 @@ module SchemaDiff =
         (allowDrops: bool)
         (managedSchemas: string list)
         (declarations: (QualifiedName * string) list)
+        (triggerDeclarations: ((QualifiedName * Identifier) * string) list)
         (normalisedViews: (string * string) list)
         (normalisedTables: NormalisedTable list)
         (renames: DeclaredRename list)
@@ -1038,10 +1197,20 @@ module SchemaDiff =
         // without this a new table's indexes would need a second apply — the
         // first run created the table and reported the index as a change it had
         // not made.
-        let indexesForNewTables =
+        let newTables =
             desiredTables
             |> List.filter (fun d -> not (actualTables |> List.exists (fun a -> sameName a.Name d.Name)))
+
+        let indexesForNewTables =
+            newTables
             |> List.collect (fun d -> d.Indexes |> List.map (fun i -> Ok(CreateIndex(d.Name, i.Name))))
+
+        // And its triggers, for the identical reason: trigger comparison runs
+        // only for tables on both sides, so without this a new table's triggers
+        // would need a second apply.
+        let triggersForNewTables =
+            newTables
+            |> List.collect (fun d -> d.Triggers |> List.map (fun t -> Ok(CreateTrigger(d.Name, t.Name))))
 
         let shared =
             desiredTables
@@ -1126,9 +1295,23 @@ module SchemaDiff =
                 | Partial _
                 | Inaccessible _ -> true
 
+            let triggersDeclared =
+                match Completeness.stateOf "triggers" desired.Completeness with
+                | NotRequested -> false
+                | Complete
+                | Partial _
+                | Inaccessible _ -> true
+
             shared
             |> List.map (fun (d, a) ->
-                constraintChanges allowDrops desiredComplete indexesDeclared normalisedTables d a)
+                constraintChanges
+                    allowDrops
+                    desiredComplete
+                    indexesDeclared
+                    triggersDeclared
+                    normalisedTables
+                    d
+                    a)
 
         let constraintChangeResults = constraintResults |> List.collect fst
         let notCompared = constraintResults |> List.collect snd
@@ -1148,6 +1331,7 @@ module SchemaDiff =
             creations
             @ tableRenames
             @ indexesForNewTables
+            @ triggersForNewTables
             @ removals
                 allowDrops
                 managedSchemas
@@ -1164,7 +1348,11 @@ module SchemaDiff =
             |> List.sortBy orderKey
 
         { Changes = changes
-          Statements = changes |> List.map (fun c -> { Change = c; Sql = emit declarations desiredTables c })
+          Statements =
+            changes
+            |> List.map (fun c ->
+                { Change = c
+                  Sql = emit declarations triggerDeclarations desiredTables c })
           Suppressed =
             (all |> List.choose (function Microsoft.FSharp.Core.Error s -> Some s | Ok _ -> None))
             @ notCompared
@@ -1195,6 +1383,12 @@ module SchemaDiff =
             sprintf "create-index       %s on %s" index.Text (QualifiedName.display table)
         | DropIndex (table, index) ->
             sprintf "drop-index         %s on %s" index.Text (QualifiedName.display table)
+        | CreateTrigger (table, trigger) ->
+            sprintf "create-trigger     %s on %s" trigger.Text (QualifiedName.display table)
+        | DropTrigger (table, trigger) ->
+            sprintf "drop-trigger       %s on %s" trigger.Text (QualifiedName.display table)
+        | ReplaceTrigger (table, trigger) ->
+            sprintf "replace-trigger    %s on %s" trigger.Text (QualifiedName.display table)
         | CreateView view -> sprintf "create-view        %s" (QualifiedName.display view)
         | ReplaceView view -> sprintf "replace-view       %s" (QualifiedName.display view)
         | ReplaceRoutine r -> sprintf "replace-routine    %s" (QualifiedName.display r)

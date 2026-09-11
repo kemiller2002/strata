@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 51,
+  "nextSeq": 54,
   "items": [
     {
       "id": "WI-0001",
@@ -852,6 +852,57 @@
       "attachments": [],
       "createdAt": "2026-09-11T23:31:08Z",
       "updatedAt": "2026-09-11T23:31:08Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0051",
+      "title": "Triggers as desired state",
+      "description": "CREATE TRIGGER files load and attach to their table, so triggers are created, replaced, dropped and compared like any other object. A project declaring no trigger file says nothing about triggers and drops none; declaring any takes ownership. Internal triggers backing foreign keys are excluded.",
+      "tags": [
+        "strata",
+        "desired-state"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:49:24Z",
+      "updatedAt": "2026-09-11T23:49:33Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0052",
+      "title": "Table creations are not ordered by foreign key",
+      "description": "A project whose child table sorts before its parent cannot be applied at all: CREATE TABLE order_audit ... REFERENCES orders fails with 42P01 and the whole transaction rolls back. Found by a live round-trip. Order table creations by their declared foreign keys; report a cycle rather than emitting an order no execution can satisfy.",
+      "tags": [
+        "strata",
+        "diff"
+      ],
+      "priority": "high",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:51:15Z",
+      "updatedAt": "2026-09-11T23:51:15Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0053",
+      "title": "The live test fixture is not reproducible",
+      "description": "The 17 CatalogIntrospection tests need a strata_test database containing sales.orders, hidden.secret, idx_orders_open and a non-superuser role. Nothing in the repository creates it, so on any other machine the tests skip rather than run. Commit a fixture script and name it in SDE-MAP.",
+      "tags": [
+        "strata",
+        "testing"
+      ],
+      "priority": "medium",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:51:15Z",
+      "updatedAt": "2026-09-11T23:51:15Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null

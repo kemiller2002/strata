@@ -37,6 +37,7 @@ let private table schema name columns =
           CheckConstraints = []
           ForeignKeys = []
           Indexes = []
+          Triggers = []
           Scope = Managed }
 
 /// A snapshot that CAN support an absence claim.

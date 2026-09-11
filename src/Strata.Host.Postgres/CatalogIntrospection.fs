@@ -113,6 +113,15 @@ module CatalogIntrospection =
           Relation: string
           Index: Index }
 
+    type private TriggerRow =
+        { Schema: string
+          Relation: string
+          /// `r`/`p` for a table, `v`/`m` for a view. Carried so a trigger on
+          /// a view is visibly NOT attached to anything rather than quietly
+          /// dropped: `Table` is the only place the model has for one.
+          RelationKind: string
+          Trigger: Trigger }
+
     type private RoutineRow =
         { Schema: string
           Name: string
@@ -207,6 +216,33 @@ module CatalogIntrospection =
                       Predicate = strOpt r "predicate" } })
             |> categoryResult "indexes"
 
+        let triggers =
+            readCategory connection "triggers" CatalogQueries.triggers (fun r ->
+                { Schema = str r "schema_name"
+                  Relation = str r "relation_name"
+                  RelationKind = str r "relation_kind"
+                  Trigger =
+                    { Name = identifierOf (str r "trigger_name")
+                      Timing =
+                        match str r "timing" with
+                        | "before" -> TriggerTiming.Before
+                        | "instead" -> TriggerTiming.InsteadOf
+                        | _ -> TriggerTiming.After
+                      Events = arrayOf r "events"
+                      Level =
+                        match str r "level" with
+                        | "row" -> TriggerLevel.Row
+                        | _ -> TriggerLevel.Statement
+                      UpdateColumns = arrayOf r "update_columns" |> List.map identifierOf
+                      Function =
+                        (match strOpt r "function_schema" with
+                         | Some schema when schema <> "" ->
+                             qualified schema (str r "function_name")
+                         | _ -> QualifiedName.unqualified (identifierOf (str r "function_name")))
+                      Arguments = arrayOf r "arguments"
+                      HasCondition = boolOf r "has_condition" } })
+            |> categoryResult "triggers"
+
         let viewDefinitions =
             readCategory connection "view_definitions" CatalogQueries.viewDefinitions (fun r ->
                 (str r "schema_name", str r "relation_name"), str r "definition")
@@ -243,6 +279,20 @@ module CatalogIntrospection =
             |> Option.defaultValue []
             |> List.filter (fun i -> i.Schema = schema && i.Relation = relation)
             |> List.map (fun i -> i.Index)
+
+        let triggersFor schema relation =
+            triggers
+            |> Option.defaultValue []
+            |> List.filter (fun t -> t.Schema = schema && t.Relation = relation)
+            |> List.map (fun t -> t.Trigger)
+
+        // Triggers on a view. `INSTEAD OF` triggers only exist on views, and
+        // the model has no place for them, so they are counted and disclosed
+        // in the completeness block rather than silently absent.
+        let triggersOnNonTables =
+            triggers
+            |> Option.defaultValue []
+            |> List.filter (fun t -> t.RelationKind <> "r" && t.RelationKind <> "p")
 
         let scopeOf extensionOwned =
             // An extension-owned object is observed, never managed (RK-008).
@@ -314,6 +364,7 @@ module CatalogIntrospection =
                                           ReferencedColumns = c.ReferencedColumns |> List.map identifierOf }
                                 | _ -> None)
                           Indexes = indexesFor rel.Schema rel.Name
+                          Triggers = triggersFor rel.Schema rel.Name
                           Scope = scopeOf rel.ExtensionOwned })
 
         let routineObjects =
@@ -350,8 +401,22 @@ module CatalogIntrospection =
                   stateFor "routines" (Option.isSome routines)
                   // Categories Strata does not yet read at all. Stated rather
                   // than omitted, so their absence is visible (§6, §129).
+                  (match stateFor "triggers" (Option.isSome triggers) with
+                   // Read, but the ones on views have nowhere to live. Partial
+                   // with a count, never Complete: a category that dropped
+                   // rows must not claim it saw everything (ER-008).
+                   | name, Complete when not (List.isEmpty triggersOnNonTables) ->
+                       name,
+                       Partial(
+                           sprintf
+                               "%d trigger(s) are defined on views, which Strata models nowhere: %s"
+                               (List.length triggersOnNonTables)
+                               (triggersOnNonTables
+                                |> List.map (fun t -> t.Schema + "." + t.Relation + "." + t.Trigger.Name.Text)
+                                |> List.sort
+                                |> String.concat ", "))
+                   | state -> state)
                   "rls_policies", NotRequested
-                  "triggers", NotRequested
                   "sequences", NotRequested
                   "extensions", NotRequested
                   "grants", NotRequested

@@ -35,6 +35,7 @@ let private orders =
                 ReferencedTable = qn "sales" "customer"
                 ReferencedColumns = [ id' "id" ] } ]
           Indexes = []
+          Triggers = []
           Scope = ManagementScope.Observed }
 
 let private snapshot =
@@ -335,6 +336,7 @@ let ``inspect includes constraints and indexes, not just columns and keys`` () =
                     Columns = [ id' "status" ]
                     IsUnique = false
                     Predicate = Some "status = 'open'" } ]
+              Triggers = []
               Scope = ManagementScope.Observed }
 
     let snapshotWith = { snapshot with Objects = [ withConstraints ] }
@@ -365,6 +367,7 @@ let ``a partial index predicate survives into the answer`` () =
                     Columns = [ id' "status" ]
                     IsUnique = false
                     Predicate = Some "status = 'open'" } ]
+              Triggers = []
               Scope = ManagementScope.Observed }
 
     let json =

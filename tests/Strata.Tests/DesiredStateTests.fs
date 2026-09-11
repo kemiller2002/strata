@@ -349,3 +349,123 @@ let ``a view carries no columns and no definition, and neither means none`` () =
 
     Assert.Empty view.Columns
     Assert.Equal("", view.Definition)
+
+
+// ---- triggers -------------------------------------------------------------
+//
+// Everything here protects the same distinction indexes needed: a project with
+// no trigger file says NOTHING about triggers, and a project with one takes
+// ownership of them all.
+
+let private triggerSql =
+    """
+CREATE TRIGGER touch_orders
+    BEFORE UPDATE OF total, status ON sales.orders
+    FOR EACH ROW
+    WHEN (OLD.total IS DISTINCT FROM NEW.total)
+    EXECUTE FUNCTION sales.touch('audit');
+"""
+
+let private triggerOn (loaded: DesiredState.Loaded) table name =
+    (tableNamed loaded table).Value.Triggers
+    |> List.tryFind (fun t -> t.Name.Text = name)
+
+[<Fact>]
+let ``triggers are NotRequested rather than complete-and-empty`` () =
+    let loaded = load [ "orders.sql", ordersSql ]
+
+    Assert.Equal(NotRequested, Completeness.stateOf "triggers" loaded.Snapshot.Completeness)
+
+[<Fact>]
+let ``declaring one trigger takes ownership of triggers`` () =
+    let loaded = load [ "orders.sql", ordersSql; "touch.sql", triggerSql ]
+
+    Assert.Equal(Complete, Completeness.stateOf "triggers" loaded.Snapshot.Completeness)
+
+[<Fact>]
+let ``a declared trigger attaches to its table with every field read`` () =
+    let loaded = load [ "orders.sql", ordersSql; "touch.sql", triggerSql ]
+
+    match triggerOn loaded "sales.orders" "touch_orders" with
+    | None -> failwith "the trigger did not attach to sales.orders"
+    | Some t ->
+        Assert.Equal(TriggerTiming.Before, t.Timing)
+        Assert.Equal<string list>([ "update" ], t.Events)
+        Assert.Equal(TriggerLevel.Row, t.Level)
+        Assert.Equal<string list>([ "total"; "status" ], t.UpdateColumns |> List.map (fun c -> c.Text))
+        Assert.Equal("sales.touch", QualifiedName.display t.Function)
+        Assert.Equal<string list>([ "audit" ], t.Arguments)
+        Assert.True(t.HasCondition, "the WHEN clause must be visible as present")
+
+[<Fact>]
+let ``events are read in a fixed order, not the order they were written`` () =
+    // Both sides store these as a bitmask, so neither preserves the author's
+    // order. Comparing them in written order would report churn on a trigger
+    // nobody changed.
+    let written =
+        load
+            [ "orders.sql", ordersSql
+              "t.sql", "CREATE TRIGGER t AFTER UPDATE OR DELETE OR INSERT ON sales.orders \
+                        FOR EACH STATEMENT EXECUTE FUNCTION sales.touch();" ]
+
+    Assert.Equal<string list>(
+        [ "insert"; "delete"; "update" ],
+        (triggerOn written "sales.orders" "t").Value.Events)
+
+[<Fact>]
+let ``an AFTER trigger is read as AFTER rather than as an unset timing`` () =
+    // TRIGGER_TYPE_AFTER is 0, not a bit of its own, so reading the timing as a
+    // flag test alone would make every AFTER trigger indistinguishable from a
+    // value nobody set.
+    let loaded =
+        load
+            [ "orders.sql", ordersSql
+              "t.sql", "CREATE TRIGGER t AFTER INSERT ON sales.orders FOR EACH ROW EXECUTE FUNCTION sales.touch();" ]
+
+    Assert.Equal(TriggerTiming.After, (triggerOn loaded "sales.orders" "t").Value.Timing)
+
+[<Fact>]
+let ``an INSTEAD OF trigger is read as such`` () =
+    let loaded =
+        load
+            [ "orders.sql", ordersSql
+              "t.sql", "CREATE TRIGGER t INSTEAD OF INSERT ON sales.orders FOR EACH ROW EXECUTE FUNCTION sales.touch();" ]
+
+    Assert.Equal(TriggerTiming.InsteadOf, (triggerOn loaded "sales.orders" "t").Value.Timing)
+
+[<Fact>]
+let ``a trigger on a table the project does not declare is a failure`` () =
+    // Not something to drop quietly: the project asserts a trigger on an object
+    // it does not own, and acting on half of that is worse than acting on none.
+    let loaded = load [ "touch.sql", triggerSql ]
+
+    Assert.Contains(loaded.Failures, fun f -> f.Reason.Contains "does not declare as a table")
+    Assert.NotEqual(Complete, Completeness.stateOf "relations" loaded.Snapshot.Completeness)
+
+[<Fact>]
+let ``a constraint trigger is reported as unmodelled, never loaded as an ordinary one`` () =
+    // A CONSTRAINT TRIGGER carries deferrability this model has no room for.
+    // Loading it as an ordinary trigger would make a deferred trigger compare
+    // equal to an immediate one.
+    let loaded =
+        load
+            [ "orders.sql", ordersSql
+              "t.sql", "CREATE CONSTRAINT TRIGGER t AFTER INSERT ON sales.orders \
+                        DEFERRABLE FOR EACH ROW EXECUTE FUNCTION sales.touch();" ]
+
+    Assert.Empty((tableNamed loaded "sales.orders").Value.Triggers)
+    Assert.Contains(loaded.Failures, fun f -> f.Reason.Contains "CONSTRAINT TRIGGER")
+
+[<Fact>]
+let ``a single-trigger file records its verbatim text`` () =
+    // A WHEN clause and an UPDATE OF column list are not in the model, so a
+    // reconstruction would create a trigger that fires more often than the file
+    // asked for — and report success doing it.
+    let loaded = load [ "orders.sql", ordersSql; "touch.sql", triggerSql ]
+
+    Assert.Contains(
+        loaded.TriggerDeclarations,
+        fun ((table, name), text) ->
+            QualifiedName.display table = "sales.orders"
+            && name.Text = "touch_orders"
+            && text = triggerSql)

@@ -35,6 +35,7 @@ let private tbl scope schema name columns =
           CheckConstraints = []
           ForeignKeys = []
           Indexes = []
+          Triggers = []
           Scope = scope }
 
 let private snapshot completeness objects =
@@ -52,7 +53,7 @@ let private managed = [ "sales" ]
 /// These tests build snapshots directly and have no files, so they pass none
 /// and exercise the reconstruction path deliberately.
 let private run allowDrops managedSchemas desired actual =
-    Strata.Application.SchemaDiff.run allowDrops managedSchemas [] [] [] [] desired actual
+    Strata.Application.SchemaDiff.run allowDrops managedSchemas [] [] [] [] [] desired actual
 
 /// Existing guard tests pass allowDrops=true deliberately: a test that left
 /// drops globally disabled would pass even if the guard it names were deleted.
@@ -173,6 +174,7 @@ let ``indexes are disclosed as not compared rather than ignored`` () =
               CheckConstraints = []
               ForeignKeys = []
               Indexes = [ { Name = id' "idx_total"; Columns = [ id' "id" ]; IsUnique = false; Predicate = None } ]
+              Triggers = []
               Scope = Observed }
 
     let result = run true managed (complete [ tbl Managed "sales" "orders" [ "id", false ] ]) (complete [ indexed ])
@@ -195,6 +197,7 @@ let ``an index backing a constraint is not reported as uncompared`` () =
               CheckConstraints = []
               ForeignKeys = []
               Indexes = [ { Name = id' "orders_pkey"; Columns = [ id' "id" ]; IsUnique = true; Predicate = None } ]
+              Triggers = []
               Scope = Observed }
 
     let desired =
@@ -206,6 +209,7 @@ let ``an index backing a constraint is not reported as uncompared`` () =
               CheckConstraints = []
               ForeignKeys = []
               Indexes = []
+              Triggers = []
               Scope = Managed }
 
     let result = run true managed (complete [ desired ]) (complete [ withPk ])
@@ -295,6 +299,7 @@ let ``a created table carries its primary key`` () =
               CheckConstraints = []
               ForeignKeys = []
               Indexes = []
+              Triggers = []
               Scope = Managed }
 
     let result = run true managed (complete [ table ]) (complete [])
@@ -328,6 +333,7 @@ let ``a table with a check constraint is NOT emitted`` () =
               CheckConstraints = [ { ConstraintName = id' "ck"; Expression = "" } ]
               ForeignKeys = []
               Indexes = []
+              Triggers = []
               Scope = Managed }
 
     let result = run true managed (complete [ table ]) (complete [])
@@ -349,6 +355,7 @@ let ``a column with a default is NOT emitted`` () =
               CheckConstraints = []
               ForeignKeys = []
               Indexes = []
+              Triggers = []
               Scope = Managed }
 
     let result =
@@ -395,6 +402,7 @@ let private tableWith schema name columns pk uniques checks fks =
           CheckConstraints = checks
           ForeignKeys = fks
           Indexes = []
+          Triggers = []
           Scope = Managed }
 
 let private fk name cols target targetCols =
@@ -474,6 +482,7 @@ let ``a default appearing or disappearing is reported`` () =
               CheckConstraints = []
               ForeignKeys = []
               Indexes = []
+              Triggers = []
               Scope = Managed }
 
     let result = run true managed (complete [ withDefault ]) (complete [ plain ])
@@ -599,7 +608,7 @@ let private viewDefined name definition =
           Scope = Managed }
 
 let private runWithViews normalised desired actual =
-    Strata.Application.SchemaDiff.run true managed [] normalised [] [] desired actual
+    Strata.Application.SchemaDiff.run true managed [] [] normalised [] [] desired actual
 
 [<Fact>]
 let ``a view whose normalised definition differs is redefined`` () =
@@ -738,10 +747,11 @@ let private tableWithDefault name column deployedDefault =
           CheckConstraints = []
           ForeignKeys = []
           Indexes = []
+          Triggers = []
           Scope = Managed }
 
 let private runWithTables normalisedTables desired actual =
-    Strata.Application.SchemaDiff.run true managed [] [] normalisedTables [] desired actual
+    Strata.Application.SchemaDiff.run true managed [] [] [] normalisedTables [] desired actual
 
 let private normalisedTable name defaults checks : Strata.Application.SchemaDiff.NormalisedTable =
     { Table = name; Defaults = defaults; Checks = checks }
@@ -796,6 +806,7 @@ let ``a check whose rendered definition differs is reported`` () =
               CheckConstraints = [ { ConstraintName = id' "ck"; Expression = expression } ]
               ForeignKeys = []
               Indexes = []
+              Triggers = []
               Scope = Managed }
 
     let result =
@@ -825,7 +836,7 @@ let ``a table that could not be normalised keeps its disclosure`` () =
 // ---- renames --------------------------------------------------------------
 
 let private runWithRenames renames desired actual =
-    Strata.Application.SchemaDiff.run true managed [] [] [] renames desired actual
+    Strata.Application.SchemaDiff.run true managed [] [] [] [] renames desired actual
 
 let private declaredRename object' renamedFrom columns : Strata.Application.SchemaDiff.DeclaredRename =
     { Object = object'; RenamedFrom = renamedFrom; Columns = columns }
@@ -916,6 +927,7 @@ let private tableWithIndexes name columns indexes =
           CheckConstraints = []
           ForeignKeys = []
           Indexes = indexes
+          Triggers = []
           Scope = Managed }
 
 let private index name columns unique =
@@ -951,6 +963,7 @@ let ``an index the project does not declare is dropped once it declares any`` ()
                       CheckConstraints = []
                       ForeignKeys = []
                       Indexes = [ index "idx_keep" [ "id" ] false; index "idx_gone" [ "total" ] false ]
+                      Triggers = []
                       Scope = Observed } ])
 
     Assert.Contains(result.Changes, fun c -> c = DropIndex(qn "sales" "orders", id' "idx_gone"))
@@ -973,6 +986,7 @@ let ``a project declaring NO index drops none and discloses instead`` () =
                       CheckConstraints = []
                       ForeignKeys = []
                       Indexes = [ index "idx_total" [ "total" ] false ]
+                      Triggers = []
                       Scope = Observed } ])
 
     Assert.Empty result.Changes
@@ -992,6 +1006,7 @@ let ``an index redefined under the same name is reported`` () =
                       CheckConstraints = []
                       ForeignKeys = []
                       Indexes = [ index "idx" [ "id" ] false ]
+                      Triggers = []
                       Scope = Observed } ])
 
     Assert.Contains(result.Changes, fun c ->
@@ -1005,3 +1020,197 @@ let ``creating an index is additive and dropping one needs approval`` () =
     // working and get slower, which no error surfaces.
     Assert.False(Change.isPotentiallyDestructive (CreateIndex(qn "sales" "t", id' "i")))
     Assert.True(Change.isPotentiallyDestructive (DropIndex(qn "sales" "t", id' "i")))
+
+
+// ---- triggers as desired state ---------------------------------------------
+
+let private tableWithTriggers scope name columns triggers =
+    TableObject
+        { Name = qn "sales" name
+          Columns = columns |> List.mapi (fun i (n, nullable) -> col (i + 1) n nullable)
+          PrimaryKey = None
+          UniqueConstraints = []
+          CheckConstraints = []
+          ForeignKeys = []
+          Indexes = []
+          Triggers = triggers
+          Scope = scope }
+
+let private trigger name timing events level =
+    { Name = id' name
+      Timing = timing
+      Events = events
+      Level = level
+      UpdateColumns = []
+      Function = qn "sales" "touch"
+      Arguments = []
+      HasCondition = false }
+
+/// A snapshot whose desired side DECLARES triggers, which is how a project
+/// takes ownership of them.
+let private declaringTriggers objects =
+    { Objects = objects
+      ServerVersion = None
+      Completeness = Completeness.ofList [ "relations", Complete; "triggers", Complete ] }
+
+[<Fact>]
+let ``a declared trigger that does not exist is created`` () =
+    let result =
+        run true managed
+            (declaringTriggers
+                [ tableWithTriggers
+                    Managed "orders" orders
+                    [ trigger "touch_orders" TriggerTiming.Before [ "update" ] TriggerLevel.Row ] ])
+            (complete [ tbl Observed "sales" "orders" orders ])
+
+    Assert.Contains(result.Changes, fun c -> c = CreateTrigger(qn "sales" "orders", id' "touch_orders"))
+
+[<Fact>]
+let ``a trigger identical on both sides produces no change`` () =
+    // The convergence case. If any field the two sides spell differently were
+    // compared, every idempotent re-run would propose a replace forever.
+    let same = trigger "touch_orders" TriggerTiming.After [ "insert"; "update" ] TriggerLevel.Row
+
+    let result =
+        run true managed
+            (declaringTriggers [ tableWithTriggers Managed "orders" orders [ same ] ])
+            (complete [ tableWithTriggers Observed "orders" orders [ same ] ])
+
+    Assert.Empty result.Changes
+
+[<Fact>]
+let ``a trigger whose timing differs is a replace, not a create and a drop`` () =
+    let result =
+        run true managed
+            (declaringTriggers
+                [ tableWithTriggers
+                    Managed "orders" orders
+                    [ trigger "touch_orders" TriggerTiming.Before [ "update" ] TriggerLevel.Row ] ])
+            (complete
+                [ tableWithTriggers
+                    Observed "orders" orders
+                    [ trigger "touch_orders" TriggerTiming.After [ "update" ] TriggerLevel.Row ] ])
+
+    Assert.Contains(result.Changes, fun c -> c = ReplaceTrigger(qn "sales" "orders", id' "touch_orders"))
+    Assert.DoesNotContain(result.Changes, fun c -> c = DropTrigger(qn "sales" "orders", id' "touch_orders"))
+
+[<Fact>]
+let ``a trigger that fires on more events than declared is a replace`` () =
+    let result =
+        run true managed
+            (declaringTriggers
+                [ tableWithTriggers
+                    Managed "orders" orders
+                    [ trigger "touch_orders" TriggerTiming.After [ "update" ] TriggerLevel.Row ] ])
+            (complete
+                [ tableWithTriggers
+                    Observed "orders" orders
+                    [ trigger "touch_orders" TriggerTiming.After [ "insert"; "update" ] TriggerLevel.Row ] ])
+
+    Assert.Contains(result.Changes, fun c -> c = ReplaceTrigger(qn "sales" "orders", id' "touch_orders"))
+
+[<Fact>]
+let ``a trigger the project does not declare is dropped once it declares any`` () =
+    let result =
+        run true managed
+            (declaringTriggers
+                [ tableWithTriggers
+                    Managed "orders" orders
+                    [ trigger "keep" TriggerTiming.After [ "insert" ] TriggerLevel.Row ] ])
+            (complete
+                [ tableWithTriggers
+                    Observed "orders" orders
+                    [ trigger "keep" TriggerTiming.After [ "insert" ] TriggerLevel.Row
+                      trigger "gone" TriggerTiming.After [ "delete" ] TriggerLevel.Row ] ])
+
+    Assert.Contains(result.Changes, fun c -> c = DropTrigger(qn "sales" "orders", id' "gone"))
+    Assert.DoesNotContain(result.Changes, fun c -> c = DropTrigger(qn "sales" "orders", id' "keep"))
+
+[<Fact>]
+let ``a project declaring NO trigger drops none and discloses instead`` () =
+    // NG-006 applied to a third object type. Without this, shipping triggers
+    // would have proposed dropping every trigger in every existing database.
+    let result =
+        run true managed
+            (complete [ tbl Managed "sales" "orders" orders ])
+            (complete
+                [ tableWithTriggers
+                    Observed "orders" orders
+                    [ trigger "audit" TriggerTiming.After [ "insert" ] TriggerLevel.Row ] ])
+
+    Assert.Empty result.Changes
+    Assert.Contains(result.Suppressed, fun s -> s.Detail.Contains "trigger(s) exist in the database")
+
+[<Fact>]
+let ``a trigger drop is suppressed rather than proposed when drops are off`` () =
+    let result =
+        run false managed
+            (declaringTriggers [ tableWithTriggers Managed "orders" orders [] ])
+            (complete
+                [ tableWithTriggers
+                    Observed "orders" orders
+                    [ trigger "audit" TriggerTiming.After [ "insert" ] TriggerLevel.Row ] ])
+
+    Assert.Empty result.Changes
+    Assert.Contains(result.Suppressed, fun s -> s.Reason = DropsNotEnabled)
+
+[<Fact>]
+let ``a WHEN clause present on both sides is disclosed as not compared`` () =
+    // The condition text is unavailable on BOTH sides: a file's WHEN clause is
+    // never deparsed, and pg_get_expr refuses tgqual outright. Two triggers
+    // that agree on everything comparable may still differ, and saying so is
+    // the difference between a bounded result and a false clean.
+    let conditional =
+        { trigger "touch_orders" TriggerTiming.Before [ "update" ] TriggerLevel.Row with HasCondition = true }
+
+    let result =
+        run true managed
+            (declaringTriggers [ tableWithTriggers Managed "orders" orders [ conditional ] ])
+            (complete [ tableWithTriggers Observed "orders" orders [ conditional ] ])
+
+    Assert.Empty result.Changes
+    Assert.Contains(result.Suppressed, fun s -> s.Reason = NotCompared && s.Detail.Contains "WHEN clause")
+
+[<Fact>]
+let ``a new table's declared triggers are created in the same plan`` () =
+    // Trigger comparison runs only for tables on both sides, so without an
+    // explicit pass for new tables a fresh table's triggers would need a
+    // second apply — and the first run would report a change it had not made.
+    let result =
+        run true managed
+            (declaringTriggers
+                [ tableWithTriggers
+                    Managed "orders" orders
+                    [ trigger "touch_orders" TriggerTiming.Before [ "insert" ] TriggerLevel.Row ] ])
+            (complete [])
+
+    Assert.Contains(result.Changes, fun c -> c = CreateTrigger(qn "sales" "orders", id' "touch_orders"))
+
+[<Fact>]
+let ``a trigger is created after the routine it executes`` () =
+    // PostgreSQL rejects a CREATE TRIGGER whose function does not exist yet,
+    // and the whole plan runs in one transaction, so a wrong order does not
+    // half-apply: it fails outright.
+    let routine =
+        RoutineObject
+            { Name = qn "sales" "touch"
+              Kind = Function
+              ArgumentTypes = []
+              ReturnType = Some "trigger"
+              Language = "plpgsql"
+              Body = None
+              Scope = Managed }
+
+    let result =
+        run true managed
+            (declaringTriggers
+                [ routine
+                  tableWithTriggers
+                      Managed "orders" orders
+                      [ trigger "touch_orders" TriggerTiming.Before [ "insert" ] TriggerLevel.Row ] ])
+            (complete [])
+
+    let tags = result.Changes |> List.map Change.tag
+    Assert.True(
+        List.findIndex ((=) "create-routine") tags < List.findIndex ((=) "create-trigger") tags,
+        "the function must exist before the trigger that names it")

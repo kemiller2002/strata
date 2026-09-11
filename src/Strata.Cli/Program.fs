@@ -369,6 +369,7 @@ let main argv =
                         allowDrops
                         project.Manifest.ManagedSchemas
                         declared.Declarations
+                        declared.TriggerDeclarations
                         normalisedViews
                         normalisedTables
                         renames

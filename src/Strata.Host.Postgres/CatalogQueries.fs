@@ -136,6 +136,69 @@ module CatalogQueries =
         ORDER BY n.nspname, c.relname, ic.relname
         """
 
+    /// Triggers, excluding the ones PostgreSQL creates for itself.
+    ///
+    /// `tgisinternal` is the load-bearing filter: every foreign key is
+    /// implemented as a pair of hidden triggers, so without it a table with
+    /// two foreign keys would show four triggers nobody declared and a diff
+    /// with drops enabled would propose removing the constraints by a side
+    /// door.
+    ///
+    /// `tgtype` is decoded HERE rather than in F# because this is where the
+    /// catalog's encoding belongs, and because it keeps one bit layout in the
+    /// codebase instead of two. The bits are PostgreSQL's own, from
+    /// `trigger.h`, and the same ones `CreateTrigStmt` uses on the parser
+    /// side: ROW 1, BEFORE 2, INSERT 4, DELETE 8, UPDATE 16, TRUNCATE 32,
+    /// INSTEAD 64. AFTER is the absence of BEFORE and INSTEAD, not a bit.
+    ///
+    /// The WHEN clause is reported as PRESENT or ABSENT and never as text:
+    /// `pg_get_expr(tgqual, tgrelid)` fails outright with "expression contains
+    /// variables of more than one relation", because OLD and NEW are two
+    /// relations. Verified against a live server.
+    let triggers =
+        """
+        SELECT n.nspname AS schema_name,
+               c.relname AS relation_name,
+               c.relkind::text AS relation_kind,
+               t.tgname  AS trigger_name,
+               CASE WHEN (t.tgtype & 64) <> 0 THEN 'instead'
+                    WHEN (t.tgtype & 2)  <> 0 THEN 'before'
+                    ELSE 'after' END AS timing,
+               CASE WHEN (t.tgtype & 1) <> 0 THEN 'row' ELSE 'statement' END AS level,
+               ARRAY(SELECT v.name
+                     FROM (VALUES (4, 'insert'), (8, 'delete'), (16, 'update'), (32, 'truncate'))
+                          AS v(bit, name)
+                     WHERE (t.tgtype & v.bit) <> 0
+                     ORDER BY v.bit) AS events,
+               COALESCE(fn.nspname, '') AS function_schema,
+               p.proname AS function_name,
+               -- tgargs is a bytea of NUL-terminated C strings. Split on the
+               -- NUL rather than on a comma: an argument may contain one, and
+               -- splitting a rendered argument list would turn one argument
+               -- into two.
+               COALESCE(
+                 (SELECT array_agg(a ORDER BY o)
+                  FROM unnest(string_to_array(encode(t.tgargs, 'escape'), '\000'))
+                       WITH ORDINALITY AS u(a, o)
+                  WHERE o <= t.tgnargs),
+                 '{}') AS arguments,
+               COALESCE(
+                 (SELECT array_agg(att.attname ORDER BY k.ord)
+                  FROM unnest(t.tgattr::int2[]) WITH ORDINALITY AS k(attnum, ord)
+                  JOIN pg_catalog.pg_attribute att
+                    ON att.attrelid = t.tgrelid AND att.attnum = k.attnum),
+                 '{}') AS update_columns,
+               (t.tgqual IS NOT NULL) AS has_condition
+        FROM pg_catalog.pg_trigger t
+        JOIN pg_catalog.pg_class c ON c.oid = t.tgrelid
+        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+        JOIN pg_catalog.pg_proc p ON p.oid = t.tgfoid
+        LEFT JOIN pg_catalog.pg_namespace fn ON fn.oid = p.pronamespace
+        WHERE NOT t.tgisinternal
+          AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+        ORDER BY n.nspname, c.relname, t.tgname
+        """
+
     let viewDefinitions =
         """
         SELECT n.nspname AS schema_name,

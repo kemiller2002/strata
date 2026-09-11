@@ -65,6 +65,21 @@ module ProposedChange =
         /// objects that a later change removes. That is a question about the
         /// body, which `Validation` answers, not about the creation.
         | CreateRoutine of routine: QualifiedName
+        /// Creates a trigger.
+        ///
+        /// NOT additive, and this is where a trigger parts company with an
+        /// index. A new index changes how a query runs; a new trigger changes
+        /// what a write DOES — it can raise, rewrite the row, or cascade into
+        /// another table — and every existing writer gets that behaviour the
+        /// instant it exists. The object is new; the behaviour it overwrites
+        /// is not.
+        | CreateTrigger of table: QualifiedName * trigger: Identifier
+        /// Removes a trigger. Every write that relied on its effect — an audit
+        /// row, a maintained timestamp, a denormalised total — silently stops
+        /// getting it, and nothing errors.
+        | DropTrigger of table: QualifiedName * trigger: Identifier
+        /// Redefines a trigger. Both of the above at once.
+        | ReplaceTrigger of table: QualifiedName * trigger: Identifier
         /// Adds a constraint. Can fail against existing data, but breaks no
         /// reader.
         | AddConstraint of table: QualifiedName * constraintName: Identifier
@@ -89,6 +104,9 @@ module ProposedChange =
             | RenameColumn _ -> "rename-column"
             | CreateIndex _ -> "create-index"
             | DropIndex _ -> "drop-index"
+            | CreateTrigger _ -> "create-trigger"
+            | DropTrigger _ -> "drop-trigger"
+            | ReplaceTrigger _ -> "replace-trigger"
             | CreateView _ -> "create-view"
             | ReplaceView _ -> "replace-view"
             | ReplaceRoutine _ -> "replace-routine"
@@ -113,6 +131,9 @@ module ProposedChange =
             | CreateRoutine table
             | CreateIndex (table, _)
             | DropIndex (table, _)
+            | CreateTrigger (table, _)
+            | DropTrigger (table, _)
+            | ReplaceTrigger (table, _)
             | AddConstraint (table, _)
             | TruncateTable table -> Some table
             | UnclassifiedChange _ -> None
@@ -127,6 +148,12 @@ module ProposedChange =
             match change with
             | DropColumn _
             | DropIndex _
+            // A trigger is the one CREATE in this list that is not additive.
+            // See the case's own comment: creating one changes what every
+            // existing write does.
+            | CreateTrigger _
+            | DropTrigger _
+            | ReplaceTrigger _
             | DropTable _
             | ReplaceView _
             | ReplaceRoutine _

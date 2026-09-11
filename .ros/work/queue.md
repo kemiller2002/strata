@@ -52,4 +52,7 @@
 | WI-0047 | Compare routine bodies directly from prosrc | complete | strata, diff | high |
 | WI-0048 | Compare default and check expressions via shadow normalisation | complete | strata, diff | high |
 | WI-0049 | Rename detection via -- strata:renamed_from (Q-004) | complete | strata, rename | high |
-| WI-0050 | Indexes as desired state | ready | strata, desired-state | high |
+| WI-0050 | Indexes as desired state | complete | strata, desired-state | high |
+| WI-0051 | Triggers as desired state | active | strata, desired-state | high |
+| WI-0052 | Table creations are not ordered by foreign key | captured | strata, diff | high |
+| WI-0053 | The live test fixture is not reproducible | captured | strata, testing | medium |

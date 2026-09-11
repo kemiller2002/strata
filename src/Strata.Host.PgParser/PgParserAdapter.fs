@@ -770,6 +770,7 @@ module PgParserAdapter =
           // declares none. An empty list here means "this statement declared
           // no index", not "this table has none".
           Indexes = []
+          Triggers = []
           // Everything in a project's desired state is by definition managed.
           Scope = Managed }
 
@@ -962,6 +963,81 @@ module PgParserAdapter =
           IsUnique = stmt.Unique
           Predicate = None }
 
+    /// PostgreSQL's trigger type bitmask, from `trigger.h`.
+    ///
+    /// The same bits appear in `CreateTrigStmt.timing`/`.events` here and in
+    /// `pg_trigger.tgtype` on the catalog side, which is why a declared trigger
+    /// and a deployed one compare at all. Verified against a live server:
+    /// `BEFORE INSERT ... FOR EACH ROW` reports tgtype 7 = ROW|BEFORE|INSERT,
+    /// and `AFTER INSERT OR UPDATE OR DELETE` reports 28 = INSERT|DELETE|UPDATE.
+    [<Literal>]
+    let private TriggerBefore = 2
+
+    [<Literal>]
+    let private TriggerInstead = 64
+
+    /// Event bits, paired with the name each stands for, in bit order. The
+    /// order here IS the canonical order `Trigger.Events` promises, and the
+    /// catalog query orders by the same bits so the two always agree.
+    let private triggerEventBits = [ 4, "insert"; 8, "delete"; 16, "update"; 32, "truncate" ]
+
+    let private triggerEvents (events: int) =
+        triggerEventBits
+        |> List.choose (fun (bit, name) -> if events &&& bit <> 0 then Some name else None)
+
+    /// The last two elements of a name path, as schema and object.
+    ///
+    /// A `funcname` is a path: `touch`, `app.touch`, or in principle
+    /// `db.app.touch`. Taking the last two mirrors `operatorSymbol`, which
+    /// takes the last element of an operator's path for the same reason.
+    let private nameFromPath (parts: string list) =
+        match List.rev parts with
+        | name :: schema :: _ -> Some(QualifiedName.qualified (identifierOf schema) (identifierOf name))
+        | [ name ] -> Some(QualifiedName.unqualified (identifierOf name))
+        | [] -> None
+
+    let private stringValues (nodes: Google.Protobuf.Collections.RepeatedField<Node>) =
+        if isNull (box nodes) then []
+        else
+            nodes
+            |> Seq.choose (fun n -> if isNull (box n.String) then None else Some n.String.Sval)
+            |> List.ofSeq
+
+    /// A trigger, as its file declares it.
+    ///
+    /// `None` for a shape Strata does not model, so the caller reports it as
+    /// unmodelled rather than loading a trigger that means something else.
+    let private triggerOf (stmt: CreateTrigStmt) : Result<QualifiedName * Trigger, string> =
+        if stmt.Isconstraint then
+            // A CONSTRAINT TRIGGER carries deferrability and a FROM relation
+            // that this model has no room for. Loading it as an ordinary
+            // trigger would make a deferred trigger compare equal to an
+            // immediate one.
+            Microsoft.FSharp.Core.Error "CREATE CONSTRAINT TRIGGER is not yet read as a desired-state declaration"
+        elif isNull (box stmt.Relation) then
+            Microsoft.FSharp.Core.Error "CREATE TRIGGER with no resolvable table"
+        else
+            match nameFromPath (stringValues stmt.Funcname) with
+            | None -> Microsoft.FSharp.Core.Error "CREATE TRIGGER with no resolvable function name"
+            | Some func ->
+                let table = qualifiedNameOf stmt.Relation.Schemaname stmt.Relation.Relname
+
+                Ok(
+                    table,
+                    { Name = identifierOf stmt.Trigname
+                      Timing =
+                        if stmt.Timing &&& TriggerInstead <> 0 then TriggerTiming.InsteadOf
+                        elif stmt.Timing &&& TriggerBefore <> 0 then TriggerTiming.Before
+                        // AFTER is the absence of both bits, not a bit of its
+                        // own: TRIGGER_TYPE_AFTER is 0.
+                        else TriggerTiming.After
+                      Events = triggerEvents stmt.Events
+                      Level = if stmt.Row then TriggerLevel.Row else TriggerLevel.Statement
+                      UpdateColumns = stringValues stmt.Columns |> List.map identifierOf
+                      Function = func
+                      Arguments = stringValues stmt.Args
+                      HasCondition = not (isNull (box stmt.WhenClause)) })
+
     let private errorOf (e: PgSqlParser.Error) =
         { Message = e.Message
           CursorPosition = e.CursorPos
@@ -1058,6 +1134,13 @@ module PgParserAdapter =
                         | Node.NodeOneofCase.IndexStmt when not (String.IsNullOrEmpty stmt.IndexStmt.Idxname) ->
                             let table, index = indexOf stmt.IndexStmt
                             DeclaredIndex(table, index)
+
+                        // A trigger is always named, so there is no unnamed
+                        // case to refuse as there is for an index.
+                        | Node.NodeOneofCase.CreateTrigStmt ->
+                            match triggerOf stmt.CreateTrigStmt with
+                            | Ok (table, trigger) -> DeclaredTrigger(table, trigger)
+                            | Microsoft.FSharp.Core.Error detail -> Unmodelled detail
                         // Recognised, modelled nowhere yet. Saying so keeps a
                         // view file from reading as an empty declaration, which
                         // a diff would treat as "nothing to create" (ER-008).

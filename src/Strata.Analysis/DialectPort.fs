@@ -69,6 +69,11 @@ module DialectPort =
         /// `Table`, so a declared index carries the table it attaches to and
         /// the loader joins them once every file is read.
         | DeclaredIndex of table: QualifiedName * index: Index
+        /// A trigger, which belongs to a table for the same reason an index
+        /// does: `CREATE TRIGGER` is its own statement, but the object whose
+        /// behaviour it changes is the table, and the loader joins them once
+        /// every file is read.
+        | DeclaredTrigger of table: QualifiedName * trigger: Trigger
         | Unmodelled of detail: string
         | DeclarationFailed of ParseError
 
