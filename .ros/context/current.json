@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "claude",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-09-11T17:53:50.000Z",
+  "updatedAt": "2026-09-11T17:55:48.000Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -610,6 +610,18 @@
       ],
       "completedAt": "2026-09-11T17:53:50.000Z",
       "conclusion": "Tested at 3,009 files / 2.37M tokens with both conditions interactive. The advantage does NOT survive: grep answered the discriminating question in 15ms against Strata's 247,000ms, and both raw agents answered all four seam questions correctly including the SELECT * case designed to be Strata-only. The small-scale relationship-typing win did not reproduce. Three problems identified: no corpus-wide seam query (relationships is per-object, so finding unknown seams needs 200 invocations), no cached index, and a scope block that was 330x the answer until bounded. Fixed the packaging; the other two are open."
+    },
+    {
+      "id": "WI-0027",
+      "type": "mechanical",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [],
+      "updatedAt": "2026-09-11T17:55:48.000Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T175548433Z-0c9c759b"
+      ],
+      "completedAt": "2026-09-11T17:55:48.000Z"
     }
   ]
 }

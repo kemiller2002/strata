@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 27,
+  "nextSeq": 28,
   "items": [
     {
       "id": "WI-0001",
@@ -444,6 +444,23 @@
       "updatedAt": "2026-09-11T17:10:39.000Z",
       "createdBy": "claude",
       "source": "user-request",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0027",
+      "title": "Correct the indexing-time figure in the scale evidence records",
+      "description": "247s was a cold-cache first run; warm is ~175s. Ratio against grep moves from 16,000x to 9,000-12,000x. Conclusions unchanged.",
+      "tags": [
+        "strata",
+        "documentation"
+      ],
+      "priority": "low",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T17:55:47.000Z",
+      "updatedAt": "2026-09-11T17:55:47.000Z",
+      "createdBy": "claude",
+      "source": "self-correction",
       "sourceReference": null
     }
   ]

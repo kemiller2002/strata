@@ -124,6 +124,21 @@ justification. `HY-STRATA-2026-6F14` — deployment-safety value standing
 independently — carries essentially all of the program's weight, and remains
 untested.
 
+## Correction — indexing time
+
+The 247 s figure quoted above was the **first, cold-cache** invocation. A
+subsequent batch of 8 queries against the same corpus completed in 1,057 s
+total. Two of those 8 failed immediately (their output directory had been
+removed mid-run by cleanup, an operator error), so the honest per-query figure
+over the 6 that actually ran is **roughly 175 s**, and the batch's own arithmetic
+of ~132 s per query is an underestimate because it divided by 8.
+
+Best estimate: **~175 s warm, ~247 s cold**, per invocation, at 3,009 files.
+
+This does not change any conclusion. The comparison against `grep` at 15 ms
+moves from ~16,000x to roughly **9,000–12,000x**, and the interactive loop
+remains unusable: 6 queries still cost about 17 minutes.
+
 ## Limitations
 
 1. **Synthetic, uniformly clean corpus.** Every reference is schema-qualified.
