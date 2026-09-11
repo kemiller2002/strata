@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/ros/mission.schema.json",
+  "title": "ROS Mission",
+  "allOf": [{"$ref": "artifact-metadata.schema.json"}],
+  "type": "object",
+  "required": ["id", "title", "status", "created"],
+  "properties": {
+    "id": {"pattern": "^MS-"},
+    "status": {"enum": ["proposed", "approved", "active", "blocked", "completed", "cancelled", "archived"]},
+    "artifact_tier": {"enum": ["research-note", "research-cycle", "full-rep"]}
+  }
+}

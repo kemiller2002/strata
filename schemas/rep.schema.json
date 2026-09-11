@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/ros/rep.schema.json",
+  "title": "ROS Research Execution Package",
+  "allOf": [{"$ref": "artifact-metadata.schema.json"}],
+  "type": "object",
+  "required": ["id", "title", "research_area", "author_agent", "version", "confidence", "completion", "created", "updated"],
+  "properties": {
+    "id": {"pattern": "^RP-"},
+    "status": {"enum": ["draft", "review", "accepted", "canonical", "deprecated", "archived", "superseded", "withdrawn"]}
+  }
+}

@@ -1,0 +1,11 @@
+#!/usr/bin/env node
+
+// Runs the F# ROS CLI (DF-ROS-2026-A032): downloads a self-contained
+// binary matching this project's ros.json rosVersion and this machine's
+// platform from the upstream project's GitHub Releases on first use,
+// verifies it, caches it, then execs it. Node's own CLI implementation
+// remains available at tools/ros_cli.mjs if you ever need it.
+
+import { run } from "./tools/ros_fs_launcher.mjs";
+
+process.exitCode = await run(process.argv.slice(2));

@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/ros/journal.schema.json",
+  "title": "ROS Journal",
+  "allOf": [{"$ref": "artifact-metadata.schema.json"}],
+  "type": "object",
+  "required": ["id", "title", "author_agent", "created"],
+  "properties": {"id": {"pattern": "^JR-"}}
+}

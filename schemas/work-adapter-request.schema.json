@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://repository-operating-system.local/schemas/work-adapter-request.schema.json",
+  "title": "ROS external work-system adapter request",
+  "type": "object",
+  "required": ["protocolVersion", "requestId", "operation", "repository", "principal"],
+  "properties": {
+    "protocolVersion": {"const": "1.0.0"},
+    "requestId": {"type": "string", "minLength": 1},
+    "operation": {"enum": ["getWorkItem", "transitionWorkItem", "publishRepositoryEvent"]},
+    "repository": {"type": "string", "minLength": 1},
+    "principal": {"type": "string", "minLength": 1},
+    "scopes": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "workItem": {"type": "string"},
+    "expectedState": {"type": "string"},
+    "targetState": {"type": "string"},
+    "event": {"type": "object"},
+    "simulateOutcome": {"const": "unknown", "description": "File-conformance-adapter fault injection only."}
+  },
+  "additionalProperties": false
+}

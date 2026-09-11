@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/ros/hypothesis.schema.json",
+  "title": "ROS Hypothesis",
+  "allOf": [{"$ref": "artifact-metadata.schema.json"}],
+  "type": "object",
+  "required": ["id", "title", "status", "confidence"],
+  "properties": {
+    "id": {"pattern": "^HY-"},
+    "status": {"enum": ["proposed", "active", "supported", "rejected", "superseded", "withdrawn"]}
+  }
+}

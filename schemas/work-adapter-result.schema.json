@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://repository-operating-system.local/schemas/work-adapter-result.schema.json",
+  "title": "ROS external work-system adapter result",
+  "type": "object",
+  "required": ["schemaVersion", "protocolVersion", "requestId", "operation", "outcome"],
+  "properties": {
+    "schemaVersion": {"const": "1.0.0"},
+    "protocolVersion": {"type": "string"},
+    "requestId": {"type": "string"},
+    "operation": {"type": "string"},
+    "outcome": {"enum": ["success", "failure", "unknown"]},
+    "data": {"type": "object"},
+    "error": {
+      "type": "object",
+      "required": ["code", "message"],
+      "properties": {"code": {"type": "string"}, "message": {"type": "string"}}
+    }
+  },
+  "additionalProperties": false
+}

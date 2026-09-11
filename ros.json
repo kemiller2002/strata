@@ -1,0 +1,38 @@
+{
+  "name": "strata",
+  "project": "Strata",
+  "rosVersion": "2.0.1-main.78.1",
+  "repSpecificationVersion": "2.0",
+  "profile": "greenfield",
+  "bootstrap": "BOOTSTRAP.md",
+  "canonicalRoots": {
+    "journals": "research/journals",
+    "packages": "research/packages",
+    "theories": "research/theories",
+    "evidence": "research/evidence"
+  },
+  "registries": "registries",
+  "templates": "templates",
+  "generated": "generated",
+  "repository": {"id": "strata", "type": "application"},
+  "workProtocol": {
+    "version": "1.0.0",
+    "enforceAttribution": true,
+    "semanticMapping": {"ready": "ready", "active": "active", "blocked": "blocked", "complete": "complete"},
+    "completionEvidence": {"default": ["implementation", "tests"], "research": ["research-record"], "mechanical": []},
+    "meaningfulPaths": ["**"],
+    "ignoredPaths": [".git/**", ".ros/context/**", ".ros/events/**", ".ros/work/**", ".ros/telemetry/**", ".ros/locks/**", "registries/**"]
+  },
+  "telemetry": {
+    "version": "1.0.0",
+    "enabled": true,
+    "requireFinalization": true,
+    "executionRoot": ".ros/telemetry/executions",
+    "metricRegistry": "telemetry/metrics.json",
+    "allowRawTelemetry": true,
+    "maxRawPayloadBytes": 262144,
+    "maxRawSnapshotsPerExecution": 256,
+    "maxRawBytesPerExecution": 8388608,
+    "maxCapabilityHistoryEntries": 64
+  }
+}

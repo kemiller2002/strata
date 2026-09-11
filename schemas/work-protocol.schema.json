@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://repository-operating-system.local/schemas/work-protocol.schema.json",
+  "title": "ROS work protocol configuration",
+  "type": "object",
+  "required": ["repository", "workProtocol"],
+  "properties": {
+    "repository": {
+      "type": "object",
+      "required": ["id", "type"],
+      "properties": {"id": {"type": "string", "minLength": 1}, "type": {"type": "string", "minLength": 1}}
+    },
+    "workProtocol": {
+      "type": "object",
+      "required": ["version", "semanticMapping", "completionEvidence"],
+      "properties": {
+        "version": {"const": "1.0.0"},
+        "enforceAttribution": {"type": "boolean"},
+        "semanticMapping": {"type": "object", "additionalProperties": {"enum": ["backlog", "ready", "active", "review", "blocked", "complete"]}},
+        "completionEvidence": {"type": "object", "additionalProperties": {"type": "array", "items": {"type": "string"}}},
+        "meaningfulPaths": {"type": "array", "items": {"type": "string"}},
+        "ignoredPaths": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": true
+    },
+    "telemetry": {
+      "type": "object",
+      "required": ["version", "enabled", "requireFinalization", "executionRoot", "metricRegistry"],
+      "properties": {
+        "version": {"const": "1.0.0"},
+        "enabled": {"type": "boolean"},
+        "requireFinalization": {"type": "boolean"},
+        "executionRoot": {"type": "string", "minLength": 1},
+        "metricRegistry": {"type": "string", "minLength": 1},
+        "allowRawTelemetry": {"type": "boolean"},
+        "maxRawPayloadBytes": {"type": "integer", "minimum": 1024},
+        "maxRawSnapshotsPerExecution": {"type": "integer", "minimum": 1},
+        "maxRawBytesPerExecution": {"type": "integer", "minimum": 1024},
+        "maxCapabilityHistoryEntries": {"type": "integer", "minimum": 2},
+        "disabledReason": {"type": "string", "minLength": 1}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"enabled": {"const": false}}, "required": ["enabled"]},
+          "then": {"required": ["disabledReason"]}
+        }
+      ],
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

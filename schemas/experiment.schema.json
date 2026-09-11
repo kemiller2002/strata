@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/ros/experiment.schema.json",
+  "title": "ROS Experiment",
+  "allOf": [{"$ref": "artifact-metadata.schema.json"}],
+  "type": "object",
+  "required": ["id", "title", "status", "tests_hypotheses"],
+  "properties": {
+    "id": {"pattern": "^EX-"},
+    "status": {"enum": ["proposed", "active", "blocked", "completed", "cancelled"]}
+  }
+}
