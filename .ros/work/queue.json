@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 2,
+  "nextSeq": 15,
   "items": [
     {
       "id": "WI-0001",
@@ -18,6 +18,228 @@
       "updatedAt": "2026-09-11T13:36:54.000Z",
       "createdBy": "claude",
       "source": "user-request",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0002",
+      "title": "Convert Strata design notebook into ROS requirements, decisions, experiments and work items",
+      "description": "Phases 2-9: classify the pre-requirements notebook, challenge it, define minimum architecture and vertical slices, and publish ROS records plus backlog work items with traceability.",
+      "tags": [
+        "strata",
+        "planning",
+        "requirements"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T13:54:23.000Z",
+      "updatedAt": "2026-09-11T13:54:29.000Z",
+      "createdBy": "claude",
+      "source": "user-request",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0003",
+      "title": "S1: Strata four-tier F# solution skeleton with mechanical architecture check",
+      "description": "Create Strata.Semantic (netstandard2.0, FSharp.Core only), Strata.Analysis, Strata.Application, Strata.Host.Postgres, Strata.Host.PgParser, Strata.Cli and test projects. Add scripts/check-semantic-architecture.sh enforcing that Tier 1 references only FSharp.Core. Traces DF-STRATA-2026-D3F8, NFR-005.",
+      "tags": [
+        "strata",
+        "slice-s1"
+      ],
+      "priority": "high",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-11T14:01:00.000Z",
+      "updatedAt": "2026-09-11T14:01:00.000Z",
+      "createdBy": "claude",
+      "source": "strata-roadmap",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0004",
+      "title": "S1: canonical semantic model for PostgreSQL schema objects",
+      "description": "Tier 1 types for schemas, tables, columns, types, keys, constraints, indexes, views, routines, plus identity, provenance/evidence, categorical certainty, resolution state, managed-vs-observed scope and analysis completeness. Deliberately small per ER-014. Traces PR-006, PR-011, PR-014, PR-021, ER-008.",
+      "tags": [
+        "strata",
+        "slice-s1"
+      ],
+      "priority": "high",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-11T14:01:00.000Z",
+      "updatedAt": "2026-09-11T14:01:00.000Z",
+      "createdBy": "claude",
+      "source": "strata-roadmap",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0005",
+      "title": "S1: PostgreSQL catalog introspection adapter",
+      "description": "Tier 4 Npgsql adapter reading pg_catalog/information_schema into the canonical model, reporting per-category completeness including inaccessible metadata. Read-only, least privilege. Traces PR-004, PR-005, NFR-006, RK-004.",
+      "tags": [
+        "strata",
+        "slice-s1"
+      ],
+      "priority": "high",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-11T14:01:01.000Z",
+      "updatedAt": "2026-09-11T14:01:01.000Z",
+      "createdBy": "claude",
+      "source": "strata-roadmap",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0006",
+      "title": "S1: deterministic semantic snapshot serialization",
+      "description": "Deterministic, content-addressable JSON rendering of the semantic model with an explicit hand-written wire contract per Boundary Preservation. Traces PR-007, NFR-001, NFR-003, NFR-010.",
+      "tags": [
+        "strata",
+        "slice-s1"
+      ],
+      "priority": "medium",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-11T14:01:01.000Z",
+      "updatedAt": "2026-09-11T14:01:01.000Z",
+      "createdBy": "claude",
+      "source": "strata-roadmap",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0007",
+      "title": "S2: PostgreSQL parser adapter over pgsqlparser",
+      "description": "Tier 4 adapter exposing a narrow DialectParser boundary (Parse, SplitStatements, Normalize, ParseRoutineBody, GetParserVersion, GetDialectVersion). Protobuf AST must not cross into Tier 1 or 2. Traces PR-001, PR-002, PR-003, DF-STRATA-2026-4C7A, ER-014.",
+      "tags": [
+        "strata",
+        "slice-s2"
+      ],
+      "priority": "high",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-11T14:01:01.000Z",
+      "updatedAt": "2026-09-11T14:01:01.000Z",
+      "createdBy": "claude",
+      "source": "strata-roadmap",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0008",
+      "title": "S2: lexical scope resolution over the parse tree",
+      "description": "Resolve CTE names, subquery aliases and table aliases into a scope chain before any reference becomes a dependency edge. Must not attribute a CTE-shadowed name to a real table. Traces PR-010, DF-STRATA-2026-9B2E, RK-001.",
+      "tags": [
+        "strata",
+        "slice-s2"
+      ],
+      "priority": "high",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-11T14:01:02.000Z",
+      "updatedAt": "2026-09-11T14:01:02.000Z",
+      "createdBy": "claude",
+      "source": "strata-roadmap",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0009",
+      "title": "S2: reference extraction with explicit resolution states",
+      "description": "Extract object and column references, classify each as resolved, partially-resolved, ambiguous, unsupported or unresolved; never collapse states. SELECT * must expand against a catalog snapshot or mark column analysis incomplete. Traces PR-009, PR-011, ER-008, RK-002.",
+      "tags": [
+        "strata",
+        "slice-s2"
+      ],
+      "priority": "high",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-11T14:01:02.000Z",
+      "updatedAt": "2026-09-11T14:01:02.000Z",
+      "createdBy": "claude",
+      "source": "strata-roadmap",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0010",
+      "title": "S2: effect classification by consequence",
+      "description": "Classify statements as read/insert/update/delete/merge/DDL/truncate/lock/routine-execution/dynamic/privilege/transaction-control/maintenance, capturing boundedness and data-loss possibility rather than statement type alone. Traces PR-015, ER-004.",
+      "tags": [
+        "strata",
+        "slice-s2"
+      ],
+      "priority": "medium",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-11T14:01:02.000Z",
+      "updatedAt": "2026-09-11T14:01:02.000Z",
+      "createdBy": "claude",
+      "source": "strata-roadmap",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0011",
+      "title": "S2: SQL corpus indexing with provenance",
+      "description": "Index SQL units with source identifier, location, statement boundaries, content hash, dialect, parser version, parse status and extraction status. Traces PR-008, PR-014, NFR-002.",
+      "tags": [
+        "strata",
+        "slice-s2"
+      ],
+      "priority": "medium",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-11T14:01:02.000Z",
+      "updatedAt": "2026-09-11T14:01:02.000Z",
+      "createdBy": "claude",
+      "source": "strata-roadmap",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0012",
+      "title": "S3: dependency and relationship graph with evidence",
+      "description": "Build declared edges from the catalog and observed edges from corpus join patterns, each carrying evidence count, sources and categorical certainty. Observed edges never become declared FKs. Traces PR-012, PR-013, ER-018, RK-017, HY-STRATA-2026-3C81.",
+      "tags": [
+        "strata",
+        "slice-s3"
+      ],
+      "priority": "medium",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-11T14:01:03.000Z",
+      "updatedAt": "2026-09-11T14:01:03.000Z",
+      "createdBy": "claude",
+      "source": "strata-roadmap",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0013",
+      "title": "S3: targeted retrieval queries and CLI output",
+      "description": "Answer inspect/relationships/path/dependencies/readers/writers questions returning compact semantic slices with provenance and analysis scope, in JSON and human-readable form. Traces PR-016, PR-017, PR-021, ER-017, NG-010.",
+      "tags": [
+        "strata",
+        "slice-s3"
+      ],
+      "priority": "medium",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-11T14:01:03.000Z",
+      "updatedAt": "2026-09-11T14:01:03.000Z",
+      "createdBy": "claude",
+      "source": "strata-roadmap",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0014",
+      "title": "Spike B remainder: live-server binding comparison",
+      "description": "Compare offline resolution against a live PostgreSQL server for search_path, overloaded functions, casts, operators, quoted identifiers, temp objects and ambiguous columns. Requires a PostgreSQL server, which was unavailable in the originating session. Resolves Q-005, Q-006, Q-027. Tests HY-STRATA-2026-4D92 and HY-STRATA-2026-5E03.",
+      "tags": [
+        "strata",
+        "spike"
+      ],
+      "priority": "high",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-11T14:01:03.000Z",
+      "updatedAt": "2026-09-11T14:01:03.000Z",
+      "createdBy": "claude",
+      "source": "strata-roadmap",
       "sourceReference": null
     }
   ]

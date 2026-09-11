@@ -1,1 +1,90 @@
-[]
+[
+  {
+    "created": "2026-09-11",
+    "created_by_agent": "claude",
+    "id": "EX-STRATA-2026-A1F7",
+    "path": "research/experiments/EX-STRATA-2026-A1F7--spike-a-parser-viability.md",
+    "research_area": "strata-parsing",
+    "status": "completed",
+    "tags": [
+      "strata",
+      "spike",
+      "experiment"
+    ],
+    "tests_hypotheses": [],
+    "title": "Spike A: PostgreSQL parser viability",
+    "updated": "2026-09-11"
+  },
+  {
+    "created": "2026-09-11",
+    "created_by_agent": "claude",
+    "id": "EX-STRATA-2026-B2E8",
+    "path": "research/experiments/EX-STRATA-2026-B2E8--spike-b-parse-versus-binding.md",
+    "research_area": "strata-semantic-binding",
+    "status": "active",
+    "tags": [
+      "strata",
+      "spike",
+      "experiment"
+    ],
+    "tests_hypotheses": [
+      "HY-STRATA-2026-4D92",
+      "HY-STRATA-2026-5E03"
+    ],
+    "title": "Spike B: parsing versus semantic binding",
+    "updated": "2026-09-11"
+  },
+  {
+    "created": "2026-09-11",
+    "created_by_agent": "claude",
+    "id": "EX-STRATA-2026-C3D9",
+    "path": "research/experiments/EX-STRATA-2026-C3D9--spike-c-semantic-graph-usefulness.md",
+    "research_area": "strata-relationship-graph",
+    "status": "proposed",
+    "tags": [
+      "strata",
+      "spike",
+      "experiment"
+    ],
+    "tests_hypotheses": [
+      "HY-STRATA-2026-3C81"
+    ],
+    "title": "Spike C: semantic graph usefulness",
+    "updated": "2026-09-11"
+  },
+  {
+    "created": "2026-09-11",
+    "created_by_agent": "claude",
+    "id": "EX-STRATA-2026-D4EA",
+    "path": "research/experiments/EX-STRATA-2026-D4EA--spike-d-agent-leverage.md",
+    "research_area": "strata-agent-leverage",
+    "status": "proposed",
+    "tags": [
+      "strata",
+      "spike",
+      "experiment"
+    ],
+    "tests_hypotheses": [
+      "HY-STRATA-2026-1E5D",
+      "HY-STRATA-2026-2A6F"
+    ],
+    "title": "Spike D: agent leverage",
+    "updated": "2026-09-11"
+  },
+  {
+    "created": "2026-09-11",
+    "created_by_agent": "claude",
+    "id": "EX-STRATA-2026-E5FB",
+    "path": "research/experiments/EX-STRATA-2026-E5FB--spike-e-diff-safety.md",
+    "research_area": "strata-schema-diff",
+    "status": "proposed",
+    "tags": [
+      "strata",
+      "spike",
+      "experiment"
+    ],
+    "tests_hypotheses": [],
+    "title": "Spike E: diff safety",
+    "updated": "2026-09-11"
+  }
+]

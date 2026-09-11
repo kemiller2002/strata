@@ -1,1 +1,110 @@
-[]
+[
+  {
+    "confidence": "low",
+    "created": "2026-09-11",
+    "created_by_agent": "claude",
+    "id": "HY-STRATA-2026-1E5D",
+    "path": "research/hypotheses/HY-STRATA-2026-1E5D--semantic-retrieval-reduces-agent-tokens.md",
+    "research_area": "strata-agent-leverage",
+    "status": "proposed",
+    "superseded_by": [],
+    "supersedes": [],
+    "tags": [
+      "strata",
+      "hypothesis"
+    ],
+    "tests": [],
+    "title": "Semantic retrieval reduces agent token consumption versus raw SQL corpus reading",
+    "updated": "2026-09-11"
+  },
+  {
+    "confidence": "low",
+    "created": "2026-09-11",
+    "created_by_agent": "claude",
+    "id": "HY-STRATA-2026-2A6F",
+    "path": "research/hypotheses/HY-STRATA-2026-2A6F--semantic-retrieval-improves-agent-correctness.md",
+    "research_area": "strata-agent-leverage",
+    "status": "proposed",
+    "superseded_by": [],
+    "supersedes": [],
+    "tags": [
+      "strata",
+      "hypothesis"
+    ],
+    "tests": [],
+    "title": "Semantic retrieval improves agent SQL correctness",
+    "updated": "2026-09-11"
+  },
+  {
+    "confidence": "low",
+    "created": "2026-09-11",
+    "created_by_agent": "claude",
+    "id": "HY-STRATA-2026-3C81",
+    "path": "research/hypotheses/HY-STRATA-2026-3C81--observed-joins-identify-real-relationships.md",
+    "research_area": "strata-relationship-graph",
+    "status": "proposed",
+    "superseded_by": [],
+    "supersedes": [],
+    "tags": [
+      "strata",
+      "hypothesis"
+    ],
+    "tests": [],
+    "title": "Observed-join inference identifies real undeclared relationships at usable precision",
+    "updated": "2026-09-11"
+  },
+  {
+    "confidence": "medium",
+    "created": "2026-09-11",
+    "created_by_agent": "claude",
+    "id": "HY-STRATA-2026-4D92",
+    "path": "research/hypotheses/HY-STRATA-2026-4D92--offline-resolution-is-sufficient.md",
+    "research_area": "strata-semantic-binding",
+    "status": "proposed",
+    "superseded_by": [],
+    "supersedes": [],
+    "tags": [
+      "strata",
+      "hypothesis"
+    ],
+    "tests": [],
+    "title": "Catalog snapshot plus AST resolves most references without a live binder",
+    "updated": "2026-09-11"
+  },
+  {
+    "confidence": "low",
+    "created": "2026-09-11",
+    "created_by_agent": "claude",
+    "id": "HY-STRATA-2026-5E03",
+    "path": "research/hypotheses/HY-STRATA-2026-5E03--prepare-explain-substitutes-for-binder.md",
+    "research_area": "strata-semantic-binding",
+    "status": "proposed",
+    "superseded_by": [],
+    "supersedes": [],
+    "tags": [
+      "strata",
+      "hypothesis"
+    ],
+    "tests": [],
+    "title": "PostgreSQL PREPARE/EXPLAIN can substitute for implementing binder logic",
+    "updated": "2026-09-11"
+  },
+  {
+    "confidence": "medium",
+    "created": "2026-09-11",
+    "created_by_agent": "claude",
+    "id": "HY-STRATA-2026-6F14",
+    "path": "research/hypotheses/HY-STRATA-2026-6F14--deployment-value-independent-of-agent-value.md",
+    "research_area": "strata-product-value",
+    "status": "proposed",
+    "superseded_by": [],
+    "supersedes": [],
+    "tags": [
+      "strata",
+      "hypothesis"
+    ],
+    "tests": [],
+    "title": "Deployment-safety value is independent of agent-leverage value",
+    "updated": "2026-09-11"
+  }
+]

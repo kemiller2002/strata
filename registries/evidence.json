@@ -1,1 +1,49 @@
-[]
+[
+  {
+    "confidence": "high",
+    "contradicts": [],
+    "created_by_agent": "claude",
+    "evidence_type": "test-result",
+    "id": "EV-STRATA-2026-7A31",
+    "path": "research/evidence/EV-STRATA-2026-7A31--postgresql-parser-viability.md",
+    "related_theories": [],
+    "research_area": "strata-parsing",
+    "retrieved": "2026-09-11",
+    "source_author": "claude",
+    "source_date": "2026-09-11",
+    "source_title": "Strata Spike A — parser viability probe",
+    "source_uri": "scratchpad spike, corpus reproduced in this record",
+    "supports": [],
+    "tags": [
+      "strata",
+      "parser",
+      "libpg_query",
+      "spike-a"
+    ],
+    "title": "libpg_query-based .NET parser viability for Strata (Spike A)"
+  },
+  {
+    "confidence": "high",
+    "contradicts": [],
+    "created_by_agent": "claude",
+    "evidence_type": "test-result",
+    "id": "EV-STRATA-2026-B9C4",
+    "path": "research/evidence/EV-STRATA-2026-B9C4--parse-versus-semantic-binding.md",
+    "related_theories": [],
+    "research_area": "strata-semantic-binding",
+    "retrieved": "2026-09-11",
+    "source_author": "claude",
+    "source_date": "2026-09-11",
+    "source_title": "Strata Spike B — parsing versus semantic binding probe",
+    "source_uri": "scratchpad spike, cases reproduced in this record",
+    "supports": [],
+    "tags": [
+      "strata",
+      "semantic-binding",
+      "resolution",
+      "spike-b",
+      "risk"
+    ],
+    "title": "Parser AST cannot resolve object identity without catalog and scope resolution (Spike B, first pass)"
+  }
+]

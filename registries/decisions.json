@@ -1,1 +1,68 @@
-[]
+[
+  {
+    "confidence": "high",
+    "created": "2026-09-11",
+    "created_by_agent": "claude",
+    "decision_type": "architecture",
+    "evidence": [
+      "EV-STRATA-2026-7A31"
+    ],
+    "id": "DF-STRATA-2026-4C7A",
+    "path": "research/decisions/DF-STRATA-2026-4C7A--postgresql-parser-adapter.md",
+    "status": "accepted",
+    "superseded_by": [],
+    "supersedes": [],
+    "tags": [
+      "strata",
+      "parser",
+      "architecture",
+      "dialect-adapter"
+    ],
+    "title": "Adopt pgsqlparser as Strata's PostgreSQL parser adapter",
+    "updated": "2026-09-11"
+  },
+  {
+    "confidence": "high",
+    "created": "2026-09-11",
+    "created_by_agent": "claude",
+    "decision_type": "architecture",
+    "evidence": [
+      "EV-STRATA-2026-B9C4"
+    ],
+    "id": "DF-STRATA-2026-9B2E",
+    "path": "research/decisions/DF-STRATA-2026-9B2E--strata-owns-scope-resolution.md",
+    "status": "accepted",
+    "superseded_by": [],
+    "supersedes": [],
+    "tags": [
+      "strata",
+      "semantic-binding",
+      "scope-resolution",
+      "architecture",
+      "risk"
+    ],
+    "title": "Strata implements its own lexical scope resolution before emitting dependency edges",
+    "updated": "2026-09-11"
+  },
+  {
+    "confidence": "medium",
+    "created": "2026-09-11",
+    "created_by_agent": "claude",
+    "decision_type": "architecture",
+    "evidence": [],
+    "id": "DF-STRATA-2026-D3F8",
+    "path": "research/decisions/DF-STRATA-2026-D3F8--four-tier-fsharp-architecture.md",
+    "status": "accepted",
+    "superseded_by": [],
+    "supersedes": [],
+    "tags": [
+      "strata",
+      "architecture",
+      "four-tier",
+      "fsharp",
+      "sde"
+    ],
+    "title": "Strata adopts SDE four-tier architecture with a mechanically checked semantic tier",
+    "updated": "2026-09-11"
+  }
+]

@@ -2,28 +2,44 @@
 
 ## Repository status
 
-Newly initialized with Repository Operating System 2.0.1-main.78.1.
+Repository Operating System 2.0.1 and State-Directed Engineering 1.1.1 are
+installed and verified. The Strata pre-requirements design notebook has been
+analyzed into a requirements corpus; implementation has begun.
 
 ## Observed facts
 
-- No domain evidence has been accepted.
-- No vertical slice has been selected.
-- No discipline-boundary claim has been tested.
+- `EV-STRATA-2026-7A31`: `pgsqlparser` 1.0.0 parses 34 of 36 representative
+  PostgreSQL statements from F#; the two failures were deliberate negative
+  controls. PL/pgSQL parses. Parser targets PostgreSQL 17.5.
+- `EV-STRATA-2026-B9C4`: a naive parse-tree walk produces a **false** dependency
+  edge when a CTE name shadows a table name, and reports no column references
+  for `SELECT *`. Scope resolution is Strata's responsibility.
+- No live PostgreSQL server has been available in this session, so the
+  live-binding half of Spike B is untested.
+- ROS telemetry reports token and cost metrics as *unsupported* for this
+  runtime; agent cost is unavailable rather than zero.
 
 ## Assumptions
 
-- A small, concrete communication problem can exercise the operating model.
+- A catalog snapshot plus scope resolution resolves most references offline
+  (`HY-STRATA-2026-4D92`, untested at scale).
+- Deployment-safety value is independent of agent-leverage value
+  (`HY-STRATA-2026-6F14`, untested).
 
 ## Active work
 
-Complete the charter and select the first bounded pilot slice.
+Slice S1: PostgreSQL semantic inspection — canonical semantic model and catalog
+introspection, under the four-tier architecture of `DF-STRATA-2026-D3F8`.
 
 ## Largest decision-relevant unknown
 
-Which first use case will provide measurable value while exposing the important
-communication constraints?
+`Q-005`/`Q-027`: how much semantic binding Strata must implement itself versus
+delegate to a live PostgreSQL server. This determines the size of the analysis
+tier and whether offline analysis can support impact claims at all.
 
 ## Baseline
 
-Not yet recorded. Define how the same slice would be approached without ROS and
-which comparison measures are feasible.
+Recorded and tagged before implementation:
+`docs/baselines/BASELINE-20260911.md`, tag
+`strata-implementation-baseline-20260911-135126`, HEAD `3f082b9`.
+No Strata source code, build or tests existed at baseline.

@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "claude",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-09-11T13:37:07.000Z",
+  "updatedAt": "2026-09-11T14:01:49.000Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -32,6 +32,32 @@
         "EXE-20260911T133658955Z-31c36b07"
       ],
       "completedAt": "2026-09-11T13:37:07.000Z"
+    },
+    {
+      "id": "WI-0002",
+      "type": "research",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "research-record",
+          "path": "docs/strata/REQUIREMENTS-ANALYSIS.md"
+        },
+        {
+          "type": "research-record",
+          "path": "research/evidence/EV-STRATA-2026-7A31--postgresql-parser-viability.md"
+        },
+        {
+          "type": "research-record",
+          "path": "research/evidence/EV-STRATA-2026-B9C4--parse-versus-semantic-binding.md"
+        }
+      ],
+      "updatedAt": "2026-09-11T14:01:49.000Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T135430049Z-14a39f66"
+      ],
+      "completedAt": "2026-09-11T14:01:49.000Z",
+      "conclusion": "Notebook classified into 24 product requirements, 20 engineering rules, 12 NFRs, 20 architecture decisions, 6 hypotheses, 18 risks, 30 open questions and 10 non-goals. Two spikes run; parser selected; scope-resolution false-edge risk discovered. 12 implementation work items created with traceability."
     }
   ]
 }
