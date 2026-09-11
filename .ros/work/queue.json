@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 26,
+  "nextSeq": 27,
   "items": [
     {
       "id": "WI-0001",
@@ -427,6 +427,23 @@
       "updatedAt": "2026-09-11T16:51:52.000Z",
       "createdBy": "claude",
       "source": "spike-finding",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0026",
+      "title": "Spike D-3: seam correctness at a scale where reading everything is infeasible",
+      "description": "Every prior result used a context an agent could read end to end. Build a corpus large enough that the raw context cannot fit in a prompt, make BOTH conditions interactive (tools, searching), and re-test the seam questions. Also a scale test of Strata's own indexing. Tests HY-STRATA-2026-2A6F and HY-STRATA-2026-1E5D at the crossover.",
+      "tags": [
+        "strata",
+        "spike"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T17:10:38.000Z",
+      "updatedAt": "2026-09-11T17:10:39.000Z",
+      "createdBy": "claude",
+      "source": "user-request",
       "sourceReference": null
     }
   ]

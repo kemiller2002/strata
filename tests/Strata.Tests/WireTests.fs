@@ -127,3 +127,59 @@ let ``string escaping handles quotes, backslashes and control characters`` () =
     let rendered = Json.render (JString "a\"b\\c\nd\te")
 
     Assert.Equal("\"a\\\"b\\\\c\\nd\\te\"", rendered)
+
+// ---- scope enumeration is bounded, but the counts stay exact ---------------
+
+[<Fact>]
+let ``a large corpus does not enumerate every source`` () =
+    // EV-STRATA-2026-C9A4: 3,009 enumerated sources made the scope 97.9% of a
+    // 118KB answer whose result was 357 bytes.
+    let many = [ for i in 1..3000 -> sprintf "file:mod%d/queries/q%04d.sql" (i % 10) i ]
+    let rendered = Json.render (corpusScope { CorpusScope.empty with IndexedSources = many })
+
+    Assert.True(rendered.Length < 4000, sprintf "scope should stay bounded, was %d bytes" rendered.Length)
+    Assert.Contains("\"indexedSourcesTruncated\":true", rendered)
+
+[<Fact>]
+let ``the source COUNT stays exact even when the list is truncated`` () =
+    // PR-021 must survive the optimisation: a reader still learns how much was
+    // analysed, which is what bounds the claim.
+    let many = [ for i in 1..3000 -> sprintf "file:mod%d/q%04d.sql" (i % 10) i ]
+    let rendered = Json.render (corpusScope { CorpusScope.empty with IndexedSources = many })
+
+    Assert.Contains("\"sourceCount\":3000", rendered)
+
+[<Fact>]
+let ``source roots are reported in full so coverage is still visible`` () =
+    // Which AREAS were analysed matters more than which filenames.
+    let sources =
+        [ "file:audit/queries/a.sql"; "file:billing/queries/b.sql"; "file:crm/queries/c.sql" ]
+
+    let rendered = Json.render (corpusScope { CorpusScope.empty with IndexedSources = sources })
+
+    Assert.Contains("audit", rendered)
+    Assert.Contains("billing", rendered)
+    Assert.Contains("crm", rendered)
+
+[<Fact>]
+let ``a small corpus is not truncated`` () =
+    // Control: the bound must only bite when there is something to bound.
+    let few = [ "file:a.sql"; "file:b.sql" ]
+    let rendered = Json.render (corpusScope { CorpusScope.empty with IndexedSources = few })
+
+    Assert.Contains("\"indexedSourcesTruncated\":false", rendered)
+    Assert.Contains("a.sql", rendered)
+    Assert.Contains("b.sql", rendered)
+
+[<Fact>]
+let ``truncation does not change the scope's absence-claim behaviour`` () =
+    // The bound is a rendering concern. It must not alter what the scope MEANS.
+    let many = [ for i in 1..3000 -> sprintf "file:q%04d.sql" i ]
+
+    let s =
+        { Scope.nothingAnalyzed with
+            LiveDatabaseInspected = true
+            SchemaCompleteness = Completeness.ofList [ "relations", Complete ]
+            Corpus = { CorpusScope.empty with IndexedSources = many } }
+
+    Assert.True(Scope.supportsAbsenceClaim s)

@@ -27,4 +27,5 @@
 | WI-0022 | Evaluate whether targeted retrieval loses information the raw context has | complete | strata, spike | high |
 | WI-0023 | Spike D correctness half: run agents under both conditions | complete | strata, spike | high |
 | WI-0024 | Spike D-2: does Strata help with cross-module seam errors? | complete | strata, spike | high |
-| WI-0025 | Column-level reader tracking: answer 'what breaks if I drop this column' | ready | strata, slice-s3 | high |
+| WI-0025 | Column-level reader tracking: answer 'what breaks if I drop this column' | complete | strata, slice-s3 | high |
+| WI-0026 | Spike D-3: seam correctness at a scale where reading everything is infeasible | ready | strata, spike | high |

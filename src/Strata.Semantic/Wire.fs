@@ -210,8 +210,48 @@ module Wire =
         | NoParsingPerformed ->
             JObject [ "state", JString "no-parsing-performed"; "parserMajor", JNull; "serverMajor", JNull ]
 
+    /// Maximum individual sources enumerated in a scope block.
+    ///
+    /// `EV-STRATA-2026-C9A4` measured a 3,009-file corpus producing a 118KB
+    /// answer whose actual result was 357 bytes — the enumerated source list was
+    /// 97.9% of the payload. Enumerating every source makes the scope O(corpus
+    /// size) and rides it on every answer, which destroys the context advantage
+    /// at exactly the scale where it is supposed to matter.
+    ///
+    /// The bound must not weaken PR-021: the COUNT and the ROOTS are always
+    /// exact, so a reader can still tell how much was analysed and which areas
+    /// it covered. Only the full enumeration is elided, and the block says so.
+    let [<Literal>] MaxEnumeratedSources = 25
+
+    /// The distinct top-level areas a source list covers.
+    ///
+    /// A reader needs to know WHICH parts of the corpus were analysed far more
+    /// than they need 3,000 filenames. "audit, billing, crm" answers the real
+    /// question; the filenames do not.
+    let private sourceRoots (sources: string list) =
+        sources
+        |> List.map (fun s ->
+            // Source ids look like "file:audit/queries/x.sql" or "migration:...".
+            let withoutScheme =
+                match s.IndexOf ':' with
+                | -1 -> s
+                | i -> s.Substring(i + 1)
+
+            match withoutScheme.Split('/') with
+            | [||] -> withoutScheme
+            | parts -> parts.[0])
+        |> List.distinct
+        |> List.sort
+
     let corpusScope (s: CorpusScope) =
-        JObject [ "indexedSources", JArray(s.IndexedSources |> List.sort |> List.map JString)
+        let sorted = s.IndexedSources |> List.sort
+        let count = List.length sorted
+
+        JObject [ // Always exact: how much was analysed, and which areas.
+                  "sourceCount", JInt count
+                  "sourceRoots", JArray(sourceRoots sorted |> List.map JString)
+                  "indexedSources", JArray(sorted |> List.truncate MaxEnumeratedSources |> List.map JString)
+                  "indexedSourcesTruncated", JBool(count > MaxEnumeratedSources)
                   "parseFailures", JInt s.ParseFailures
                   "extractionGaps", JInt s.ExtractionGaps ]
 
