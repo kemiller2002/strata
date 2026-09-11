@@ -120,6 +120,30 @@
     "title": "Parser AST cannot resolve object identity without catalog and scope resolution (Spike B, first pass)"
   },
   {
+    "confidence": "medium",
+    "contradicts": [],
+    "created_by_agent": "claude",
+    "evidence_type": "literature-review",
+    "id": "EV-STRATA-2026-C2F5",
+    "path": "research/evidence/EV-STRATA-2026-C2F5--declarative-landscape-and-fixtures.md",
+    "related_theories": [],
+    "research_area": "strata-product-value",
+    "retrieved": "2026-09-11",
+    "source_author": "claude",
+    "source_date": "2026-09-11",
+    "source_title": "Declarative schema tooling landscape and candidate fixtures",
+    "source_uri": "GitHub API and vendor documentation, observed 2026-09-11",
+    "supports": [],
+    "tags": [
+      "strata",
+      "competitive-landscape",
+      "desired-state",
+      "fixtures",
+      "orm-risk"
+    ],
+    "title": "pgschema already ships Strata's exact model for PostgreSQL; the dependency-aware-drop differentiator is genuinely unoccupied but most PostgreSQL codebases hide their queries in an ORM"
+  },
+  {
     "confidence": "high",
     "contradicts": [],
     "created_by_agent": "claude",

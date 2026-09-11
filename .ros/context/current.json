@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "claude",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-09-11T20:23:43Z",
+  "updatedAt": "2026-09-11T20:36:26Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -748,6 +748,31 @@
         "EXE-20260911T202344432Z-a8ca9c6e"
       ],
       "completedAt": "2026-09-11T20:23:43Z"
+    },
+    {
+      "id": "WI-0033",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "research/evidence/EV-STRATA-2026-C2F5--declarative-landscape-and-fixtures.md"
+        },
+        {
+          "type": "tests",
+          "path": "research/evidence/EV-STRATA-2026-C2F5--declarative-landscape-and-fixtures.md"
+        },
+        {
+          "type": "literature-review",
+          "path": "research/evidence/EV-STRATA-2026-C2F5--declarative-landscape-and-fixtures.md"
+        }
+      ],
+      "updatedAt": "2026-09-11T20:36:26Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T203627027Z-3a8164d5"
+      ],
+      "completedAt": "2026-09-11T20:36:26Z"
     }
   ]
 }

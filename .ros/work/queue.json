@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 33,
+  "nextSeq": 34,
   "items": [
     {
       "id": "WI-0001",
@@ -547,6 +547,24 @@
       "attachments": [],
       "createdAt": "2026-09-11T20:23:35Z",
       "updatedAt": "2026-09-11T20:23:43Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0033",
+      "title": "Survey the declarative schema landscape and candidate fixtures",
+      "description": "After DF-STRATA-2026-B1E7 fixed the product shape, survey what already does declarative PostgreSQL schema diffing, whether dependency-aware drop safety is novel, and which real repositories can serve as fixtures.",
+      "tags": [
+        "strata",
+        "competitive-landscape",
+        "fixtures"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T20:36:26Z",
+      "updatedAt": "2026-09-11T20:36:26Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
