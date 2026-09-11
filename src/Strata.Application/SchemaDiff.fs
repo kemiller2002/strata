@@ -447,6 +447,74 @@ module SchemaDiff =
         // need a definition it does not carry.
         | AddConstraint _ -> None
 
+    /// How many other tables being created this one must wait for.
+    ///
+    /// A foreign key needs its referenced table to exist first. `orderKey`
+    /// below puts every CreateTable at the same rank, which is fine until two
+    /// of them reference each other's table — and then the order is whatever
+    /// the file names sorted to. Found by a live round-trip: a project
+    /// declaring `order_audit` (which references `orders`) and `orders` could
+    /// not be applied AT ALL. The whole plan is one transaction, so a wrong
+    /// order does not half-apply; it fails outright with 42P01 and rolls back.
+    ///
+    /// Only tables being CREATED count. A reference to a table that already
+    /// exists imposes no order, and neither does a self-reference: PostgreSQL
+    /// accepts a foreign key to the table being defined.
+    ///
+    /// A cycle has no satisfying order — two tables that reference each other
+    /// cannot both be created first — so `cyclicCreations` below reports it
+    /// instead, and this returns 0 for those rather than recursing.
+    let private creationDepths (creating: Table list) =
+        let byName =
+            creating |> List.map (fun t -> QualifiedName.display t.Name, t) |> Map.ofList
+
+        let parentsOf (name: string) (t: Table) =
+            t.ForeignKeys
+            |> List.map (fun f -> QualifiedName.display f.ReferencedTable)
+            |> List.filter (fun p -> p <> name && Map.containsKey p byName)
+            |> List.distinct
+
+        let rec depth (seen: Set<string>) (name: string) =
+            if Set.contains name seen then 0
+            else
+                match Map.tryFind name byName with
+                | None -> 0
+                | Some t ->
+                    match parentsOf name t with
+                    | [] -> 0
+                    | parents -> 1 + (parents |> List.map (depth (Set.add name seen)) |> List.max)
+
+        byName |> Map.map (fun name _ -> depth Set.empty name)
+
+    /// Tables being created whose foreign keys form a cycle among themselves.
+    ///
+    /// No order of plain CREATE TABLE statements satisfies one. Strata says so
+    /// rather than emitting an order it knows cannot execute: the creations are
+    /// withheld and the reason is reported, which is the same choice every
+    /// other thing it cannot do faithfully gets.
+    let private cyclicCreations (creating: Table list) =
+        let byName =
+            creating |> List.map (fun t -> QualifiedName.display t.Name, t) |> Map.ofList
+
+        let parentsOf (name: string) =
+            match Map.tryFind name byName with
+            | None -> []
+            | Some t ->
+                t.ForeignKeys
+                |> List.map (fun f -> QualifiedName.display f.ReferencedTable)
+                |> List.filter (fun p -> p <> name && Map.containsKey p byName)
+                |> List.distinct
+
+        let rec reaches (seen: Set<string>) (target: string) (name: string) =
+            parentsOf name
+            |> List.exists (fun p ->
+                p = target || (not (Set.contains p seen) && reaches (Set.add p seen) target p))
+
+        byName
+        |> Map.toList
+        |> List.map fst
+        |> List.filter (fun name -> reaches (Set.singleton name) name name)
+
     /// Execution order.
     ///
     /// Creates before the things that reference them, drops after the things
@@ -1183,12 +1251,44 @@ module SchemaDiff =
 
         let renamedAway = renamedTables |> List.map fst
 
-        let creations =
+        let created =
             desiredTables
             |> List.filter (fun d ->
                 not (actualTables |> List.exists (fun a -> sameName a.Name d.Name))
                 && not (renamedTables |> List.exists (fun (_, to') -> sameName to' d.Name)))
-            |> List.map (fun d -> Ok(CreateTable d.Name))
+
+        // Two tables that reference each other cannot both be created first.
+        // Withheld with a reason rather than emitted in an order that is known
+        // not to execute.
+        let cyclic = cyclicCreations created
+
+        let creations =
+            created
+            |> List.map (fun d ->
+                if cyclic |> List.contains (QualifiedName.display d.Name) then
+                    Microsoft.FSharp.Core.Error
+                        { Object = d.Name
+                          Reason = NotModelled
+                          Detail =
+                            sprintf
+                                "this table's foreign keys form a cycle with %s, and no order of plain CREATE TABLE statements satisfies one. Create them by hand, or declare one side's foreign key as a separate ALTER TABLE."
+                                (cyclic
+                                 |> List.filter (fun n -> n <> QualifiedName.display d.Name)
+                                 |> String.concat ", ") }
+                else
+                    Ok(CreateTable d.Name))
+
+        // Depth in the foreign-key graph, used as the tiebreak below so a
+        // referenced table is created before the table referencing it.
+        let depthOfCreation = creationDepths created
+
+        let creationDepth (change: Change) =
+            match change with
+            | CreateTable name ->
+                depthOfCreation
+                |> Map.tryFind (QualifiedName.display name)
+                |> Option.defaultValue 0
+            | _ -> 0
 
         let tableRenames = renamedTables |> List.map (fun (from, to') -> Ok(RenameTable(from, to')))
 
@@ -1197,9 +1297,10 @@ module SchemaDiff =
         // without this a new table's indexes would need a second apply — the
         // first run created the table and reported the index as a change it had
         // not made.
+        // A table withheld as cyclic is not being created, so nothing that
+        // depends on its existence may be proposed either.
         let newTables =
-            desiredTables
-            |> List.filter (fun d -> not (actualTables |> List.exists (fun a -> sameName a.Name d.Name)))
+            created |> List.filter (fun d -> not (cyclic |> List.contains (QualifiedName.display d.Name)))
 
         let indexesForNewTables =
             newTables
@@ -1345,7 +1446,10 @@ module SchemaDiff =
         let changes =
             all
             |> List.choose (function Ok change -> Some change | Microsoft.FSharp.Core.Error _ -> None)
-            |> List.sortBy orderKey
+            // Rank first, then foreign-key depth within the creations. F#'s
+            // sort is stable, so everything else keeps the order it was
+            // assembled in.
+            |> List.sortBy (fun c -> orderKey c, creationDepth c)
 
         { Changes = changes
           Statements =

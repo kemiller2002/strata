@@ -1214,3 +1214,99 @@ let ``a trigger is created after the routine it executes`` () =
     Assert.True(
         List.findIndex ((=) "create-routine") tags < List.findIndex ((=) "create-trigger") tags,
         "the function must exist before the trigger that names it")
+
+
+// ---- creation order follows the foreign keys -------------------------------
+
+let private tableWithFks name columns fks =
+    TableObject
+        { Name = qn "sales" name
+          Columns = columns |> List.mapi (fun i (n, nullable) -> col (i + 1) n nullable)
+          PrimaryKey = None
+          UniqueConstraints = []
+          CheckConstraints = []
+          ForeignKeys =
+            fks
+            |> List.map (fun (constraintName, column, target) ->
+                { ConstraintName = id' constraintName
+                  Columns = [ id' column ]
+                  ReferencedTable = qn "sales" target
+                  ReferencedColumns = [ id' "id" ] })
+          Indexes = []
+          Triggers = []
+          Scope = Managed }
+
+[<Fact>]
+let ``a referenced table is created before the table referencing it`` () =
+    // Found by a live round-trip, not by a unit test: every project here had
+    // one table or two unrelated ones, so the rank-only order was never
+    // exercised. A project declaring a child that sorts first could not be
+    // applied AT ALL — 42P01, and the whole transaction rolls back.
+    let result =
+        run true managed
+            (complete
+                [ tableWithFks "audit" [ "id", false; "order_id", false ] [ "fk_audit", "order_id", "orders" ]
+                  tableWithFks "orders" orders [] ])
+            (complete [])
+
+    let order =
+        result.Changes
+        |> List.choose (function CreateTable n -> Some(QualifiedName.display n) | _ -> None)
+
+    Assert.True(
+        List.findIndex ((=) "sales.orders") order < List.findIndex ((=) "sales.audit") order,
+        sprintf "orders must be created before audit, got %A" order)
+
+[<Fact>]
+let ``a chain of three tables is created parent first`` () =
+    let result =
+        run true managed
+            (complete
+                [ tableWithFks "c" [ "id", false; "b_id", false ] [ "fk_c", "b_id", "b" ]
+                  tableWithFks "b" [ "id", false; "a_id", false ] [ "fk_b", "a_id", "a" ]
+                  tableWithFks "a" [ "id", false ] [] ])
+            (complete [])
+
+    let order =
+        result.Changes
+        |> List.choose (function CreateTable n -> Some(QualifiedName.display n) | _ -> None)
+
+    Assert.Equal<string list>([ "sales.a"; "sales.b"; "sales.c" ], order)
+
+[<Fact>]
+let ``a self-referencing table imposes no order and is still created`` () =
+    // PostgreSQL accepts a foreign key to the table being defined, so this is
+    // not a cycle and must not be withheld as one.
+    let result =
+        run true managed
+            (complete
+                [ tableWithFks "tree" [ "id", false; "parent_id", true ] [ "fk_parent", "parent_id", "tree" ] ])
+            (complete [])
+
+    Assert.Contains(result.Changes, fun c -> c = CreateTable(qn "sales" "tree"))
+
+[<Fact>]
+let ``a reference to a table that already exists imposes no order`` () =
+    let result =
+        run true managed
+            (complete
+                [ tableWithFks "audit" [ "id", false; "order_id", false ] [ "fk_audit", "order_id", "orders" ]
+                  tbl Managed "sales" "orders" orders ])
+            (complete [ tbl Observed "sales" "orders" orders ])
+
+    Assert.Contains(result.Changes, fun c -> c = CreateTable(qn "sales" "audit"))
+
+[<Fact>]
+let ``two tables referencing each other are withheld with a reason`` () =
+    // No order of plain CREATE TABLE statements satisfies a cycle. Emitting one
+    // anyway would produce a plan Strata knows cannot execute.
+    let result =
+        run true managed
+            (complete
+                [ tableWithFks "a" [ "id", false; "b_id", true ] [ "fk_a", "b_id", "b" ]
+                  tableWithFks "b" [ "id", false; "a_id", true ] [ "fk_b", "a_id", "a" ] ])
+            (complete [])
+
+    Assert.DoesNotContain(result.Changes, fun c -> c = CreateTable(qn "sales" "a"))
+    Assert.DoesNotContain(result.Changes, fun c -> c = CreateTable(qn "sales" "b"))
+    Assert.Contains(result.Suppressed, fun s -> s.Detail.Contains "form a cycle")
