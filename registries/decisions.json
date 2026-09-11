@@ -45,6 +45,27 @@
     "updated": "2026-09-11"
   },
   {
+    "confidence": "high",
+    "created": "2026-09-11",
+    "created_by_agent": "claude",
+    "decision_type": "product-architecture",
+    "evidence": [],
+    "id": "DF-STRATA-2026-B1E7",
+    "path": "research/decisions/DF-STRATA-2026-B1E7--desired-state-is-object-files.md",
+    "status": "accepted",
+    "superseded_by": [],
+    "supersedes": [],
+    "tags": [
+      "strata",
+      "desired-state",
+      "schema-diff",
+      "dacpac",
+      "q-003"
+    ],
+    "title": "Desired schema is authored as one declarative file per object, DACPAC-style, and Strata's job is to diff it against the live database",
+    "updated": "2026-09-11"
+  },
+  {
     "confidence": "medium",
     "created": "2026-09-11",
     "created_by_agent": "claude",

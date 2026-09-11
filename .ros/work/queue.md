@@ -33,4 +33,5 @@
 | WI-0028 | Spike D-4: messy corpus — unqualified names, shadowing, dynamic SQL, cross-schema collisions | complete | strata, spike | high |
 | WI-0029 | Build a deterministic pre-deployment gate and test HY-STRATA-2026-6F14 | complete | strata, slice-s4 | high |
 | WI-0030 | Profile and fix indexing cost: single-pass extraction and hand-written gap formatting | complete | strata, performance, profiling | high |
-| WI-0031 | Qualified operator reported as both a join and an unmodelled shape | ready | strata, parser, correctness | medium |
+| WI-0031 | Qualified operator reported as both a join and an unmodelled shape | complete | strata, parser, correctness | medium |
+| WI-0032 | Record Q-003 decision: desired state is DACPAC-style object files | ready | strata, desired-state, decision | high |

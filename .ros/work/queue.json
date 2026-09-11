@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 32,
+  "nextSeq": 33,
   "items": [
     {
       "id": "WI-0001",
@@ -529,6 +529,24 @@
       "attachments": [],
       "createdAt": "2026-09-11T20:20:28Z",
       "updatedAt": "2026-09-11T20:20:28Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0032",
+      "title": "Record Q-003 decision: desired state is DACPAC-style object files",
+      "description": "The desired-state authoring source was named: one declarative file per object, DACPAC/SSDT shape, with Strata diffing files against the live database. Records DF-STRATA-2026-B1E7 and the gap analysis it exposes.",
+      "tags": [
+        "strata",
+        "desired-state",
+        "decision"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T20:23:35Z",
+      "updatedAt": "2026-09-11T20:23:43Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null

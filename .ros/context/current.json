@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "claude",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-09-11T20:20:37Z",
+  "updatedAt": "2026-09-11T20:23:43Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -727,6 +727,27 @@
         "EXE-20260911T202029941Z-0962a85e"
       ],
       "completedAt": "2026-09-11T20:20:37Z"
+    },
+    {
+      "id": "WI-0032",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "research/decisions/DF-STRATA-2026-B1E7--desired-state-is-object-files.md"
+        },
+        {
+          "type": "tests",
+          "path": "research/decisions/DF-STRATA-2026-B1E7--desired-state-is-object-files.md"
+        }
+      ],
+      "updatedAt": "2026-09-11T20:23:43Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T202344432Z-a8ca9c6e"
+      ],
+      "completedAt": "2026-09-11T20:23:43Z"
     }
   ]
 }
