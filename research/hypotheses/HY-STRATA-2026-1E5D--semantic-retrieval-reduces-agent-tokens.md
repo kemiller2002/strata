@@ -45,3 +45,17 @@ also synthetic and uniform.
 
 This says nothing about whether agents produce better SQL — that is
 `HY-STRATA-2026-2A6F`, still untested.
+
+## Qualification — 2026-09-11
+
+`EV-STRATA-2026-D8E1` measured a realistic multi-question session at **4 tables**
+and found Strata used **8.7% MORE** tokens than raw context.
+
+This does not contradict the 46x–101x figure, which measured one targeted
+question against a **200-table** schema. Together they describe a crossover:
+raw context grows with schema size, a Strata point query does not, so below some
+schema size Strata costs more and above it costs dramatically less.
+
+**Neither experiment located the crossover.** Until it is located, this
+hypothesis is supported only for large schemas with targeted single queries, and
+is actively false for small schemas with pre-fetched multi-query sessions.

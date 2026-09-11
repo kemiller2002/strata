@@ -19,6 +19,12 @@ analyzed into a requirements corpus; implementation has begun.
 - ROS telemetry reports token and cost metrics as *unsupported* for this
   runtime; agent cost is unavailable rather than zero.
 
+- `EV-STRATA-2026-D8E1`: six agent runs found **no correctness difference**
+  between Strata retrieval and raw context (15/15 both), and Strata cost 8.7%
+  more tokens at 4-table scale. A ceiling effect, not a refutation — but the
+  agent thesis is not established, so per notebook §134 it must not be Strata's
+  sole justification.
+
 ## Assumptions
 
 - A catalog snapshot plus scope resolution resolves most references offline
@@ -33,9 +39,13 @@ introspection, under the four-tier architecture of `DF-STRATA-2026-D3F8`.
 
 ## Largest decision-relevant unknown
 
-`Q-005`/`Q-027`: how much semantic binding Strata must implement itself versus
-delegate to a live PostgreSQL server. This determines the size of the analysis
-tier and whether offline analysis can support impact claims at all.
+**Where is the crossover?** `EV-STRATA-2026-F4C6` shows Strata 46x–101x cheaper
+at 200 tables; `EV-STRATA-2026-D8E1` shows it 8.7% more expensive at 4. Nothing
+locates the schema size where that flips, and until it is located the agent
+value proposition cannot be stated to anyone.
+
+Previously largest, still open: `Q-005`/`Q-027`, how much semantic binding
+Strata must implement versus delegate to a live server.
 
 ## Baseline
 

@@ -1,0 +1,16 @@
+Answer these five questions about the database. Number your answers Q1..Q5.
+Be concise — one or two sentences each, except Q5 which needs SQL.
+
+Q1. To join orders to customer, which column on each table should be used?
+    Give the exact column names.
+
+Q2. Is there any relationship between the invoice table and the customer
+    table? If so, state which columns link them, and state whether that
+    relationship is enforced by the database itself.
+
+Q3. What values is orders.status permitted to hold?
+
+Q4. Is orders.customer_id indexed? Name the index if so.
+
+Q5. Write an UPDATE statement that sets exactly ONE order's status to
+    'closed'. It must be bounded so it can affect at most one row.

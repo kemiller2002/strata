@@ -31,13 +31,23 @@ Correctness and cost can move independently, and S144.7 requires the agent value
 
 S14; S137; D-020.
 
-## Status — 2026-09-11
+## Status — 2026-09-11 (tested, not supported)
 
-**Still untested.** Spike D measured context SIZE only
-(`EV-STRATA-2026-F4C6`); no agents were run. A context reduction is not
-evidence of a correctness improvement, and notebook §134 is explicit that token
-reduction alone does not establish business value.
+**Tested and NOT supported. Remains `proposed`, not rejected.**
 
-Testing this needs a graded task set with known-correct answers, agents run
-under both conditions, and scoring of incorrect joins, hallucinated columns and
-repair loops. None of that exists yet.
+`EV-STRATA-2026-D8E1`: six agents, three per condition, identical graded task
+set. **15/15 correct in both conditions.** No difference detected. The Strata
+condition also used 8.7% more tokens.
+
+The result is a ceiling effect rather than a refutation: with an 8KB context a
+capable agent reads everything and misses nothing, so retrieval had no room to
+help. Even the designed discriminator — an undeclared invoice↔customer
+relationship that the raw condition had to infer from corpus SQL — was answered
+correctly by all three raw agents.
+
+What this establishes is a **floor**: the agent thesis does not pay off on small
+schemas with small corpora, where Strata is a net cost. It does not test the
+regime Strata is designed for.
+
+Per notebook §134, agent context must not now be used as the sole justification
+for Strata.

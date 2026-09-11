@@ -23,5 +23,6 @@
 | WI-0018 | Report unsupported join shapes as explicit analysis gaps | complete | strata, honesty | high |
 | WI-0019 | Surface parser/server dialect divergence as a first-class analysis state | complete | strata, honesty | high |
 | WI-0020 | Spike D: measure agent context cost of Strata retrieval versus raw corpus | complete | strata, spike | high |
-| WI-0021 | Reduce repeated scope overhead without weakening the safety property | ready | strata, optimisation | high |
-| WI-0022 | Evaluate whether targeted retrieval loses information the raw context has | ready | strata, spike | high |
+| WI-0021 | Reduce repeated scope overhead without weakening the safety property | complete | strata, optimisation | high |
+| WI-0022 | Evaluate whether targeted retrieval loses information the raw context has | complete | strata, spike | high |
+| WI-0023 | Spike D correctness half: run agents under both conditions | ready | strata, spike | high |

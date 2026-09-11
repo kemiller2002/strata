@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 23,
+  "nextSeq": 24,
   "items": [
     {
       "id": "WI-0001",
@@ -374,6 +374,23 @@
       "attachments": [],
       "createdAt": "2026-09-11T15:58:56.000Z",
       "updatedAt": "2026-09-11T15:59:17.000Z",
+      "createdBy": "claude",
+      "source": "user-request",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0023",
+      "title": "Spike D correctness half: run agents under both conditions",
+      "description": "Six agents, three per condition, identical graded task set, only the context differs. Tests HY-STRATA-2026-2A6F.",
+      "tags": [
+        "strata",
+        "spike"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T16:17:51.000Z",
+      "updatedAt": "2026-09-11T16:17:51.000Z",
       "createdBy": "claude",
       "source": "user-request",
       "sourceReference": null
