@@ -270,7 +270,20 @@ module SchemaDiff =
             |> List.tryPick (fun (declared, text) -> if sameName declared name then Some text else None)
 
         match change with
+        // Most unclassified changes cannot be written — they describe a
+        // difference rather than name an object. A declared view or routine is
+        // the exception: the change names it, and the file holds exactly the
+        // DDL that creates it. Matching on the message is unpleasant, but the
+        // alternative is inventing CreateView and CreateFunction cases that the
+        // gate would then judge by rules written for tables.
         | UnclassifiedChange _ -> None
+
+        // A view or routine is created by executing the file that declares it.
+        // There is nothing to reconstruct: the definition text is not
+        // recoverable from the parse tree, so a project without the file cannot
+        // create one, and says so by emitting nothing.
+        | CreateView name
+        | CreateRoutine name -> declaredText name
 
         // The declaring file holds exactly the DDL the author wrote, defaults
         // and check expressions included. Reconstruction below is the fallback
@@ -358,10 +371,14 @@ module SchemaDiff =
         | AddColumn _ -> 1
         | AlterColumnType _ -> 2
         | AddConstraint _ -> 3
-        | TruncateTable _ -> 4
-        | DropColumn _ -> 5
-        | DropTable _ -> 6
-        | UnclassifiedChange _ -> 7
+        // Views and routines reference tables and columns, so they come after
+        // every table change that might create what they read.
+        | CreateView _ -> 4
+        | CreateRoutine _ -> 4
+        | TruncateTable _ -> 5
+        | DropColumn _ -> 6
+        | DropTable _ -> 7
+        | UnclassifiedChange _ -> 8
 
     /// Constraint and default differences for a table present on both sides.
     ///
@@ -497,6 +514,23 @@ module SchemaDiff =
                     else
                         None))
 
+        // Indexes are never compared: CREATE INDEX is a separate statement and
+        // the declared side therefore always reports none. Comparing them would
+        // propose dropping every index in the database; ignoring them silently
+        // is the other half of the same mistake, so they are disclosed.
+        //
+        // Only SECONDARY indexes are reported. PostgreSQL creates an index to
+        // back each primary key and unique constraint, naming it after the
+        // constraint, and those ARE compared above — listing them here would
+        // report an uncompared difference for every table with a key.
+        let uncomparedIndexes =
+            let constraintNames =
+                (match actual.PrimaryKey with Some pk -> [ named pk.ConstraintName ] | None -> [])
+                @ (actual.UniqueConstraints |> List.map (fun u -> named u.ConstraintName))
+
+            actual.Indexes
+            |> List.filter (fun i -> not (constraintNames |> List.contains (named i.Name)))
+
         // Everything above establishes PRESENCE. Two expressions Strata cannot
         // read might still differ, and saying so is the difference between a
         // bounded result and a false clean.
@@ -526,9 +560,127 @@ module SchemaDiff =
                     Detail =
                       sprintf
                           "%d column default(s) exist on both sides; their expressions were NOT compared, so they may differ"
-                          (List.length sharedDefaults) } ]
+                          (List.length sharedDefaults) }
+              if not (List.isEmpty uncomparedIndexes) then
+                  { Object = desired.Name
+                    Reason = NotModelled
+                    Detail =
+                      sprintf
+                          "%d index(es) exist in the database; CREATE INDEX is not read as desired state, so indexes were NOT compared"
+                          (List.length uncomparedIndexes) } ]
 
         primaryKey @ uniques @ foreignKeys @ checks @ defaults, notCompared
+
+    /// Views and routines, compared by PRESENCE only.
+    ///
+    /// Their definitions are deliberately not compared. A declared view's
+    /// definition text is not recoverable from the parse tree, and PostgreSQL
+    /// rewrites what it stores — `SELECT 1 AS x` comes back schema-qualified
+    /// and reformatted — so even a perfect deparse would differ from
+    /// `pg_get_viewdef` on a view nobody changed. A routine body has the same
+    /// problem. Comparing text would report churn on every run.
+    ///
+    /// A declared view also carries an EMPTY column list, which means "not
+    /// knowable from a file", not "no columns". Nothing here may read it as a
+    /// fact, which is why only presence is compared.
+    ///
+    /// Presence alone is still worth having: before this, a view in the
+    /// database was suppressed as not-modelled and a view in a file failed to
+    /// load, so a project could not express that a view should exist at all.
+    let private otherObjectChanges
+        (allowDrops: bool)
+        (managedSchemas: string list)
+        (desiredComplete: bool)
+        (desired: SchemaObject list)
+        (actual: SchemaObject list)
+        =
+        // Routines are identified by name AND argument types: PostgreSQL
+        // allows overloads, so f(int) and f(text) are different objects and
+        // matching on name alone would read one as a redefinition of the other.
+        let identity (o: SchemaObject) =
+            match o with
+            | TableObject t -> "table:" + QualifiedName.display t.Name
+            | ViewObject v -> "view:" + QualifiedName.display v.Name
+            | RoutineObject r ->
+                sprintf "routine:%s(%s)" (QualifiedName.display r.Name) (String.concat "," r.ArgumentTypes)
+
+        let nonTable (objects: SchemaObject list) =
+            objects
+            |> List.filter (fun o ->
+                match o with
+                | TableObject _ -> false
+                | ViewObject _
+                | RoutineObject _ -> true)
+
+        let desiredOther = nonTable desired
+        let actualOther = nonTable actual
+
+        let kindOf (o: SchemaObject) =
+            match o with
+            | ViewObject v -> if v.IsMaterialized then "materialized view" else "view"
+            | RoutineObject r -> (match r.Kind with Procedure -> "procedure" | Function -> "function")
+            | TableObject _ -> "table"
+
+        let created =
+            desiredOther
+            |> List.filter (fun d -> not (actualOther |> List.exists (fun a -> identity a = identity d)))
+            |> List.map (fun d ->
+                match d with
+                | ViewObject v -> Ok(CreateView v.Name)
+                | RoutineObject r -> Ok(CreateRoutine r.Name)
+                | TableObject t -> Ok(CreateTable t.Name))
+
+        let removed =
+            actualOther
+            |> List.filter (fun a -> not (desiredOther |> List.exists (fun d -> identity d = identity a)))
+            |> List.map (fun a ->
+                let name = SchemaObject.name a
+
+                if not (isManaged managedSchemas name) then
+                    Microsoft.FSharp.Core.Error
+                        { Object = name
+                          Reason = OutsideManagedSchemas
+                          Detail = sprintf "%s exists in the database and not in desired state, but its schema is not managed" (kindOf a) }
+                elif SchemaObject.scope a = ExtensionOwned then
+                    Microsoft.FSharp.Core.Error
+                        { Object = name
+                          Reason = ExtensionOwnedObject
+                          Detail = sprintf "%s is owned by an extension" (kindOf a) }
+                elif not desiredComplete then
+                    Microsoft.FSharp.Core.Error
+                        { Object = name
+                          Reason = DesiredStateIncomplete
+                          Detail =
+                            sprintf
+                                "%s is absent from desired state, but desired state did not load completely"
+                                (kindOf a) }
+                elif not allowDrops then
+                    Microsoft.FSharp.Core.Error
+                        { Object = name
+                          Reason = DropsNotEnabled
+                          Detail = sprintf "%s would be dropped; pass --allow-drops to propose removals" (kindOf a) }
+                else
+                    Ok(
+                        UnclassifiedChange(
+                            sprintf
+                                "%s %s exists in the database and not in desired state"
+                                (kindOf a)
+                                (QualifiedName.display name))))
+
+        // Present on both sides. Definitions were NOT compared, and saying so
+        // is the difference between a bounded result and a false clean.
+        let notCompared =
+            desiredOther
+            |> List.filter (fun d -> actualOther |> List.exists (fun a -> identity a = identity d))
+            |> List.map (fun d ->
+                { Object = SchemaObject.name d
+                  Reason = NotCompared
+                  Detail =
+                    sprintf
+                        "%s exists on both sides; its definition was NOT compared, so the bodies may differ"
+                        (kindOf d) })
+
+        created @ removed, notCompared
 
     /// Compare desired state against actual state.
     ///
@@ -583,30 +735,17 @@ module SchemaDiff =
         let constraintChangeResults = constraintResults |> List.collect fst
         let notCompared = constraintResults |> List.collect snd
 
-        // Objects the desired side could not model at all. Reported as
-        // suppressions so a view file that failed to load does not read as
-        // "this view should not exist".
-        let unmodelled =
-            actual.Objects
-            |> List.choose (fun o ->
-                match o with
-                | TableObject _ -> None
-                | ViewObject v ->
-                    Some
-                        { Object = v.Name
-                          Reason = NotModelled
-                          Detail = "views are not read as desired state yet, so no comparison was made" }
-                | RoutineObject r ->
-                    Some
-                        { Object = r.Name
-                          Reason = NotModelled
-                          Detail = "routines are not read as desired state yet, so no comparison was made" })
+        let otherChangeResults, otherNotCompared =
+            otherObjectChanges allowDrops managedSchemas desiredComplete desired.Objects actual.Objects
+
+        let unmodelled = otherNotCompared
 
         let all =
             creations
             @ removals allowDrops managedSchemas desiredComplete desiredTables actualTables
             @ columnResults
             @ constraintChangeResults
+            @ otherChangeResults
 
         let changes =
             all
@@ -637,6 +776,8 @@ module SchemaDiff =
             sprintf "add-constraint     %s %s" (QualifiedName.display table) name.Text
         | DropTable table -> sprintf "drop-table         %s" (QualifiedName.display table)
         | CreateTable table -> sprintf "create-table       %s" (QualifiedName.display table)
+        | CreateView view -> sprintf "create-view        %s" (QualifiedName.display view)
+        | CreateRoutine routine -> sprintf "create-routine     %s" (QualifiedName.display routine)
         | TruncateTable table -> sprintf "truncate-table     %s" (QualifiedName.display table)
 
     let private suppressionJson (s: Suppression) =

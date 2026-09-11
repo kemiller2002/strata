@@ -124,6 +124,27 @@ module DeploymentGate =
               AffectedSources = []
               NextSafeMove = "Proceed." }
 
+        | CreateView view ->
+            { Change = change
+              Verdict = Allow
+              Detected = sprintf "creates view %s" (QualifiedName.display view)
+              Rationale = "Additive. Creates a new object."
+              AffectedSources = []
+              NextSafeMove = "Proceed." }
+
+        | CreateRoutine routine ->
+            { Change = change
+              Verdict = Allow
+              Detected = sprintf "creates routine %s" (QualifiedName.display routine)
+              Rationale =
+                // The CREATION is additive. Whether the routine's BODY is sound
+                // is a different question, answered by `strata validate`, and
+                // conflating the two would have this gate imply a check it did
+                // not perform.
+                "Additive. Creates a new object. Its body is not validated here."
+              AffectedSources = []
+              NextSafeMove = "Proceed." }
+
         | AddConstraint (table, constraintName) ->
             { Change = change
               Verdict = RequiresApproval

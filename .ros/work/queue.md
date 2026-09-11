@@ -46,4 +46,5 @@
 | WI-0041 | Validate SQL routine bodies instead of reporting them unverifiable | complete | strata, validation | high |
 | WI-0042 | Probe diff coverage: false clean on constraints, 96% of tables uncreatable | complete | strata, diff, coverage | high |
 | WI-0043 | Compare constraints and defaults; report what cannot be compared | complete | strata, diff | high |
-| WI-0044 | Create tables from the declaring file; canonicalise serial pseudo-types | ready | strata, deployment | high |
+| WI-0044 | Create tables from the declaring file; canonicalise serial pseudo-types | complete | strata, deployment | high |
+| WI-0045 | Views and routines as desired state; disclose uncompared indexes | ready | strata, desired-state | high |

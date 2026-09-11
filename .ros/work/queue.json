@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 45,
+  "nextSeq": 46,
   "items": [
     {
       "id": "WI-0001",
@@ -750,6 +750,23 @@
       "attachments": [],
       "createdAt": "2026-09-11T22:20:31Z",
       "updatedAt": "2026-09-11T22:20:31Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0045",
+      "title": "Views and routines as desired state; disclose uncompared indexes",
+      "description": "Load CREATE VIEW, CREATE MATERIALIZED VIEW and CREATE FUNCTION/PROCEDURE as desired state; compare them by presence with definitions disclosed as not-compared; add CreateView and CreateRoutine to the change vocabulary as additive; report secondary indexes as not compared rather than ignoring them.",
+      "tags": [
+        "strata",
+        "desired-state"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T22:45:50Z",
+      "updatedAt": "2026-09-11T22:45:50Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null

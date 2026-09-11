@@ -152,7 +152,21 @@ module CatalogQueries =
         SELECT n.nspname AS schema_name,
                p.proname AS routine_name,
                p.prokind::text AS kind,
-               pg_catalog.pg_get_function_arguments(p.oid) AS arguments,
+               -- The IN argument TYPES, as an array, built from proargtypes.
+               --
+               -- Not `pg_get_function_arguments` and not
+               -- `pg_get_function_identity_arguments`: both render parameter
+               -- NAMES as well as types (`p_id bigint`), so neither matches a
+               -- declared signature, and a name is not part of a routine's
+               -- identity — overloads are resolved on types alone.
+               --
+               -- Not a rendered string split on commas either: a type may
+               -- contain one. `numeric(12,2)` would split into two arguments
+               -- and `f(numeric(12,2))` would never match itself.
+               COALESCE(
+                 (SELECT array_agg(pg_catalog.format_type(k.typid, NULL) ORDER BY k.ord)
+                  FROM unnest(p.proargtypes) WITH ORDINALITY AS k(typid, ord)),
+                 '{}') AS argument_types,
                pg_catalog.format_type(p.prorettype, NULL)  AS return_type,
                l.lanname AS language,
                (d.objid IS NOT NULL) AS extension_owned

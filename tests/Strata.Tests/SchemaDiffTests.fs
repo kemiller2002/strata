@@ -159,22 +159,58 @@ let ``a nullability change is reported as unclassified rather than invented`` ()
         | _ -> false)
 
 [<Fact>]
-let ``a view in the database is suppressed as not modelled, not proposed for dropping`` () =
-    // Views do not load as desired state yet. Without this a view would be
-    // absent from desired state for a reason that has nothing to do with
-    // intent, and a diff would read that as "drop it".
-    let view =
-        ViewObject
-            { Name = qn "sales" "v_open"
-              Columns = []
-              IsMaterialized = false
-              Definition = "SELECT 1"
+let ``indexes are disclosed as not compared rather than ignored`` () =
+    // CREATE INDEX is a separate statement, so the declared side always reports
+    // none. Comparing them would propose dropping every index in the database;
+    // ignoring them silently is the other half of the same mistake.
+    let indexed =
+        TableObject
+            { Name = qn "sales" "orders"
+              Columns = [ col 1 "id" false ]
+              PrimaryKey = None
+              UniqueConstraints = []
+              CheckConstraints = []
+              ForeignKeys = []
+              Indexes = [ { Name = id' "idx_total"; Columns = [ id' "id" ]; IsUnique = false; Predicate = None } ]
               Scope = Observed }
 
-    let result = run true managed (complete []) (complete [ view ])
+    let result = run true managed (complete [ tbl Managed "sales" "orders" [ "id", false ] ]) (complete [ indexed ])
 
     Assert.Empty result.Changes
-    Assert.Contains(result.Suppressed, fun s -> s.Reason = NotModelled)
+    Assert.Contains(result.Suppressed, fun s -> s.Detail.Contains "indexes were NOT compared")
+
+[<Fact>]
+let ``an index backing a constraint is not reported as uncompared`` () =
+    // PostgreSQL names the implicit index after its constraint, and the
+    // constraint IS compared. Listing it would report an uncompared difference
+    // for every table with a key — noise that trains people to ignore the
+    // disclosures that matter.
+    let withPk =
+        TableObject
+            { Name = qn "sales" "orders"
+              Columns = [ col 1 "id" false ]
+              PrimaryKey = Some { ConstraintName = id' "orders_pkey"; Columns = [ id' "id" ] }
+              UniqueConstraints = []
+              CheckConstraints = []
+              ForeignKeys = []
+              Indexes = [ { Name = id' "orders_pkey"; Columns = [ id' "id" ]; IsUnique = true; Predicate = None } ]
+              Scope = Observed }
+
+    let desired =
+        TableObject
+            { Name = qn "sales" "orders"
+              Columns = [ col 1 "id" false ]
+              PrimaryKey = Some { ConstraintName = id' "orders_pkey"; Columns = [ id' "id" ] }
+              UniqueConstraints = []
+              CheckConstraints = []
+              ForeignKeys = []
+              Indexes = []
+              Scope = Managed }
+
+    let result = run true managed (complete [ desired ]) (complete [ withPk ])
+
+    Assert.Empty result.Changes
+    Assert.DoesNotContain(result.Suppressed, fun s -> s.Detail.Contains "indexes were NOT compared")
 
 [<Fact>]
 let ``suppressions name the object so a clean change list is never mistaken for no difference`` () =
@@ -475,3 +511,69 @@ let ``an identical table still proposes nothing`` () =
     let result = run true managed (complete [ full ]) (complete [ full ])
 
     Assert.Empty result.Changes
+
+// ---- views and routines ---------------------------------------------------
+
+let private view name materialized =
+    ViewObject
+        { Name = qn "sales" name
+          Columns = []
+          IsMaterialized = materialized
+          Definition = ""
+          Scope = Managed }
+
+let private routine name args =
+    RoutineObject
+        { Name = qn "sales" name
+          Kind = Function
+          ArgumentTypes = args
+          ReturnType = None
+          Language = "sql"
+          Scope = Managed }
+
+[<Fact>]
+let ``a declared view that does not exist is created`` () =
+    let result = run true managed (complete [ view "v_open" false ]) (complete [])
+
+    Assert.Contains(result.Changes, fun c -> c = CreateView(qn "sales" "v_open"))
+
+[<Fact>]
+let ``a declared routine that does not exist is created`` () =
+    let result = run true managed (complete [ routine "f" [ "bigint" ] ]) (complete [])
+
+    Assert.Contains(result.Changes, fun c -> c = CreateRoutine(qn "sales" "f"))
+
+[<Fact>]
+let ``creating a view or routine is additive, not approval-gated`` () =
+    // These were UnclassifiedChange first, which the gate judges as potentially
+    // destructive — so a project containing any view could never be applied
+    // without manual approval. A creation is additive; the vocabulary now says so.
+    Assert.False(Change.isPotentiallyDestructive (CreateView(qn "sales" "v")))
+    Assert.False(Change.isPotentiallyDestructive (CreateRoutine(qn "sales" "f")))
+
+[<Fact>]
+let ``overloads are separate objects`` () =
+    // f(bigint) and f(text) are different routines. Matching on name alone
+    // would read one as a redefinition of the other and propose dropping it.
+    let result =
+        run true managed
+            (complete [ routine "f" [ "bigint" ]; routine "f" [ "text" ] ])
+            (complete [ routine "f" [ "bigint" ] ])
+
+    Assert.Single result.Changes |> ignore
+    Assert.Contains(result.Changes, fun c -> c = CreateRoutine(qn "sales" "f"))
+
+[<Fact>]
+let ``a view on both sides is not proposed, and its definition is disclosed as uncompared`` () =
+    let result = run true managed (complete [ view "v" false ]) (complete [ view "v" false ])
+
+    Assert.Empty result.Changes
+    Assert.Contains(result.Suppressed, fun s ->
+        s.Reason = NotCompared && s.Detail.Contains "definition was NOT compared")
+
+[<Fact>]
+let ``a view in the database and not in desired state is guarded like a table`` () =
+    let result = run false managed (complete []) (complete [ view "v" false ])
+
+    Assert.Empty result.Changes
+    Assert.Contains(result.Suppressed, fun s -> s.Reason = DropsNotEnabled)

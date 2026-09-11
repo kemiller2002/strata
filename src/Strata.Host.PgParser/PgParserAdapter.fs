@@ -830,6 +830,90 @@ module PgParserAdapter =
             | Some _
             | None -> None
 
+    /// A view, as its file declares it.
+    ///
+    /// `Columns` and `Definition` come back EMPTY, and neither means "none".
+    /// A view's column list is a property of the query it wraps and is only
+    /// knowable by resolving that query, which the catalog does and a file
+    /// cannot; the definition text is not recoverable from the parse tree
+    /// without deparsing, and PostgreSQL rewrites what it stores anyway
+    /// (`SELECT 1 AS x` comes back schema-qualified and reformatted), so even
+    /// a perfect deparse would not compare equal.
+    ///
+    /// The `View` record cannot express "unknown" for either field. The diff is
+    /// therefore required to compare views by PRESENCE only and to report
+    /// their definitions as not-compared — never to read these empties as
+    /// facts. `DF-STRATA-2026-B1E7` and `ER-008`.
+    let private viewOf (name: RangeVar) (isMaterialized: bool) =
+        { Name = qualifiedNameOf name.Schemaname name.Relname
+          Columns = []
+          IsMaterialized = isMaterialized
+          Definition = ""
+          Scope = Managed }
+
+    /// A routine, as its file declares it.
+    ///
+    /// Identity is name PLUS argument types: PostgreSQL allows overloads, so
+    /// `f(int)` and `f(text)` are different objects and matching on name alone
+    /// would make one look like a redefinition of the other.
+    let private routineOf (stmt: CreateFunctionStmt) =
+        let nameParts =
+            if isNull (box stmt.Funcname) then []
+            else
+                stmt.Funcname
+                |> Seq.choose (fun n ->
+                    if not (isNull (box n.String)) && not (String.IsNullOrEmpty n.String.Sval) then
+                        Some n.String.Sval
+                    else
+                        None)
+                |> List.ofSeq
+
+        let name =
+            match nameParts with
+            | [ single ] -> QualifiedName.unqualified (identifierOf single)
+            | [ schema; single ] -> qualifiedNameOf schema single
+            | _ -> QualifiedName.unqualified (identifierOf "unknown")
+
+        let parameters =
+            if isNull (box stmt.Parameters) then []
+            else
+                stmt.Parameters
+                |> Seq.choose (fun n -> if isNull (box n.FunctionParameter) then None else Some n.FunctionParameter)
+                |> List.ofSeq
+
+        // Only IN and INOUT parameters form the signature; an OUT parameter
+        // does not participate in overload resolution, so including it would
+        // give the routine an identity PostgreSQL does not recognise.
+        let argumentTypes =
+            parameters
+            |> List.filter (fun p ->
+                p.Mode = FunctionParameterMode.FuncParamDefault
+                || p.Mode = FunctionParameterMode.FuncParamIn
+                || p.Mode = FunctionParameterMode.FuncParamInout
+                || p.Mode = FunctionParameterMode.FuncParamVariadic)
+            |> List.map (fun p -> QualifiedName.display (typeNameOf p.ArgType))
+
+        let language =
+            if isNull (box stmt.Options) then "unknown"
+            else
+                stmt.Options
+                |> Seq.choose (fun n -> if isNull (box n.DefElem) then None else Some n.DefElem)
+                |> Seq.tryPick (fun d ->
+                    if d.Defname = "language" && not (isNull (box d.Arg)) && not (isNull (box d.Arg.String)) then
+                        Some d.Arg.String.Sval
+                    else
+                        None)
+                |> Option.defaultValue "unknown"
+
+        { Name = name
+          Kind = if stmt.IsProcedure then Procedure else Function
+          ArgumentTypes = argumentTypes
+          ReturnType =
+            if isNull (box stmt.ReturnType) then None
+            else Some(QualifiedName.display (typeNameOf stmt.ReturnType))
+          Language = language
+          Scope = Managed }
+
     let private errorOf (e: PgSqlParser.Error) =
         { Message = e.Message
           CursorPosition = e.CursorPos
@@ -905,6 +989,20 @@ module PgParserAdapter =
 
                         match stmt.NodeCase with
                         | Node.NodeOneofCase.CreateStmt -> Declared(TableObject(tableOf stmt.CreateStmt))
+
+                        | Node.NodeOneofCase.ViewStmt when not (isNull (box stmt.ViewStmt.View)) ->
+                            Declared(ViewObject(viewOf stmt.ViewStmt.View false))
+
+                        // CREATE MATERIALIZED VIEW is a CreateTableAsStmt with
+                        // an objtype of matview, not a ViewStmt.
+                        | Node.NodeOneofCase.CreateTableAsStmt when
+                            stmt.CreateTableAsStmt.Objtype = ObjectType.ObjectMatview
+                            && not (isNull (box stmt.CreateTableAsStmt.Into))
+                            && not (isNull (box stmt.CreateTableAsStmt.Into.Rel)) ->
+                            Declared(ViewObject(viewOf stmt.CreateTableAsStmt.Into.Rel true))
+
+                        | Node.NodeOneofCase.CreateFunctionStmt ->
+                            Declared(RoutineObject(routineOf stmt.CreateFunctionStmt))
                         // Recognised, modelled nowhere yet. Saying so keeps a
                         // view file from reading as an empty declaration, which
                         // a diff would treat as "nothing to create" (ER-008).

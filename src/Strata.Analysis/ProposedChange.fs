@@ -27,6 +27,15 @@ module ProposedChange =
         | AddColumn of table: QualifiedName * column: Identifier
         /// Creates a relation. Additive.
         | CreateTable of table: QualifiedName
+        /// Creates a view. Additive: nothing can already depend on an object
+        /// that does not yet exist.
+        | CreateView of view: QualifiedName
+        /// Creates a function or procedure. Additive for the same reason.
+        ///
+        /// This does NOT mean the routine's BODY is safe — its body may read
+        /// objects that a later change removes. That is a question about the
+        /// body, which `Validation` answers, not about the creation.
+        | CreateRoutine of routine: QualifiedName
         /// Adds a constraint. Can fail against existing data, but breaks no
         /// reader.
         | AddConstraint of table: QualifiedName * constraintName: Identifier
@@ -47,6 +56,8 @@ module ProposedChange =
             | AlterColumnType _ -> "alter-column-type"
             | AddColumn _ -> "add-column"
             | CreateTable _ -> "create-table"
+            | CreateView _ -> "create-view"
+            | CreateRoutine _ -> "create-routine"
             | AddConstraint _ -> "add-constraint"
             | TruncateTable _ -> "truncate-table"
             | UnclassifiedChange _ -> "unclassified"
@@ -59,6 +70,8 @@ module ProposedChange =
             | AlterColumnType (table, _, _)
             | AddColumn (table, _)
             | CreateTable table
+            | CreateView table
+            | CreateRoutine table
             | AddConstraint (table, _)
             | TruncateTable table -> Some table
             | UnclassifiedChange _ -> None
@@ -78,6 +91,8 @@ module ProposedChange =
             | UnclassifiedChange _ -> true
             | AddColumn _
             | CreateTable _
+            | CreateView _
+            | CreateRoutine _
             | AddConstraint _ -> false
 
     /// Read the proposed changes out of a parsed statement.

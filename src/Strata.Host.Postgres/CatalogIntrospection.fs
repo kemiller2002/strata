@@ -117,7 +117,7 @@ module CatalogIntrospection =
         { Schema: string
           Name: string
           Kind: char
-          Arguments: string
+          ArgumentTypes: string list
           ReturnType: string
           Language: string
           ExtensionOwned: bool }
@@ -210,7 +210,7 @@ module CatalogIntrospection =
                 { Schema = str r "schema_name"
                   Name = str r "routine_name"
                   Kind = (str r "kind").[0]
-                  Arguments = str r "arguments"
+                  ArgumentTypes = arrayOf r "argument_types"
                   ReturnType = str r "return_type"
                   Language = str r "language"
                   ExtensionOwned = boolOf r "extension_owned" })
@@ -315,9 +315,7 @@ module CatalogIntrospection =
                 RoutineObject
                     { Name = qualified r.Schema r.Name
                       Kind = if r.Kind = 'p' then Procedure else Function
-                      ArgumentTypes =
-                        if String.IsNullOrWhiteSpace r.Arguments then []
-                        else r.Arguments.Split(',') |> Array.map (fun s -> s.Trim()) |> List.ofArray
+                      ArgumentTypes = r.ArgumentTypes
                       ReturnType = if String.IsNullOrWhiteSpace r.ReturnType then None else Some r.ReturnType
                       Language = r.Language
                       Scope = scopeOf r.ExtensionOwned })

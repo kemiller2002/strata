@@ -136,9 +136,10 @@ let ``a file that does not parse makes the snapshot incomplete`` () =
 
 [<Fact>]
 let ``an object type Strata does not model yet is a failure, not an empty file`` () =
-    // A view file that loads as "nothing declared" reads to a diff as "this
-    // object should not exist". ER-008: unmodelled is not absent.
-    let loaded = load [ "v.sql", "CREATE VIEW sales.v AS SELECT 1 AS x" ]
+    // A file that loads as "nothing declared" reads to a diff as "this object
+    // should not exist". ER-008: unmodelled is not absent. Views and routines
+    // now load, so this uses CREATE INDEX, which genuinely does not.
+    let loaded = load [ "i.sql", "CREATE INDEX idx_orders_total ON sales.orders (total)" ]
 
     Assert.Empty loaded.Snapshot.Objects
     Assert.NotEmpty loaded.Failures
@@ -263,3 +264,88 @@ let ``a file declaring two objects records neither`` () =
 
     Assert.Equal(2, List.length loaded.Snapshot.Objects)
     Assert.Empty loaded.Declarations
+
+// ---- views and routines ---------------------------------------------------
+
+[<Fact>]
+let ``a view declaration loads`` () =
+    let loaded = load [ "v.sql", "CREATE VIEW sales.v_open AS SELECT id FROM sales.orders" ]
+
+    Assert.Empty loaded.Failures
+    Assert.Contains(loaded.Snapshot.Objects, fun o ->
+        match o with
+        | ViewObject v -> QualifiedName.display v.Name = "sales.v_open" && not v.IsMaterialized
+        | _ -> false)
+
+[<Fact>]
+let ``a materialized view is distinguished from a plain one`` () =
+    // CREATE MATERIALIZED VIEW is a CreateTableAsStmt with an objtype of
+    // matview, not a ViewStmt, so a reader that only handles ViewStmt loses it
+    // entirely — and a lost object reads to a diff as one that should not exist.
+    let loaded =
+        load [ "m.sql", "CREATE MATERIALIZED VIEW sales.m_totals AS SELECT id FROM sales.orders" ]
+
+    Assert.Contains(loaded.Snapshot.Objects, fun o ->
+        match o with
+        | ViewObject v -> QualifiedName.display v.Name = "sales.m_totals" && v.IsMaterialized
+        | _ -> false)
+
+[<Fact>]
+let ``a routine declaration carries its signature`` () =
+    let loaded =
+        load
+            [ "f.sql",
+              "CREATE FUNCTION sales.total(p_id bigint, p_when timestamptz) RETURNS numeric AS $$ SELECT 1 $$ LANGUAGE sql" ]
+
+    let routine =
+        loaded.Snapshot.Objects
+        |> List.pick (fun o -> match o with RoutineObject r -> Some r | _ -> None)
+
+    Assert.Equal("sales.total", QualifiedName.display routine.Name)
+    Assert.Equal(Function, routine.Kind)
+    // Types only — a parameter NAME is not part of a routine's identity, and
+    // types are canonicalised the same way a column's are.
+    Assert.Equal<string list>([ "bigint"; "timestamp with time zone" ], routine.ArgumentTypes)
+    Assert.Equal("sql", routine.Language)
+
+[<Fact>]
+let ``a procedure is distinguished from a function`` () =
+    let loaded = load [ "p.sql", "CREATE PROCEDURE sales.do_it() AS $$ BEGIN END $$ LANGUAGE plpgsql" ]
+
+    let routine =
+        loaded.Snapshot.Objects
+        |> List.pick (fun o -> match o with RoutineObject r -> Some r | _ -> None)
+
+    Assert.Equal(Procedure, routine.Kind)
+
+[<Fact>]
+let ``an OUT parameter is not part of the signature`` () =
+    // An OUT parameter does not participate in overload resolution, so
+    // including it would give the routine an identity PostgreSQL does not
+    // recognise — and the same routine would never match itself.
+    let loaded =
+        load
+            [ "f.sql",
+              "CREATE FUNCTION sales.f(p_in bigint, OUT p_out text) RETURNS text AS $$ SELECT 'x' $$ LANGUAGE sql" ]
+
+    let routine =
+        loaded.Snapshot.Objects
+        |> List.pick (fun o -> match o with RoutineObject r -> Some r | _ -> None)
+
+    Assert.Equal<string list>([ "bigint" ], routine.ArgumentTypes)
+
+[<Fact>]
+let ``a view carries no columns and no definition, and neither means none`` () =
+    // A view's column list is a property of the query it wraps and is only
+    // knowable by resolving that query; the definition text is not recoverable
+    // from the parse tree. The record cannot express "unknown", so the diff is
+    // required to compare views by presence only. This test exists to make that
+    // contract visible at the point the empties are produced.
+    let loaded = load [ "v.sql", "CREATE VIEW sales.v AS SELECT id, total FROM sales.orders" ]
+
+    let view =
+        loaded.Snapshot.Objects
+        |> List.pick (fun o -> match o with ViewObject v -> Some v | _ -> None)
+
+    Assert.Empty view.Columns
+    Assert.Equal("", view.Definition)
