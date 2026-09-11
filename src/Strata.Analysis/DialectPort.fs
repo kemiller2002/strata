@@ -1,4 +1,4 @@
-namespace Strata.Host.PgParser
+namespace Strata.Analysis
 
 open Strata.Analysis.StatementReferences
 
@@ -9,7 +9,12 @@ open Strata.Analysis.StatementReferences
 /// Notebook §5.4 specifies a narrow adapter interface and forbids exposing
 /// parser-specific node types throughout Strata core. This is that interface.
 /// A SQL Server adapter over ScriptDom (§143) would implement the same shape.
-module DialectParser =
+///
+/// This is a PORT, not an adapter: it lives in Tier 2 because Tier 2 and Tier 3
+/// depend on it, while every implementation lives in Tier 4. Keeping the
+/// interface here is what lets the application tier orchestrate parsing without
+/// referencing a host project, which the architecture check forbids.
+module DialectPort =
 
     /// Where a statement sat in its source text.
     type StatementLocation =

@@ -177,11 +177,19 @@ module Graph =
         /// The observed edge is NOT kept separately, which would double-count
         /// the same relationship.
         let combine (declared: Relationship list) (observed: Relationship list) =
+            // The key is DIRECTION-INDEPENDENT. A foreign key points from the
+            // referencing table to the referenced one, but a join predicate is
+            // symmetric: `a.x = b.y` and `b.y = a.x` are the same fact. Keying
+            // on the written direction would leave an observed edge sitting
+            // beside the declared edge for the identical relationship, showing
+            // a Low-certainty duplicate next to a Certain one — the
+            // double-counting §9 exists to prevent. The endpoints are therefore
+            // sorted before comparison.
             let key (r: Relationship) =
-                QualifiedName.display r.FromTable,
-                r.FromColumns |> List.map Identifier.folded,
-                QualifiedName.display r.ToTable,
-                r.ToColumns |> List.map Identifier.folded
+                let endpointA = QualifiedName.display r.FromTable, r.FromColumns |> List.map Identifier.folded
+                let endpointB = QualifiedName.display r.ToTable, r.ToColumns |> List.map Identifier.folded
+
+                if endpointA <= endpointB then endpointA, endpointB else endpointB, endpointA
 
             let declaredKeys = declared |> List.map key |> Set.ofList
 

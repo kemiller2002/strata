@@ -18,7 +18,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="DialectParser.fs" />
     <Compile Include="PgParserAdapter.fs" />
   </ItemGroup>
 

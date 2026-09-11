@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "claude",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-09-11T14:46:33.000Z",
+  "updatedAt": "2026-09-11T15:25:35.000Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -375,6 +375,35 @@
         "EXE-20260911T144633271Z-2df9eb26"
       ],
       "completedAt": "2026-09-11T14:46:33.000Z"
+    },
+    {
+      "id": "WI-0017",
+      "type": "implementation",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Application/CorpusPipeline.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Host.Files/FileCorpus.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Analysis/DialectPort.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/CorpusPipelineTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-11T15:25:35.000Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T151644784Z-896d8a4f"
+      ],
+      "completedAt": "2026-09-11T15:25:35.000Z"
     }
   ]
 }

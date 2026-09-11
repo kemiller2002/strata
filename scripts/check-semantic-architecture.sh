@@ -119,6 +119,20 @@ if [[ -f "src/Strata.Host.Postgres/Strata.Host.Postgres.fsproj" ]]; then
     fi
 fi
 
+# --- Tier 4 filesystem containment -------------------------------------------
+#
+# Only the file adapter touches the filesystem for corpus input. The analysis
+# and application tiers receive SQL as data.
+
+for tier_src in src/Strata.Semantic src/Strata.Analysis src/Strata.Application; do
+    if [[ -d "$tier_src" ]]; then
+        if grep -rn --include="*.fs" -E "System\.IO\.(File|Directory)|Directory\.GetFiles|File\.ReadAllText" "$tier_src" >/dev/null 2>&1; then
+            fail "filesystem access appears in $tier_src; corpus input arrives as data from Tier 4"
+            grep -rn --include="*.fs" -E "System\.IO\.(File|Directory)|Directory\.GetFiles|File\.ReadAllText" "$tier_src" >&2
+        fi
+    fi
+done
+
 # --- Result -----------------------------------------------------------------
 
 if [[ $failures -gt 0 ]]; then

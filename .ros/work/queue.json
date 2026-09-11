@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 17,
+  "nextSeq": 18,
   "items": [
     {
       "id": "WI-0001",
@@ -274,6 +274,23 @@
       "updatedAt": "2026-09-11T14:46:32.000Z",
       "createdBy": "claude",
       "source": "strata-roadmap",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0017",
+      "title": "S2/S3: index a SQL corpus from disk and build observed relationships from real data",
+      "description": "Walk a directory of .sql files, parse and resolve each statement, index it with provenance, and derive read/write dependencies plus observed join relationships. Turns Corpus and Graph.observedFrom from unit-tested-in-principle into exercised on real data. Traces PR-008, PR-009, PR-012, PR-013, PR-016, HY-STRATA-2026-3C81.",
+      "tags": [
+        "strata",
+        "slice-s3"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T15:16:38.000Z",
+      "updatedAt": "2026-09-11T15:16:43.000Z",
+      "createdBy": "claude",
+      "source": "user-request",
       "sourceReference": null
     }
   ]

@@ -18,6 +18,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="CorpusPipeline.fs" />
     <Compile Include="Retrieval.fs" />
   </ItemGroup>
 

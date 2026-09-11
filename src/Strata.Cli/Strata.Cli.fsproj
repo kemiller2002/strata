@@ -24,6 +24,7 @@
     <ProjectReference Include="../Strata.Application/Strata.Application.fsproj" />
     <ProjectReference Include="../Strata.Host.Postgres/Strata.Host.Postgres.fsproj" />
     <ProjectReference Include="../Strata.Host.PgParser/Strata.Host.PgParser.fsproj" />
+    <ProjectReference Include="../Strata.Host.Files/Strata.Host.Files.fsproj" />
   </ItemGroup>
 
 </Project>

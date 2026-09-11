@@ -18,4 +18,5 @@
 | WI-0013 | S3: targeted retrieval queries and CLI output | complete | strata, slice-s3 | medium |
 | WI-0014 | Spike B remainder: live-server binding comparison | complete | strata, spike | high |
 | WI-0015 | Record engineering metrics and SDE routing artefacts for the first Strata increment | complete | strata, documentation | medium |
-| WI-0016 | Record final metrics and routing artefacts for slices S1-S3 | ready | strata, documentation | medium |
+| WI-0016 | Record final metrics and routing artefacts for slices S1-S3 | complete | strata, documentation | medium |
+| WI-0017 | S2/S3: index a SQL corpus from disk and build observed relationships from real data | ready | strata, slice-s3 | high |

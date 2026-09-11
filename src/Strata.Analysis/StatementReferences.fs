@@ -46,6 +46,19 @@ module StatementReferences =
           IsWildcard: bool
           QueryLevel: int }
 
+    /// An equality predicate between two column references.
+    ///
+    /// This is the raw material for observed relationships (§9). It is recorded
+    /// as it was WRITTEN — qualifiers unresolved — because deciding which
+    /// relation each side belongs to is scope resolution's job, not the
+    /// adapter's. An adapter that guessed here would reintroduce RK-001.
+    type JoinPredicate =
+        { LeftQualifier: Identifier option
+          LeftColumn: Identifier
+          RightQualifier: Identifier option
+          RightColumn: Identifier
+          QueryLevel: int }
+
     /// What a statement does, structurally.
     ///
     /// Populated by the adapter from the statement node type. Effect
@@ -73,6 +86,12 @@ module StatementReferences =
           /// analyzability, and that must be visible.
           ContainsDynamicSql: bool
 
+          /// Equality predicates between two columns, from JOIN ... ON and from
+          /// WHERE. Both are legitimate join evidence: `FROM a, b WHERE a.id =
+          /// b.a_id` is a join written in the older style, and ignoring it would
+          /// systematically under-count relationships in older corpora.
+          JoinPredicates: JoinPredicate list
+
           /// True when the statement carries a WHERE predicate.
           ///
           /// This is the boundedness signal effect classification turns on
@@ -91,4 +110,5 @@ module StatementReferences =
               Columns = []
               UnmodelledConstructs = []
               ContainsDynamicSql = false
+              JoinPredicates = []
               HasWherePredicate = false }

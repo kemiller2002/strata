@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <Compile Include="StatementReferences.fs" />
+    <Compile Include="DialectPort.fs" />
     <Compile Include="ScopeResolution.fs" />
     <Compile Include="CatalogResolution.fs" />
     <Compile Include="Corpus.fs" />

@@ -4,7 +4,7 @@ open Xunit
 open Strata.Semantic.Identity
 open Strata.Analysis.StatementReferences
 open Strata.Analysis.ScopeResolution
-open Strata.Host.PgParser.DialectParser
+open Strata.Analysis.DialectPort
 open Strata.Host.PgParser.PgParserAdapter
 
 /// End-to-end tests: real SQL text through the real parser, into Tier 2

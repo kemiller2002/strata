@@ -4,7 +4,7 @@ open System
 open PgSqlParser
 open Strata.Semantic.Identity
 open Strata.Analysis.StatementReferences
-open Strata.Host.PgParser.DialectParser
+open Strata.Analysis.DialectPort
 
 /// PostgreSQL parser adapter over pgsqlparser (libpg_query).
 ///
@@ -178,6 +178,57 @@ module PgParserAdapter =
         | Node.NodeOneofCase.TransactionStmt -> UtilityShape "TRANSACTION"
         | other -> UnsupportedShape(string other)
 
+    /// Equality predicates between two column references.
+    ///
+    /// Walks `A_Expr` nodes whose operator is `=` and whose both sides are
+    /// `ColumnRef`. This deliberately catches both `JOIN ... ON a.x = b.y` and
+    /// `WHERE a.x = b.y`, since the latter is a join in older SQL style.
+    ///
+    /// A comparison against a literal or parameter is NOT a join predicate and
+    /// is skipped: only column-to-column equality is relationship evidence.
+    let private collectJoinPredicates (stmt: Google.Protobuf.IMessage) =
+        let predicates = ResizeArray<JoinPredicate>()
+
+        let columnParts (node: Node) =
+            if isNull (box node) || isNull (box node.ColumnRef) then None
+            else
+                let names =
+                    node.ColumnRef.Fields
+                    |> Seq.choose (fun f ->
+                        if not (isNull (box f.String)) && not (String.IsNullOrEmpty f.String.Sval) then
+                            Some f.String.Sval
+                        else
+                            None)
+                    |> List.ofSeq
+
+                match names with
+                | [ column ] -> Some(None, identifierOf column)
+                | qualifier :: rest when not rest.IsEmpty ->
+                    Some(Some(identifierOf qualifier), identifierOf (List.last rest))
+                | _ -> None
+
+        descend stmt (fun m ->
+            match m with
+            | :? A_Expr as expr when expr.Kind = A_Expr_Kind.AexprOp ->
+                let isEquality =
+                    expr.Name
+                    |> Seq.exists (fun n ->
+                        not (isNull (box n.String)) && n.String.Sval = "=")
+
+                if isEquality then
+                    match columnParts expr.Lexpr, columnParts expr.Rexpr with
+                    | Some (leftQualifier, leftColumn), Some (rightQualifier, rightColumn) ->
+                        predicates.Add
+                            { LeftQualifier = leftQualifier
+                              LeftColumn = leftColumn
+                              RightQualifier = rightQualifier
+                              RightColumn = rightColumn
+                              QueryLevel = 0 }
+                    | _ -> ()
+            | _ -> ())
+
+        List.ofSeq predicates
+
     /// Does this statement carry a WHERE predicate?
     ///
     /// Read from the statement node's own whereClause rather than by searching
@@ -218,6 +269,7 @@ module PgParserAdapter =
             | SelectShape | InsertShape | UpdateShape | DeleteShape
             | DdlShape _ | UtilityShape _ -> []
           ContainsDynamicSql = containsDynamicSql stmt
+          JoinPredicates = collectJoinPredicates stmt
           HasWherePredicate = hasWhereClause stmt }
 
     /// The adapter.

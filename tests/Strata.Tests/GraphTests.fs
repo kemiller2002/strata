@@ -185,3 +185,36 @@ let ``relationship listing is deterministic`` () =
         a |> List.map (fun r -> QualifiedName.display r.FromTable),
         b |> List.map (fun r -> QualifiedName.display r.FromTable)
     )
+
+[<Fact>]
+let ``an observed edge merges with a declared edge written the other way round`` () =
+    // Regression test. A foreign key points orders -> customer, but a join
+    // predicate may be written customer.id = orders.customer_id. Both describe
+    // the same relationship. Before the fix these stayed separate, so the graph
+    // showed a Low-certainty observed edge beside the Certain declared one for
+    // the identical fact — double counting, and misleading about certainty.
+    let declared = SemanticGraph.declaredFrom snapshot
+
+    // Deliberately REVERSED relative to the foreign key.
+    let observed =
+        SemanticGraph.observedFrom
+            [ qn "sales" "customer", id' "id", qn "sales" "orders", id' "customer_id", "a.sql" ]
+
+    let combined = SemanticGraph.combine declared observed
+
+    let edge = Assert.Single combined
+    Assert.Equal(RelationshipKind.Declared, edge.Kind)
+    Assert.Equal(Certain, edge.Certainty)
+    // 1 constraint + 1 observing source, folded into one edge.
+    Assert.Equal(2, edge.EvidenceCount)
+
+[<Fact>]
+let ``a genuinely different relationship is not merged away`` () =
+    // Control: direction-independence must not collapse distinct column pairs.
+    let declared = SemanticGraph.declaredFrom snapshot
+
+    let observed =
+        SemanticGraph.observedFrom
+            [ qn "sales" "customer", id' "name", qn "sales" "orders", id' "status", "a.sql" ]
+
+    Assert.Equal(2, List.length (SemanticGraph.combine declared observed))

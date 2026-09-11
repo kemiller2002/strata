@@ -4,8 +4,11 @@ open System
 open Strata.Semantic.Identity
 open Strata.Semantic.AnalysisScope
 open Strata.Analysis.Graph
+open Strata.Analysis.Corpus
 open Strata.Application
 open Strata.Host.Postgres
+open Strata.Host.PgParser
+open Strata.Host.Files
 
 /// Composition root. Holds no semantic decisions — it parses arguments, calls
 /// the adapters, and prints what the application tier returns.
@@ -25,11 +28,15 @@ COMMANDS
 
 OPTIONS
   --connection <s>   PostgreSQL connection string (or set STRATA_PG)
+  --corpus <dir>     Directory of .sql files to index (or set STRATA_CORPUS)
   --json             Machine-readable output (default is human-readable)
 
 NOTES
   Every answer carries its analysis scope. A result is bounded by what was
   actually inspected; "no readers" is not the same claim as "nothing reads it".
+
+  Without --corpus, no SQL is indexed, so readers/writers are necessarily
+  empty and every answer says so.
 """
 
 /// Parse `schema.object`. An unqualified name is accepted and stays
@@ -91,22 +98,59 @@ let main argv =
     try
         let snapshot = CatalogIntrospection.introspect connectionString
 
-        let graph =
-            { SemanticGraph.empty with
-                Relationships = SemanticGraph.declaredFrom snapshot
-                // No corpus is indexed by this command, so there are no
-                // observed relationships and no read/write dependencies. The
-                // scope below says so rather than leaving the emptiness to be
-                // misread as "nothing reads this" (§144.11).
-                Dependencies = [] }
+        let searchPath =
+            match CatalogIntrospection.readSearchPath connectionString with
+            | Ok path -> path
+            | Error _ ->
+                // An unreadable search_path is not an empty one. Leaving it
+                // empty keeps unqualified names PartiallyResolved rather than
+                // resolving them against a guess (RK-006).
+                []
 
-        let scope =
-            { Scope.nothingAnalyzed with
-                LiveDatabaseInspected = true
-                SchemaCompleteness = snapshot.Completeness
-                Corpus = CorpusScope.empty }
+        let corpusDirectory =
+            match valueOf "--corpus" args with
+            | Some dir -> Some dir
+            | None ->
+                match Environment.GetEnvironmentVariable "STRATA_CORPUS" with
+                | null | "" -> None
+                | value -> Some value
+
+        let graph, scope, readFailures =
+            match corpusDirectory with
+            | None ->
+                // No corpus indexed: declared relationships only, and no
+                // read/write dependencies. The scope says so rather than
+                // leaving the emptiness to be misread (§144.11).
+                { SemanticGraph.empty with
+                    Relationships = SemanticGraph.declaredFrom snapshot
+                    Dependencies = [] },
+                { Scope.nothingAnalyzed with
+                    LiveDatabaseInspected = true
+                    SchemaCompleteness = snapshot.Completeness
+                    Corpus = CorpusScope.empty },
+                []
+
+            | Some directory ->
+                match FileCorpus.read directory with
+                | Error message ->
+                    eprintfn "error: %s" message
+                    exit 1
+                | Ok corpusRead ->
+                    let parser = PgParserAdapter.PostgresParser() :> Strata.Analysis.DialectPort.IDialectParser
+
+                    let analysis =
+                        CorpusPipeline.analyse parser snapshot searchPath corpusRead.Sources
+
+                    CorpusPipeline.buildGraph snapshot analysis,
+                    CorpusPipeline.toScope snapshot analysis,
+                    corpusRead.Failures
 
         let answer = Retrieval.answer snapshot graph scope query
+
+        // Files Strata could not read are reported before the answer, because
+        // they bound it and a reader must not miss them.
+        for failure in readFailures do
+            eprintfn "warning: could not read %s: %s" failure.Path failure.Reason
 
         if List.contains "--json" args then
             printfn "%s" (Retrieval.toJson answer)

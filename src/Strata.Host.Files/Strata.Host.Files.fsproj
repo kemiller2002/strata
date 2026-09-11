@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Tier 4 - Host / External Effects (DF-STRATA-2026-D3F8).
+
+    Reads SQL from disk. Separate from the parser and catalog adapters because
+    the filesystem is its own effect boundary, and because keeping it testable
+    on a temp directory is worth more than saving a project file.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>Strata.Host.Files</AssemblyName>
+    <RootNamespace>Strata.Host.Files</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="FileCorpus.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Strata.Analysis/Strata.Analysis.fsproj" />
+  </ItemGroup>
+
+</Project>
