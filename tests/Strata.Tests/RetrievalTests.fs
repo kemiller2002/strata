@@ -176,3 +176,199 @@ let ``json output always carries the scope`` () =
 
     Assert.Contains("\"scope\":", json)
     Assert.Contains("\"supportsAbsenceClaim\":", json)
+
+// ---- WI-0021: brief scope mode ---------------------------------------------
+
+[<Fact>]
+let ``brief mode never drops the absence-claim warning`` () =
+    // The whole risk of this optimisation. EV-STRATA-2026-F4C6 showed the scope
+    // block costs more than the answer, but shrinking it must NOT reintroduce
+    // the failure it exists to prevent: a reader seeing [] and concluding
+    // "nothing reads this".
+    let answer = Retrieval.answer snapshot graph Scope.nothingAnalyzed (Retrieval.Readers(qn "sales" "orders"))
+    let brief = Retrieval.toJsonBrief answer
+
+    Assert.Contains("\"supportsAbsenceClaim\":false", brief)
+    Assert.Contains("not an absence claim", brief)
+
+[<Fact>]
+let ``brief mode never drops the dialect divergence warning`` () =
+    // Also load-bearing: it changes whether a parse result means anything about
+    // the target.
+    let scope =
+        { fullScope with DialectCompatibility = Diverged(17, 16) }
+
+    let brief =
+        Retrieval.answer snapshot graph scope (Retrieval.Inspect(qn "sales" "orders"))
+        |> Retrieval.toJsonBrief
+
+    Assert.Contains("may still be rejected by the target", brief)
+
+[<Fact>]
+let ``brief mode reports how many caveats it elided`` () =
+    // Nothing is silently dropped: a reader can always see that more exists.
+    let scope =
+        { fullScope with
+            SchemaCompleteness =
+                Completeness.ofList
+                    [ "relations", Complete
+                      "rls_policies", Inaccessible "permission denied" ]
+            Corpus = { fullScope.Corpus with ParseFailures = 2 } }
+
+    let answer = Retrieval.answer snapshot graph scope (Retrieval.Inspect(qn "sales" "orders"))
+    let brief = Retrieval.toJsonBrief answer
+
+    Assert.Contains("\"caveatsElided\":", brief)
+    Assert.Contains("strata scope", brief)
+    // The elided ones are genuinely absent from the brief payload.
+    Assert.DoesNotContain("rls_policies", brief)
+
+[<Fact>]
+let ``brief mode is smaller than full mode`` () =
+    let answer = Retrieval.answer snapshot graph fullScope (Retrieval.Inspect(qn "sales" "orders"))
+
+    let full = Retrieval.toJson answer
+    let brief = Retrieval.toJsonBrief answer
+
+    Assert.True(brief.Length < full.Length, sprintf "brief (%d) < full (%d)" brief.Length full.Length)
+
+[<Fact>]
+let ``the saving grows with how much scope there is to elide`` () =
+    // The optimisation targets REAL scopes, which carry a dozen completeness
+    // categories. A minimal test scope barely has anything to elide, so
+    // asserting a fixed ratio against one would measure the fixture rather than
+    // the behaviour. This asserts the property that actually matters: the more
+    // scope detail exists, the more brief mode saves.
+    let realisticScope =
+        { fullScope with
+            SchemaCompleteness =
+                Completeness.ofList
+                    [ "relations", Complete
+                      "columns", Complete
+                      "constraints", Complete
+                      "indexes", Complete
+                      "view_definitions", Complete
+                      "routines", Complete
+                      "server_version", Complete
+                      "rls_policies", NotRequested
+                      "triggers", NotRequested
+                      "sequences", NotRequested
+                      "extensions", NotRequested
+                      "grants", NotRequested
+                      "relation_access", Partial "2 relation(s) visible but not readable: a.b, c.d" ] }
+
+    let answer = Retrieval.answer snapshot graph realisticScope (Retrieval.Inspect(qn "sales" "orders"))
+
+    let fullLength = (Retrieval.toJson answer).Length
+    let briefLength = (Retrieval.toJsonBrief answer).Length
+
+    let minimalAnswer = Retrieval.answer snapshot graph fullScope (Retrieval.Inspect(qn "sales" "orders"))
+    let minimalSaving = (Retrieval.toJson minimalAnswer).Length - (Retrieval.toJsonBrief minimalAnswer).Length
+
+    let realisticSaving = fullLength - briefLength
+
+    Assert.True(
+        realisticSaving > minimalSaving,
+        sprintf "realistic saving (%d) should exceed minimal saving (%d)" realisticSaving minimalSaving
+    )
+
+    // And on a realistic scope the saving should be worth having.
+    Assert.True(
+        briefLength * 2 < fullLength,
+        sprintf "brief (%d) should be less than half of full (%d) on a realistic scope" briefLength fullLength
+    )
+
+[<Fact>]
+let ``the same scope produces the same digest and a different scope does not`` () =
+    // The digest has to actually identify a scope, or a brief answer cannot be
+    // tied back to the scope it was produced under.
+    let a = Retrieval.scopeDigest fullScope
+    let b = Retrieval.scopeDigest fullScope
+    let c = Retrieval.scopeDigest Scope.nothingAnalyzed
+
+    Assert.Equal<string>(a, b)
+    Assert.NotEqual<string>(a, c)
+
+[<Fact>]
+let ``the scope command returns the digest that brief answers reference`` () =
+    let scopeAnswer = Retrieval.answer snapshot graph fullScope Retrieval.ScopeOnly
+    let briefAnswer = Retrieval.answer snapshot graph fullScope (Retrieval.Inspect(qn "sales" "orders"))
+
+    Assert.Contains(Retrieval.scopeDigest fullScope, Retrieval.toJson scopeAnswer)
+    Assert.Contains(Retrieval.scopeDigest fullScope, Retrieval.toJsonBrief briefAnswer)
+
+[<Fact>]
+let ``the scope command still carries the full scope`` () =
+    // `strata scope` is where the elided detail must be recoverable.
+    let scope =
+        { fullScope with
+            SchemaCompleteness =
+                Completeness.ofList [ "relations", Complete; "rls_policies", Inaccessible "denied" ] }
+
+    let json = Retrieval.answer snapshot graph scope Retrieval.ScopeOnly |> Retrieval.toJson
+
+    Assert.Contains("rls_policies", json)
+    Assert.Contains("\"scope\":", json)
+
+// ---- WI-0022: retrieval must not be small by being lossy --------------------
+
+[<Fact>]
+let ``inspect includes constraints and indexes, not just columns and keys`` () =
+    // EV-STRATA-2026-A2B8: omitting these made three ordinary questions
+    // unanswerable from Strata while the raw DDL answered them — what values a
+    // column allows, whether a column is indexed, whether it is unique. A
+    // retrieval answer that is small because it drops data is the inverse of
+    // NG-010, not a saving.
+    let withConstraints =
+        TableObject
+            { Name = qn "sales" "orders"
+              Columns = [ col "order_id" 1; col "status" 2 ]
+              PrimaryKey = Some { ConstraintName = id' "pk"; Columns = [ id' "order_id" ] }
+              UniqueConstraints = [ { ConstraintName = id' "uq_status"; Columns = [ id' "status" ] } ]
+              CheckConstraints =
+                [ { ConstraintName = id' "ck_status"
+                    Expression = "CHECK (status IN ('open','closed'))" } ]
+              ForeignKeys = []
+              Indexes =
+                [ { Name = id' "idx_orders_status"
+                    Columns = [ id' "status" ]
+                    IsUnique = false
+                    Predicate = Some "status = 'open'" } ]
+              Scope = ManagementScope.Observed }
+
+    let snapshotWith = { snapshot with Objects = [ withConstraints ] }
+
+    let json =
+        Retrieval.answer snapshotWith graph fullScope (Retrieval.Inspect(qn "sales" "orders"))
+        |> Retrieval.toJson
+
+    Assert.Contains("ck_status", json)
+    Assert.Contains("open", json)
+    Assert.Contains("idx_orders_status", json)
+    Assert.Contains("uq_status", json)
+
+[<Fact>]
+let ``a partial index predicate survives into the answer`` () =
+    // The predicate is the whole point of a partial index; dropping it would
+    // make the index look like it covers every row.
+    let withPartial =
+        TableObject
+            { Name = qn "sales" "orders"
+              Columns = [ col "status" 1 ]
+              PrimaryKey = None
+              UniqueConstraints = []
+              CheckConstraints = []
+              ForeignKeys = []
+              Indexes =
+                [ { Name = id' "idx_open"
+                    Columns = [ id' "status" ]
+                    IsUnique = false
+                    Predicate = Some "status = 'open'" } ]
+              Scope = ManagementScope.Observed }
+
+    let json =
+        Retrieval.answer { snapshot with Objects = [ withPartial ] } graph fullScope
+            (Retrieval.Inspect(qn "sales" "orders"))
+        |> Retrieval.toJson
+
+    Assert.Contains("\"predicate\":\"status = 'open'\"", json)

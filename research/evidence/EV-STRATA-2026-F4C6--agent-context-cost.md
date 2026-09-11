@@ -132,6 +132,18 @@ them.
    saving against a well-prompted agent that searches selectively.
 5. Seven task types, one database, one session. No variance estimate.
 
+## Qualification added after this record was written
+
+`EV-STRATA-2026-A2B8` found that the `inspect` answers measured here were
+**lossy**: unique constraints, check constraints and indexes were omitted. The
+figures above were therefore measured against an incomplete answer.
+
+Repairing the omission moved the small-fixture ratio from 2.4x to 2.3x — about
+3%. The reduction reported here survives essentially unchanged, and is now known
+to be genuine compression rather than an artefact of dropped data. The
+large-schema figures were not re-measured after the fix and should be read as
+approximately 3% optimistic.
+
 ## Counterevidence
 
 Point 4 above is the strongest argument against the headline number: an agent

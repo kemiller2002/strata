@@ -20,6 +20,7 @@ USAGE
   strata <command> [args] --connection <connection-string> [--json]
 
 COMMANDS
+  scope                            Print the analysis scope alone, once
   inspect <schema.object>          Describe an object
   relationships <schema.object>    Relationships touching an object
   path <schema.a> <schema.b>       Relationship path between two objects
@@ -30,6 +31,9 @@ OPTIONS
   --connection <s>   PostgreSQL connection string (or set STRATA_PG)
   --corpus <dir>     Directory of .sql files to index (or set STRATA_CORPUS)
   --json             Machine-readable output (default is human-readable)
+  --brief            With --json, replace the scope block with a digest. Fetch
+                     the full scope once via `strata scope`. Caveats that change
+                     how a result must be read are ALWAYS kept inline.
 
 NOTES
   Every answer carries its analysis scope. A result is bounded by what was
@@ -37,6 +41,10 @@ NOTES
 
   Without --corpus, no SQL is indexed, so readers/writers are necessarily
   empty and every answer says so.
+
+  For a multi-query session: run `strata scope` once, then pass --brief on
+  each answer. The scope is identical across queries against one snapshot, so
+  repeating it costs more than the answers themselves.
 """
 
 /// Parse `schema.object`. An unqualified name is accepted and stays
@@ -79,6 +87,7 @@ let main argv =
 
     let query =
         match positional with
+        | "scope" :: _ -> Ok Retrieval.ScopeOnly
         | "inspect" :: name :: _ -> Ok(Retrieval.Inspect(parseName name))
         | "relationships" :: name :: _ -> Ok(Retrieval.Relationships(parseName name))
         | "path" :: a :: b :: _ -> Ok(Retrieval.Path(parseName a, parseName b))
@@ -157,7 +166,10 @@ let main argv =
             eprintfn "warning: could not read %s: %s" failure.Path failure.Reason
 
         if List.contains "--json" args then
-            printfn "%s" (Retrieval.toJson answer)
+            if List.contains "--brief" args then
+                printfn "%s" (Retrieval.toJsonBrief answer)
+            else
+                printfn "%s" (Retrieval.toJson answer)
         else
             printfn "%s" (Retrieval.toText answer)
 

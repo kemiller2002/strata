@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "claude",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-09-11T15:45:27.000Z",
+  "updatedAt": "2026-09-11T16:05:40.000Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -472,6 +472,57 @@
       ],
       "completedAt": "2026-09-11T15:45:27.000Z",
       "conclusion": "Spike D context-cost half run with its own harness, since ROS telemetry reports token capabilities as unsupported here. 46x-101x context reduction at 200 tables, 2.4x at 4 tables: raw context is O(schema size), a Strata point query is O(1). HY-STRATA-2026-1E5D moves to supported at medium confidence, held at medium because the baseline assumes an agent reads the whole schema rather than grepping selectively. Secondary finding: the scope-and-caveats block is larger than the result for point queries and is repeated verbatim per answer; emitting it once per session would cut a multi-query session by roughly two thirds. The correctness half (HY-STRATA-2026-2A6F) was NOT run - no agents were executed - and is recorded as untested."
+    },
+    {
+      "id": "WI-0021",
+      "type": "implementation",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Application/Retrieval.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Cli/Program.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/RetrievalTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-11T16:02:22.000Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T155918354Z-58122179"
+      ],
+      "completedAt": "2026-09-11T16:02:22.000Z"
+    },
+    {
+      "id": "WI-0022",
+      "type": "research",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "research-record",
+          "path": "research/evidence/EV-STRATA-2026-A2B8--retrieval-information-sufficiency.md"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Application/Retrieval.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/RetrievalTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-11T16:05:40.000Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T160223381Z-907d2012"
+      ],
+      "completedAt": "2026-09-11T16:05:40.000Z",
+      "conclusion": "Nine-task information-sufficiency evaluation found Strata insufficient on 3 of 9 where raw DDL was sufficient: inspect omitted unique constraints, check constraints and indexes, all already in the model and populated by introspection but never rendered. Fixed; now 9/9. Repair cost ~141 tokens across 7 tasks (ratio 2.4x to 2.3x), establishing that the context reduction reported in EV-STRATA-2026-F4C6 is genuine rather than an artefact of dropping data. Task set was author-written, which biases toward questions Strata answers well; only inspect was probed in depth. Still not agent correctness."
     }
   ]
 }

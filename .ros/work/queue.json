@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 21,
+  "nextSeq": 23,
   "items": [
     {
       "id": "WI-0001",
@@ -340,6 +340,40 @@
       "attachments": [],
       "createdAt": "2026-09-11T15:38:26.000Z",
       "updatedAt": "2026-09-11T15:38:48.000Z",
+      "createdBy": "claude",
+      "source": "user-request",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0021",
+      "title": "Reduce repeated scope overhead without weakening the safety property",
+      "description": "EV-STRATA-2026-F4C6 measured the scope block at 1703B against a 485B answer, repeated verbatim per query. Emit it once per session with answers carrying a digest, while ALWAYS retaining the caveats that change how a result is read. Traces PR-021, NFR-003.",
+      "tags": [
+        "strata",
+        "optimisation"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T15:58:55.000Z",
+      "updatedAt": "2026-09-11T15:59:17.000Z",
+      "createdBy": "claude",
+      "source": "user-request",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0022",
+      "title": "Evaluate whether targeted retrieval loses information the raw context has",
+      "description": "Prerequisite for the agent-correctness experiment: if Strata's compact answer omits information needed to answer correctly, the token saving is worthless and NG-010's inverse risk is realised. Deterministic information-sufficiency comparison across a graded task set. Traces HY-STRATA-2026-2A6F, ER-017.",
+      "tags": [
+        "strata",
+        "spike"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T15:58:56.000Z",
+      "updatedAt": "2026-09-11T15:59:17.000Z",
       "createdBy": "claude",
       "source": "user-request",
       "sourceReference": null

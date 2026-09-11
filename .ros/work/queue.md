@@ -20,6 +20,8 @@
 | WI-0015 | Record engineering metrics and SDE routing artefacts for the first Strata increment | complete | strata, documentation | medium |
 | WI-0016 | Record final metrics and routing artefacts for slices S1-S3 | complete | strata, documentation | medium |
 | WI-0017 | S2/S3: index a SQL corpus from disk and build observed relationships from real data | complete | strata, slice-s3 | high |
-| WI-0018 | Report unsupported join shapes as explicit analysis gaps | ready | strata, honesty | high |
-| WI-0019 | Surface parser/server dialect divergence as a first-class analysis state | ready | strata, honesty | high |
-| WI-0020 | Spike D: measure agent context cost of Strata retrieval versus raw corpus | ready | strata, spike | high |
+| WI-0018 | Report unsupported join shapes as explicit analysis gaps | complete | strata, honesty | high |
+| WI-0019 | Surface parser/server dialect divergence as a first-class analysis state | complete | strata, honesty | high |
+| WI-0020 | Spike D: measure agent context cost of Strata retrieval versus raw corpus | complete | strata, spike | high |
+| WI-0021 | Reduce repeated scope overhead without weakening the safety property | ready | strata, optimisation | high |
+| WI-0022 | Evaluate whether targeted retrieval loses information the raw context has | ready | strata, spike | high |

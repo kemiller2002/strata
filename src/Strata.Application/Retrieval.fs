@@ -27,6 +27,9 @@ module Retrieval =
         | Path of from: QualifiedName * to': QualifiedName
         | Readers of QualifiedName
         | Writers of QualifiedName
+        /// The analysis scope alone. Exists so a session can fetch the scope
+        /// once and then use brief answers, rather than paying for it per query.
+        | ScopeOnly
 
     /// The answer, always paired with what was analysed to produce it.
     type Answer =
@@ -44,6 +47,7 @@ module Retrieval =
         | Path _ -> "path"
         | Readers _ -> "readers"
         | Writers _ -> "writers"
+        | ScopeOnly -> "scope"
 
     let private queryTarget (query: Query) =
         match query with
@@ -52,6 +56,7 @@ module Retrieval =
         | Readers n
         | Writers n -> QualifiedName.display n
         | Path (a, b) -> QualifiedName.display a + " -> " + QualifiedName.display b
+        | ScopeOnly -> "(analysis scope)"
 
     /// Render a table compactly: enough to act on, not the whole snapshot.
     let private tableSummary (t: Table) =
@@ -77,6 +82,44 @@ module Retrieval =
                       |> List.map (fun fk ->
                           JObject [ "columns", JArray(fk.Columns |> List.map (fun c -> JString c.Display))
                                     "references", JString(QualifiedName.display fk.ReferencedTable) ])
+                  )
+                  // Unique constraints, check constraints and indexes were
+                  // omitted from this summary until EV-STRATA-2026-A2B8 showed
+                  // the omission made three ordinary questions unanswerable
+                  // from Strata while the raw DDL answered them: what values a
+                  // column allows, whether a column is indexed, and whether it
+                  // is unique. All three were already in the semantic model and
+                  // populated by introspection — they were simply never
+                  // rendered. A retrieval answer that is small because it is
+                  // lossy is the inverse of NG-010, not a saving.
+                  "uniqueConstraints",
+                  JArray(
+                      t.UniqueConstraints
+                      |> List.map (fun uc ->
+                          JObject [ "name", JString uc.ConstraintName.Display
+                                    "columns", JArray(uc.Columns |> List.map (fun c -> JString c.Display)) ])
+                  )
+                  "checkConstraints",
+                  JArray(
+                      t.CheckConstraints
+                      |> List.map (fun cc ->
+                          JObject [ "name", JString cc.ConstraintName.Display
+                                    // The expression text as the catalog renders
+                                    // it. Strata does not parse it and does not
+                                    // pretend to understand it.
+                                    "expression", JString cc.Expression ])
+                  )
+                  "indexes",
+                  JArray(
+                      t.Indexes
+                      |> List.map (fun idx ->
+                          JObject [ "name", JString idx.Name.Display
+                                    "columns", JArray(idx.Columns |> List.map (fun c -> JString c.Display))
+                                    "unique", JBool idx.IsUnique
+                                    "predicate",
+                                    (match idx.Predicate with
+                                     | Some predicate -> JString predicate
+                                     | None -> JNull) ])
                   ) ]
 
     let private relationshipSummary (r: Relationship) =
@@ -91,6 +134,23 @@ module Retrieval =
                   // constraint the database enforces (§9, RK-017).
                   "enforcedByDatabase", JBool(RelationshipKind.isEnforcedByDatabase r.Kind)
                   "evidence", JArray(r.Evidence |> List.map evidenceItem |> List.sortBy Json.render) ]
+
+    /// A short, stable digest of a scope.
+    ///
+    /// Lets a brief answer name WHICH scope it was produced under, so a reader
+    /// or agent can tell that two answers share a scope, and can fetch the full
+    /// block once (`strata scope`) rather than re-reading it per answer.
+    ///
+    /// Not a security hash — it exists to identify, not to authenticate.
+    let scopeDigest (s: Scope) =
+        let rendered = Json.render (scope s)
+
+        let mutable hash = 5381UL
+
+        for ch in rendered do
+            hash <- (hash * 33UL) ^^^ uint64 ch
+
+        sprintf "%016x" hash
 
     /// Caveats an answer must carry, derived from scope rather than authored.
     ///
@@ -138,14 +198,15 @@ module Retrieval =
               yield "External database consumers were not indexed; readers or writers outside the analysed corpus are not represented." ]
 
     /// Answer a query.
-    let answer (snapshot: SchemaSnapshot) (graph: SemanticGraph) (scope: Scope) (query: Query) : Answer =
+    let answer (snapshot: SchemaSnapshot) (graph: SemanticGraph) (scope': Scope) (query: Query) : Answer =
         let isAbsenceClaim =
             match query with
             | Readers _
             | Writers _
             | Relationships _ -> true
             | Inspect _
-            | Path _ -> false
+            | Path _
+            | ScopeOnly -> false
 
         let result =
             match query with
@@ -195,10 +256,32 @@ module Retrieval =
 
             | Writers name -> JArray(SemanticGraph.writersOf name graph |> List.map JString)
 
+            | ScopeOnly ->
+                // The scope itself travels in the answer's own scope field. The
+                // result carries the digest that brief answers reference, so a
+                // caller can confirm a brief answer belongs to THIS scope.
+                JObject [ "scopeDigest", JString(scopeDigest scope') ]
+
         { Query = query
           Result = result
-          Scope = scope
-          Caveats = caveatsFor scope isAbsenceClaim }
+          Scope = scope'
+          Caveats = caveatsFor scope' isAbsenceClaim }
+
+    /// Caveats that change how a result is READ, as opposed to those that
+    /// describe the analysis around it.
+    ///
+    /// These are never omitted, in any output mode. `EV-STRATA-2026-F4C6`
+    /// showed the scope block costs more than the answer, but the fix for that
+    /// must not reintroduce the failure the block exists to prevent: a reader
+    /// seeing `[]` and concluding "nothing reads this". The bounded-result
+    /// warning and the dialect-divergence warning both change the meaning of
+    /// the result itself, so they travel with every answer regardless of mode.
+    let private loadBearingCaveats (a: Answer) =
+        a.Caveats
+        |> List.filter (fun c ->
+            c.Contains "not an absence claim"
+            || c.Contains "may still be rejected by the target"
+            || c.Contains "not evidence the target accepts")
 
     /// Render an answer as JSON. The machine-readable contract (PR-017).
     let toJson (a: Answer) =
@@ -207,6 +290,27 @@ module Retrieval =
                   "result", a.Result
                   "scope", scope a.Scope
                   "caveats", JArray(a.Caveats |> List.map JString) ]
+        |> Json.render
+
+    /// Render an answer as JSON with the scope replaced by a digest.
+    ///
+    /// For a multi-query session: fetch the full scope once, then use this.
+    /// It keeps the load-bearing caveats inline and reports how many were
+    /// elided, so nothing is silently dropped — a reader can always see that
+    /// more exists and where to get it.
+    let toJsonBrief (a: Answer) =
+        let loadBearing = loadBearingCaveats a
+
+        JObject [ "query", JString(queryTag a.Query)
+                  "target", JString(queryTarget a.Query)
+                  "result", a.Result
+                  "scopeDigest", JString(scopeDigest a.Scope)
+                  // Retained even in brief mode: this one changes how the
+                  // result itself must be read.
+                  "supportsAbsenceClaim", JBool(Scope.supportsAbsenceClaim a.Scope)
+                  "caveats", JArray(loadBearing |> List.map JString)
+                  "caveatsElided", JInt(List.length a.Caveats - List.length loadBearing)
+                  "fullScopeCommand", JString "strata scope" ]
         |> Json.render
 
     /// Render an answer for a terminal. Human-readable (PR-017, PR-020).
