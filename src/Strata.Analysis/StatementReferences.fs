@@ -71,7 +71,16 @@ module StatementReferences =
           /// True when the statement contains dynamic SQL execution. Notebook
           /// §11.4: this does not forbid the statement, it degrades
           /// analyzability, and that must be visible.
-          ContainsDynamicSql: bool }
+          ContainsDynamicSql: bool
+
+          /// True when the statement carries a WHERE predicate.
+          ///
+          /// This is the boundedness signal effect classification turns on
+          /// (§10): `UPDATE orders SET status=...` and the same statement with
+          /// `WHERE order_id = 42` differ only here. It deliberately says
+          /// nothing about how selective the predicate is — Strata has not
+          /// evaluated it and has no row counts.
+          HasWherePredicate: bool }
 
     [<RequireQualifiedAccess>]
     module StatementExtraction =
@@ -81,4 +90,5 @@ module StatementReferences =
               Relations = []
               Columns = []
               UnmodelledConstructs = []
-              ContainsDynamicSql = false }
+              ContainsDynamicSql = false
+              HasWherePredicate = false }

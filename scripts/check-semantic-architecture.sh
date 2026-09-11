@@ -79,6 +79,23 @@ for tier_src in src/Strata.Semantic src/Strata.Analysis; do
     fi
 done
 
+# --- Tier 4 driver containment ----------------------------------------------
+#
+# Npgsql belongs to the catalog adapter alone; the parser adapter must not
+# acquire a database dependency, and vice versa.
+
+if [[ -f "src/Strata.Host.PgParser/Strata.Host.PgParser.fsproj" ]]; then
+    if grep -q "Npgsql" "src/Strata.Host.PgParser/Strata.Host.PgParser.fsproj"; then
+        fail "Strata.Host.PgParser references Npgsql; the parser adapter does not talk to a database"
+    fi
+fi
+
+if [[ -f "src/Strata.Host.Postgres/Strata.Host.Postgres.fsproj" ]]; then
+    if grep -qE "pgsqlparser|Google\.Protobuf" "src/Strata.Host.Postgres/Strata.Host.Postgres.fsproj"; then
+        fail "Strata.Host.Postgres references the parser; catalog introspection does not parse SQL"
+    fi
+fi
+
 # --- Result -----------------------------------------------------------------
 
 if [[ $failures -gt 0 ]]; then

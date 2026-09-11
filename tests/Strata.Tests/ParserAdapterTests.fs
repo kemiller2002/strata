@@ -126,3 +126,22 @@ let ``fingerprints ignore literal values`` () =
     match a, b with
     | Ok fa, Ok fb -> Assert.Equal(fa, fb)
     | _ -> failwith "expected both fingerprints to succeed"
+
+[<Fact>]
+let ``END TO END WHERE predicate distinguishes bounded from unbounded writes`` () =
+    // §10's central contrast, driven through the real parser rather than
+    // asserted on a hand-built extraction.
+    let unbounded = parseOne "UPDATE sales.orders SET status = 'x'"
+    let bounded = parseOne "UPDATE sales.orders SET status = 'x' WHERE order_id = 42"
+
+    Assert.False unbounded.HasWherePredicate
+    Assert.True bounded.HasWherePredicate
+
+[<Fact>]
+let ``END TO END a WHERE inside a subquery does not bound the outer write`` () =
+    // The dangerous misreading: treating any WHERE in the tree as bounding the
+    // statement would understate an unbounded UPDATE's blast radius.
+    let extraction =
+        parseOne "UPDATE sales.orders SET status = (SELECT s FROM sales.state WHERE id = 1)"
+
+    Assert.False extraction.HasWherePredicate

@@ -45,5 +45,55 @@
       "risk"
     ],
     "title": "Parser AST cannot resolve object identity without catalog and scope resolution (Spike B, first pass)"
+  },
+  {
+    "confidence": "high",
+    "contradicts": [],
+    "created_by_agent": "claude",
+    "evidence_type": "test-result",
+    "id": "EV-STRATA-2026-C5D2",
+    "path": "research/evidence/EV-STRATA-2026-C5D2--live-server-binding-comparison.md",
+    "related_theories": [],
+    "research_area": "strata-semantic-binding",
+    "retrieved": "2026-09-11",
+    "source_author": "claude",
+    "source_date": "2026-09-11",
+    "source_title": "Strata Spike B — live-server binding comparison",
+    "source_uri": "PostgreSQL 16.15 local instance, cases reproduced in this record",
+    "supports": [
+      "HY-STRATA-2026-4D92"
+    ],
+    "tags": [
+      "strata",
+      "semantic-binding",
+      "spike-b",
+      "search-path",
+      "version-divergence"
+    ],
+    "title": "Live PostgreSQL comparison confirms Strata's resolution model and demonstrates parser/server version divergence (Spike B, second pass)"
+  },
+  {
+    "confidence": "high",
+    "contradicts": [],
+    "created_by_agent": "claude",
+    "evidence_type": "test-result",
+    "id": "EV-STRATA-2026-E7A9",
+    "path": "research/evidence/EV-STRATA-2026-E7A9--catalog-visibility-is-not-accessibility.md",
+    "related_theories": [],
+    "research_area": "strata-introspection",
+    "retrieved": "2026-09-11",
+    "source_author": "claude",
+    "source_date": "2026-09-11",
+    "source_title": "Strata catalog introspection integration test",
+    "source_uri": "PostgreSQL 16.15 local instance; tests/Strata.Tests/CatalogIntrospectionTests.fs",
+    "supports": [],
+    "tags": [
+      "strata",
+      "introspection",
+      "permissions",
+      "risk",
+      "rk-004"
+    ],
+    "title": "PostgreSQL catalog visibility does not imply accessibility, contradicting the notebook's permission assumption"
   }
 ]

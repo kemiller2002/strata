@@ -20,7 +20,7 @@ a spike in this repository, not inferred from the design notebook.
 
 | ID | Risk | Likelihood | Impact | Mitigation |
 |---|---|---:|---:|---|
-| RK-004 | Incomplete permissions make objects invisible; absence misread as deletion intent | High | High | `P-009` fail closed; introspection completeness reported per category; `NG-006` |
+| RK-004 | **Evidenced, and restated.** Catalog metadata stays *visible* without access, so an object can be enumerated but not analysable; filtering such objects out would fabricate absence | High | High | `EV-STRATA-2026-E7A9`: unreadable objects are kept in the snapshot and `relation_access` completeness is `Partial`, which blocks `isFullyComplete` and therefore any absence claim. Notebook §135.1 ("incomplete permissions make objects invisible") is **false for catalog metadata** |
 | RK-005 | Hidden external database consumers not indexed | High | High | `PR-021`: every impact claim bounded by declared analysis scope; `Q-013` open |
 | RK-008 | Extension-owned objects treated as Strata-managed | Medium | High | Explicit managed/observed classification before any deletion |
 | RK-009 | Generated/system objects treated as drift | Medium | Medium | Managed-object classification |

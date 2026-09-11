@@ -178,6 +178,19 @@ module PgParserAdapter =
         | Node.NodeOneofCase.TransactionStmt -> UtilityShape "TRANSACTION"
         | other -> UnsupportedShape(string other)
 
+    /// Does this statement carry a WHERE predicate?
+    ///
+    /// Read from the statement node's own whereClause rather than by searching
+    /// the tree: a WHERE inside a subquery does not bound the outer write, and
+    /// treating it as though it did would understate the blast radius of an
+    /// unbounded UPDATE or DELETE — the exact §10 failure.
+    let private hasWhereClause (stmt: Node) =
+        match stmt.NodeCase with
+        | Node.NodeOneofCase.SelectStmt -> not (isNull (box stmt.SelectStmt.WhereClause))
+        | Node.NodeOneofCase.UpdateStmt -> not (isNull (box stmt.UpdateStmt.WhereClause))
+        | Node.NodeOneofCase.DeleteStmt -> not (isNull (box stmt.DeleteStmt.WhereClause))
+        | _ -> false
+
     /// Does this statement execute dynamically constructed SQL?
     let private containsDynamicSql (stmt: Google.Protobuf.IMessage) =
         let mutable found = false
@@ -204,7 +217,8 @@ module PgParserAdapter =
             | UnsupportedShape detail -> [ detail ]
             | SelectShape | InsertShape | UpdateShape | DeleteShape
             | DdlShape _ | UtilityShape _ -> []
-          ContainsDynamicSql = containsDynamicSql stmt }
+          ContainsDynamicSql = containsDynamicSql stmt
+          HasWherePredicate = hasWhereClause stmt }
 
     /// The adapter.
     type PostgresParser() =

@@ -9,7 +9,10 @@
   <ItemGroup>
     <Compile Include="ScopeResolutionTests.fs" />
     <Compile Include="AnalysisScopeTests.fs" />
+    <Compile Include="WireTests.fs" />
+    <Compile Include="EffectsTests.fs" />
     <Compile Include="ParserAdapterTests.fs" />
+    <Compile Include="CatalogIntrospectionTests.fs" />
     <Compile Include="Main.fs" />
   </ItemGroup>
 
@@ -17,6 +20,7 @@
     <ProjectReference Include="../../src/Strata.Semantic/Strata.Semantic.fsproj" />
     <ProjectReference Include="../../src/Strata.Analysis/Strata.Analysis.fsproj" />
     <ProjectReference Include="../../src/Strata.Host.PgParser/Strata.Host.PgParser.fsproj" />
+    <ProjectReference Include="../../src/Strata.Host.Postgres/Strata.Host.Postgres.fsproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -81,10 +81,10 @@
         "slice-s1"
       ],
       "priority": "high",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-11T14:01:01.000Z",
-      "updatedAt": "2026-09-11T14:01:01.000Z",
+      "updatedAt": "2026-09-11T14:28:35.000Z",
       "createdBy": "claude",
       "source": "strata-roadmap",
       "sourceReference": null
@@ -98,10 +98,10 @@
         "slice-s1"
       ],
       "priority": "medium",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-11T14:01:01.000Z",
-      "updatedAt": "2026-09-11T14:01:01.000Z",
+      "updatedAt": "2026-09-11T14:24:09.000Z",
       "createdBy": "claude",
       "source": "strata-roadmap",
       "sourceReference": null
@@ -166,10 +166,10 @@
         "slice-s2"
       ],
       "priority": "medium",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-11T14:01:02.000Z",
-      "updatedAt": "2026-09-11T14:01:02.000Z",
+      "updatedAt": "2026-09-11T14:24:09.000Z",
       "createdBy": "claude",
       "source": "strata-roadmap",
       "sourceReference": null
@@ -234,10 +234,10 @@
         "spike"
       ],
       "priority": "high",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-11T14:01:03.000Z",
-      "updatedAt": "2026-09-11T14:01:03.000Z",
+      "updatedAt": "2026-09-11T14:28:35.000Z",
       "createdBy": "claude",
       "source": "strata-roadmap",
       "sourceReference": null

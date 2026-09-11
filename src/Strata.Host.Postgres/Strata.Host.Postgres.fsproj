@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Tier 4 - Host / External Effects (DF-STRATA-2026-D3F8).
+
+    PostgreSQL catalog introspection. The ONLY project permitted to reference
+    Npgsql. Read-only by construction: every statement it issues is a SELECT
+    against pg_catalog / information_schema (NFR-006, least privilege).
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>Strata.Host.Postgres</AssemblyName>
+    <RootNamespace>Strata.Host.Postgres</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="CatalogQueries.fs" />
+    <Compile Include="CatalogIntrospection.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Strata.Semantic/Strata.Semantic.fsproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Npgsql" Version="8.0.5" />
+  </ItemGroup>
+
+</Project>

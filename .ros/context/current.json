@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "claude",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-09-11T14:15:21.000Z",
+  "updatedAt": "2026-09-11T14:35:42.000Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -186,6 +186,95 @@
         "EXE-20260911T141521593Z-efbcf191"
       ],
       "completedAt": "2026-09-11T14:15:21.000Z"
+    },
+    {
+      "id": "WI-0006",
+      "type": "implementation",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Semantic/Wire.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/WireTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-11T14:28:12.000Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T142410489Z-fb9537b2"
+      ],
+      "completedAt": "2026-09-11T14:28:12.000Z"
+    },
+    {
+      "id": "WI-0010",
+      "type": "implementation",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Analysis/Effects.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Analysis/StatementReferences.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/EffectsTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-11T14:28:12.000Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T142410585Z-3e0c293c"
+      ],
+      "completedAt": "2026-09-11T14:28:12.000Z"
+    },
+    {
+      "id": "WI-0014",
+      "type": "research",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "research-record",
+          "path": "research/evidence/EV-STRATA-2026-C5D2--live-server-binding-comparison.md"
+        }
+      ],
+      "updatedAt": "2026-09-11T14:30:09.000Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T142836656Z-fd795de7"
+      ],
+      "completedAt": "2026-09-11T14:30:09.000Z",
+      "conclusion": "Live PostgreSQL 16.15 comparison run. PostgreSQL resolves a CTE-shadowed name to the CTE, confirming DF-STRATA-2026-9B2E against the real engine; it refuses ambiguous columns and folds unquoted identifiers, both matching Strata's model. Demonstrated RK-003: the 17.5 parser accepts JSON_TABLE and MERGE...RETURNING which the 16.15 server rejects, so a statement can be reported as parsed while being unexecutable. Recorded as a gap for the S4 validation slice. Overload resolution and Q-027 remain untested."
+    },
+    {
+      "id": "WI-0005",
+      "type": "implementation",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Host.Postgres/CatalogQueries.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Host.Postgres/CatalogIntrospection.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/CatalogIntrospectionTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-11T14:35:42.000Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T143047916Z-04e87566"
+      ],
+      "completedAt": "2026-09-11T14:35:42.000Z"
     }
   ]
 }

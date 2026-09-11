@@ -1,0 +1,396 @@
+namespace Strata.Host.Postgres
+
+open System
+open Npgsql
+open Strata.Semantic.Identity
+open Strata.Semantic.Evidence
+open Strata.Semantic.Schema
+open Strata.Semantic.AnalysisScope
+
+/// PostgreSQL catalog introspection.
+///
+/// Authority for: turning a live database's catalog into a `SchemaSnapshot`.
+///
+/// Two rules govern this module, both from P-009 and RK-004:
+///
+///   1. A category Strata could not read is reported `Inaccessible` with the
+///      reason. It is never reported as an empty result, because "no rows" and
+///      "no permission" are different answers and conflating them is how a
+///      destructive operation gets approved against a database Strata could not
+///      actually see.
+///   2. A per-category failure does not abort the snapshot. A partial snapshot
+///      that says which parts are missing is more useful, and more honest, than
+///      no snapshot at all.
+module CatalogIntrospection =
+
+    /// Identifiers arrive from the catalog already in their stored form:
+    /// PostgreSQL stored `"MixedCase"` as `MixedCase` and `orders` as `orders`.
+    /// A name that is not already lower-case could only have been created
+    /// quoted, so it must be quoted to be referenced again.
+    let private identifierOf (text: string) =
+        if text <> text.ToLowerInvariant() then Identifier.quoted text
+        else Identifier.unquoted text
+
+    let private qualified schema name =
+        QualifiedName.qualified (identifierOf schema) (identifierOf name)
+
+    /// Read a category, converting any failure into an `Inaccessible` state
+    /// rather than letting it escape.
+    ///
+    /// Catching broadly is deliberate here and is confined to this one
+    /// boundary: Tier 4's job is to report what actually happened, including
+    /// "we could not find out", as a first-class outcome rather than an
+    /// exception crossing into the domain.
+    let private readCategory
+        (connection: NpgsqlConnection)
+        (categoryName: string)
+        (sql: string)
+        (readRow: NpgsqlDataReader -> 'T)
+        : Result<'T list, string> =
+        try
+            use command = new NpgsqlCommand(sql, connection)
+            use reader = command.ExecuteReader() :?> NpgsqlDataReader
+
+            let rows = ResizeArray<'T>()
+
+            while reader.Read() do
+                rows.Add(readRow reader)
+
+            Ok(List.ofSeq rows)
+        with ex ->
+            Error(sprintf "%s: %s" categoryName ex.Message)
+
+    let private str (reader: NpgsqlDataReader) (name: string) =
+        let i = reader.GetOrdinal name
+        if reader.IsDBNull i then "" else reader.GetString i
+
+    let private strOpt (reader: NpgsqlDataReader) (name: string) =
+        let i = reader.GetOrdinal name
+        if reader.IsDBNull i then None else Some(reader.GetString i)
+
+    let private boolOf (reader: NpgsqlDataReader) (name: string) =
+        let i = reader.GetOrdinal name
+        not (reader.IsDBNull i) && reader.GetBoolean i
+
+    let private intOf (reader: NpgsqlDataReader) (name: string) =
+        let i = reader.GetOrdinal name
+        if reader.IsDBNull i then 0 else int (reader.GetInt16 i)
+
+    let private arrayOf (reader: NpgsqlDataReader) (name: string) =
+        let i = reader.GetOrdinal name
+        if reader.IsDBNull i then []
+        else reader.GetFieldValue<string[]> i |> List.ofArray
+
+    // ---- row shapes ---------------------------------------------------------
+
+    type private RelationRow =
+        { Schema: string
+          Name: string
+          Kind: char
+          ExtensionOwned: bool
+          /// Catalog visibility does not imply access. See CatalogQueries.relations.
+          SchemaAccessible: bool
+          Readable: bool }
+
+    type private ColumnRow =
+        { Schema: string
+          Relation: string
+          Column: Column }
+
+    type private ConstraintRow =
+        { Schema: string
+          Relation: string
+          Name: string
+          Type: char
+          Definition: string
+          Columns: string list
+          ReferencedSchema: string option
+          ReferencedRelation: string option
+          ReferencedColumns: string list }
+
+    type private IndexRow =
+        { Schema: string
+          Relation: string
+          Index: Index }
+
+    type private RoutineRow =
+        { Schema: string
+          Name: string
+          Kind: char
+          Arguments: string
+          ReturnType: string
+          Language: string
+          ExtensionOwned: bool }
+
+    /// Introspect a database into a snapshot.
+    ///
+    /// The connection is opened and closed here; this function performs the
+    /// only I/O in the Strata pipeline that touches a customer database.
+    let introspect (connectionString: string) : SchemaSnapshot =
+        use connection = new NpgsqlConnection(connectionString)
+        connection.Open()
+
+        let failures = ResizeArray<string * string>()
+
+        let categoryResult name result =
+            match result with
+            | Ok rows -> Some rows
+            | Error reason ->
+                failures.Add(name, reason)
+                None
+
+        let serverVersion =
+            readCategory connection "server_version" CatalogQueries.serverVersion (fun r -> r.GetString 0)
+            |> categoryResult "server_version"
+            |> Option.bind List.tryHead
+            |> Option.map (fun full ->
+                let major =
+                    match Int32.TryParse(full.Split('.').[0]) with
+                    | true, m -> m
+                    | false, _ -> 0
+
+                Fact.declared (Catalog "pg_settings") "current_setting('server_version')" { Major = major; Full = full })
+
+        let relations =
+            readCategory connection "relations" CatalogQueries.relations (fun r ->
+                { Schema = str r "schema_name"
+                  Name = str r "relation_name"
+                  Kind = (str r "relkind").[0]
+                  ExtensionOwned = boolOf r "extension_owned"
+                  SchemaAccessible = boolOf r "schema_accessible"
+                  Readable = boolOf r "relation_readable" })
+            |> categoryResult "relations"
+
+        let columns =
+            readCategory connection "columns" CatalogQueries.columns (fun r ->
+                { Schema = str r "schema_name"
+                  Relation = str r "relation_name"
+                  Column =
+                    { Name = identifierOf (str r "column_name")
+                      Type =
+                        { TypeName = QualifiedName.unqualified (Identifier.unquoted (str r "type_name"))
+                          IsNullable = boolOf r "is_nullable" }
+                      Position = intOf r "ordinal"
+                      HasDefault = boolOf r "has_default"
+                      IsGenerated = boolOf r "is_generated"
+                      IsIdentity = boolOf r "is_identity" } })
+            |> categoryResult "columns"
+
+        let constraints =
+            readCategory connection "constraints" CatalogQueries.constraints (fun r ->
+                { Schema = str r "schema_name"
+                  Relation = str r "relation_name"
+                  Name = str r "constraint_name"
+                  Type = (str r "constraint_type").[0]
+                  Definition = str r "definition"
+                  Columns = arrayOf r "column_names"
+                  ReferencedSchema = strOpt r "referenced_schema"
+                  ReferencedRelation = strOpt r "referenced_relation"
+                  ReferencedColumns = arrayOf r "referenced_columns" })
+            |> categoryResult "constraints"
+
+        let indexes =
+            readCategory connection "indexes" CatalogQueries.indexes (fun r ->
+                { Schema = str r "schema_name"
+                  Relation = str r "relation_name"
+                  Index =
+                    { Name = identifierOf (str r "index_name")
+                      Columns = arrayOf r "column_names" |> List.map identifierOf
+                      IsUnique = boolOf r "is_unique"
+                      Predicate = strOpt r "predicate" } })
+            |> categoryResult "indexes"
+
+        let viewDefinitions =
+            readCategory connection "view_definitions" CatalogQueries.viewDefinitions (fun r ->
+                (str r "schema_name", str r "relation_name"), str r "definition")
+            |> categoryResult "view_definitions"
+
+        let routines =
+            readCategory connection "routines" CatalogQueries.routines (fun r ->
+                { Schema = str r "schema_name"
+                  Name = str r "routine_name"
+                  Kind = (str r "kind").[0]
+                  Arguments = str r "arguments"
+                  ReturnType = str r "return_type"
+                  Language = str r "language"
+                  ExtensionOwned = boolOf r "extension_owned" })
+            |> categoryResult "routines"
+
+        // ---- assemble ------------------------------------------------------
+
+        let columnsFor schema relation =
+            columns
+            |> Option.defaultValue []
+            |> List.filter (fun c -> c.Schema = schema && c.Relation = relation)
+            |> List.map (fun c -> c.Column)
+            |> List.sortBy (fun c -> c.Position)
+
+        let constraintsFor schema relation =
+            constraints
+            |> Option.defaultValue []
+            |> List.filter (fun c -> c.Schema = schema && c.Relation = relation)
+
+        let indexesFor schema relation =
+            indexes
+            |> Option.defaultValue []
+            |> List.filter (fun i -> i.Schema = schema && i.Relation = relation)
+            |> List.map (fun i -> i.Index)
+
+        let scopeOf extensionOwned =
+            // An extension-owned object is observed, never managed (RK-008).
+            if extensionOwned then ExtensionOwned else Observed
+
+        // Objects present in the catalog that the connected role cannot read.
+        // These are NOT dropped from the snapshot — dropping them would make
+        // them look absent, and absence is the one thing Strata must never
+        // fabricate (NG-006). They are reported, and the completeness block
+        // says how many there are so no claim about them reads as complete.
+        let unreadable =
+            relations
+            |> Option.defaultValue []
+            |> List.filter (fun r -> not r.Readable || not r.SchemaAccessible)
+
+        let objects =
+            relations
+            |> Option.defaultValue []
+            |> List.map (fun rel ->
+                let cols = columnsFor rel.Schema rel.Name
+                let cons = constraintsFor rel.Schema rel.Name
+
+                match rel.Kind with
+                | 'v'
+                | 'm' ->
+                    ViewObject
+                        { Name = qualified rel.Schema rel.Name
+                          Columns = cols
+                          IsMaterialized = rel.Kind = 'm'
+                          Definition =
+                            viewDefinitions
+                            |> Option.defaultValue []
+                            |> List.tryFind (fun ((s, n), _) -> s = rel.Schema && n = rel.Name)
+                            |> Option.map snd
+                            |> Option.defaultValue ""
+                          Scope = scopeOf rel.ExtensionOwned }
+                | _ ->
+                    TableObject
+                        { Name = qualified rel.Schema rel.Name
+                          Columns = cols
+                          PrimaryKey =
+                            cons
+                            |> List.tryFind (fun c -> c.Type = 'p')
+                            |> Option.map (fun c ->
+                                { ConstraintName = identifierOf c.Name
+                                  Columns = c.Columns |> List.map identifierOf })
+                          UniqueConstraints =
+                            cons
+                            |> List.filter (fun c -> c.Type = 'u')
+                            |> List.map (fun c ->
+                                { ConstraintName = identifierOf c.Name
+                                  Columns = c.Columns |> List.map identifierOf })
+                          CheckConstraints =
+                            cons
+                            |> List.filter (fun c -> c.Type = 'c')
+                            |> List.map (fun c ->
+                                { ConstraintName = identifierOf c.Name
+                                  Expression = c.Definition })
+                          ForeignKeys =
+                            cons
+                            |> List.filter (fun c -> c.Type = 'f')
+                            |> List.choose (fun c ->
+                                match c.ReferencedSchema, c.ReferencedRelation with
+                                | Some refSchema, Some refRelation ->
+                                    Some
+                                        { ConstraintName = identifierOf c.Name
+                                          Columns = c.Columns |> List.map identifierOf
+                                          ReferencedTable = qualified refSchema refRelation
+                                          ReferencedColumns = c.ReferencedColumns |> List.map identifierOf }
+                                | _ -> None)
+                          Indexes = indexesFor rel.Schema rel.Name
+                          Scope = scopeOf rel.ExtensionOwned })
+
+        let routineObjects =
+            routines
+            |> Option.defaultValue []
+            |> List.map (fun r ->
+                RoutineObject
+                    { Name = qualified r.Schema r.Name
+                      Kind = if r.Kind = 'p' then Procedure else Function
+                      ArgumentTypes =
+                        if String.IsNullOrWhiteSpace r.Arguments then []
+                        else r.Arguments.Split(',') |> Array.map (fun s -> s.Trim()) |> List.ofArray
+                      ReturnType = if String.IsNullOrWhiteSpace r.ReturnType then None else Some r.ReturnType
+                      Language = r.Language
+                      Scope = scopeOf r.ExtensionOwned })
+
+        // A category that failed is Inaccessible with its reason; one that
+        // succeeded is Complete. Nothing is silently omitted.
+        let stateFor name succeeded =
+            match failures |> Seq.tryFind (fun (n, _) -> n = name) with
+            | Some (_, reason) -> name, Inaccessible reason
+            | None -> name, (if succeeded then Complete else NotRequested)
+
+        let completeness =
+            Completeness.ofList
+                [ stateFor "server_version" (Option.isSome serverVersion)
+                  stateFor "relations" (Option.isSome relations)
+                  stateFor "columns" (Option.isSome columns)
+                  stateFor "constraints" (Option.isSome constraints)
+                  stateFor "indexes" (Option.isSome indexes)
+                  stateFor "view_definitions" (Option.isSome viewDefinitions)
+                  stateFor "routines" (Option.isSome routines)
+                  // Categories Strata does not yet read at all. Stated rather
+                  // than omitted, so their absence is visible (§6, §129).
+                  "rls_policies", NotRequested
+                  "triggers", NotRequested
+                  "sequences", NotRequested
+                  "extensions", NotRequested
+                  "grants", NotRequested
+
+                  // The distinction PostgreSQL forces on us: the catalog listed
+                  // these objects, but the connected role cannot read them.
+                  // Partial, never Complete — analysis of them is impossible
+                  // even though their names are known (RK-004).
+                  "relation_access",
+                  (if List.isEmpty unreadable then
+                       Complete
+                   else
+                       Partial(
+                           sprintf
+                               "%d relation(s) visible in the catalog but not readable by the connected role: %s"
+                               (List.length unreadable)
+                               (unreadable
+                                |> List.map (fun r -> r.Schema + "." + r.Name)
+                                |> List.sort
+                                |> String.concat ", ")
+                       )) ]
+
+        { Objects =
+            (objects @ routineObjects)
+            // Deterministic order regardless of catalog return order (NFR-001).
+            |> List.sortBy (fun o -> QualifiedName.display (SchemaObject.name o))
+          ServerVersion = serverVersion
+          Completeness = completeness }
+
+    /// The effective search_path of a connection.
+    ///
+    /// Needed by Tier 2 to resolve unqualified names. Returned as data rather
+    /// than applied here: resolution is a Tier 2 decision.
+    let readSearchPath (connectionString: string) : Result<Identifier list, string> =
+        try
+            use connection = new NpgsqlConnection(connectionString)
+            connection.Open()
+            use command = new NpgsqlCommand(CatalogQueries.searchPath, connection)
+
+            match command.ExecuteScalar() with
+            | :? string as raw ->
+                raw.Split(',')
+                |> Array.map (fun s -> s.Trim().Trim('"'))
+                // "$user" is resolved by the server per-connection; Strata cannot
+                // expand it offline and must not guess a schema for it.
+                |> Array.filter (fun s -> s <> "" && not (s.StartsWith "$"))
+                |> Array.map identifierOf
+                |> List.ofArray
+                |> Ok
+            | _ -> Error "search_path did not return a string"
+        with ex ->
+            Error ex.Message
