@@ -44,6 +44,11 @@ module SchemaDiff =
         /// The difference is real and Strata would act on it, but removals were
         /// not enabled for this run.
         | DropsNotEnabled
+        /// Strata holds both sides but cannot compare them faithfully, so it
+        /// reports that rather than implying they match. This is the reason
+        /// that must exist for the diff to be honest: without it, a property
+        /// nobody compared renders identically to one that is equal.
+        | NotCompared
 
     [<RequireQualifiedAccess>]
     module SuppressionReason =
@@ -56,6 +61,7 @@ module SchemaDiff =
             | ExtensionOwnedObject -> "extension-owned"
             | NotModelled -> "not-modelled"
             | DropsNotEnabled -> "drops-not-enabled"
+            | NotCompared -> "not-compared"
 
     type Suppression =
         { Object: QualifiedName
@@ -343,6 +349,173 @@ module SchemaDiff =
         | DropTable _ -> 6
         | UnclassifiedChange _ -> 7
 
+    /// Constraint and default differences for a table present on both sides.
+    ///
+    /// These were not compared at all until `EV-STRATA-2026-D3A8`, which found
+    /// `plan` reporting "already matches desired state" for a table whose
+    /// foreign key, check constraint and column default all differed. The
+    /// model carried every one of those facts on both sides; nothing looked at
+    /// them. A difference nobody compared rendered identically to no
+    /// difference, which is the exact collapse `ER-008` exists to forbid.
+    ///
+    /// What can be compared faithfully is compared. What cannot is reported as
+    /// `NotCompared` — never passed over.
+    let private constraintChanges (desired: Table) (actual: Table) =
+        let columnList (columns: Identifier list) =
+            columns |> List.map (fun c -> Identifier.folded c) |> String.concat ","
+
+        let named (name: Identifier) = Identifier.folded name
+
+        // Constraints are matched by NAME, because that is the identity the
+        // catalog and the file agree on. A constraint present on one side only
+        // is a real difference whatever its definition says.
+        let compareSet kind (desiredNames: (string * string) list) (actualNames: (string * string) list) =
+            let added =
+                desiredNames
+                |> List.filter (fun (n, _) -> not (actualNames |> List.exists (fun (m, _) -> m = n)))
+                |> List.map (fun (n, _) ->
+                    Ok(AddConstraint(desired.Name, Identifier.unquoted n)))
+
+            let removed =
+                actualNames
+                |> List.filter (fun (n, _) -> not (desiredNames |> List.exists (fun (m, _) -> m = n)))
+                |> List.map (fun (n, _) ->
+                    // The change vocabulary has no DropConstraint case.
+                    // Unclassified is judged as potentially destructive, which
+                    // is the right default for removing a constraint.
+                    Ok(
+                        UnclassifiedChange(
+                            sprintf
+                                "%s: %s '%s' exists in the database and not in desired state"
+                                (QualifiedName.display desired.Name)
+                                kind
+                                n)))
+
+            // Same name on both sides, different membership.
+            let redefined =
+                desiredNames
+                |> List.choose (fun (n, dcols) ->
+                    actualNames
+                    |> List.tryFind (fun (m, _) -> m = n)
+                    |> Option.bind (fun (_, acols) ->
+                        if dcols <> acols then
+                            Some(
+                                Ok(
+                                    UnclassifiedChange(
+                                        sprintf
+                                            "%s: %s '%s' covers (%s) in desired state and (%s) in the database"
+                                            (QualifiedName.display desired.Name)
+                                            kind
+                                            n
+                                            dcols
+                                            acols)))
+                        else
+                            None))
+
+            added @ removed @ redefined
+
+        let primaryKey =
+            match desired.PrimaryKey, actual.PrimaryKey with
+            | Some d, Some a when columnList d.Columns <> columnList a.Columns ->
+                [ Ok(
+                    UnclassifiedChange(
+                        sprintf
+                            "%s: primary key covers (%s) in desired state and (%s) in the database"
+                            (QualifiedName.display desired.Name)
+                            (columnList d.Columns)
+                            (columnList a.Columns))) ]
+            | Some d, None -> [ Ok(AddConstraint(desired.Name, d.ConstraintName)) ]
+            | None, Some a ->
+                [ Ok(
+                    UnclassifiedChange(
+                        sprintf
+                            "%s: primary key '%s' exists in the database and not in desired state"
+                            (QualifiedName.display desired.Name)
+                            a.ConstraintName.Text)) ]
+            | Some _, Some _
+            | None, None -> []
+
+        let uniques =
+            compareSet
+                "unique constraint"
+                (desired.UniqueConstraints |> List.map (fun u -> named u.ConstraintName, columnList u.Columns))
+                (actual.UniqueConstraints |> List.map (fun u -> named u.ConstraintName, columnList u.Columns))
+
+        let foreignKeys =
+            let describe (f: ForeignKey) =
+                sprintf
+                    "%s -> %s(%s)"
+                    (columnList f.Columns)
+                    (QualifiedName.display f.ReferencedTable)
+                    (columnList f.ReferencedColumns)
+
+            compareSet
+                "foreign key"
+                (desired.ForeignKeys |> List.map (fun f -> named f.ConstraintName, describe f))
+                (actual.ForeignKeys |> List.map (fun f -> named f.ConstraintName, describe f))
+
+        // A check's PRESENCE is comparable by name. Its EXPRESSION is not: the
+        // declared side does not carry one, and the catalog reports its own
+        // normalised rendering. Presence is therefore compared and equality of
+        // expression is explicitly not claimed, below.
+        let checks =
+            compareSet
+                "check constraint"
+                (desired.CheckConstraints |> List.map (fun c -> named c.ConstraintName, ""))
+                (actual.CheckConstraints |> List.map (fun c -> named c.ConstraintName, ""))
+
+        let defaults =
+            desired.Columns
+            |> List.choose (fun d ->
+                actual.Columns
+                |> List.tryFind (fun a -> Identifier.sameName a.Name d.Name)
+                |> Option.bind (fun a ->
+                    if d.HasDefault <> a.HasDefault then
+                        Some(
+                            Ok(
+                                UnclassifiedChange(
+                                    sprintf
+                                        "%s.%s: default %s in desired state and %s in the database"
+                                        (QualifiedName.display desired.Name)
+                                        d.Name.Text
+                                        (if d.HasDefault then "present" else "absent")
+                                        (if a.HasDefault then "present" else "absent"))))
+                    else
+                        None))
+
+        // Everything above establishes PRESENCE. Two expressions Strata cannot
+        // read might still differ, and saying so is the difference between a
+        // bounded result and a false clean.
+        let notCompared =
+            let sharedChecks =
+                desired.CheckConstraints
+                |> List.filter (fun d ->
+                    actual.CheckConstraints |> List.exists (fun a -> named a.ConstraintName = named d.ConstraintName))
+
+            let sharedDefaults =
+                desired.Columns
+                |> List.filter (fun d ->
+                    d.HasDefault
+                    && actual.Columns
+                       |> List.exists (fun a -> Identifier.sameName a.Name d.Name && a.HasDefault))
+
+            [ if not (List.isEmpty sharedChecks) then
+                  { Object = desired.Name
+                    Reason = NotCompared
+                    Detail =
+                      sprintf
+                          "%d check constraint(s) exist on both sides; their expressions were NOT compared, so they may differ"
+                          (List.length sharedChecks) }
+              if not (List.isEmpty sharedDefaults) then
+                  { Object = desired.Name
+                    Reason = NotCompared
+                    Detail =
+                      sprintf
+                          "%d column default(s) exist on both sides; their expressions were NOT compared, so they may differ"
+                          (List.length sharedDefaults) } ]
+
+        primaryKey @ uniques @ foreignKeys @ checks @ defaults, notCompared
+
     /// Compare desired state against actual state.
     ///
     /// `allowDrops` defaults OFF at every call site, and deliberately. Managed
@@ -378,12 +551,22 @@ module SchemaDiff =
             |> List.filter (fun d -> not (actualTables |> List.exists (fun a -> sameName a.Name d.Name)))
             |> List.map (fun d -> Ok(CreateTable d.Name))
 
-        let columnResults =
+        let shared =
             desiredTables
-            |> List.collect (fun d ->
-                match actualTables |> List.tryFind (fun a -> sameName a.Name d.Name) with
-                | Some a -> columnChanges allowDrops managedSchemas desiredComplete d a
-                | None -> [])
+            |> List.choose (fun d ->
+                actualTables
+                |> List.tryFind (fun a -> sameName a.Name d.Name)
+                |> Option.map (fun a -> d, a))
+
+        let columnResults =
+            shared
+            |> List.collect (fun (d, a) -> columnChanges allowDrops managedSchemas desiredComplete d a)
+
+        let constraintResults =
+            shared |> List.map (fun (d, a) -> constraintChanges d a)
+
+        let constraintChangeResults = constraintResults |> List.collect fst
+        let notCompared = constraintResults |> List.collect snd
 
         // Objects the desired side could not model at all. Reported as
         // suppressions so a view file that failed to load does not read as
@@ -408,6 +591,7 @@ module SchemaDiff =
             creations
             @ removals allowDrops managedSchemas desiredComplete desiredTables actualTables
             @ columnResults
+            @ constraintChangeResults
 
         let changes =
             all
@@ -418,6 +602,7 @@ module SchemaDiff =
           Statements = changes |> List.map (fun c -> { Change = c; Sql = emit desiredTables c })
           Suppressed =
             (all |> List.choose (function Microsoft.FSharp.Core.Error s -> Some s | Ok _ -> None))
+            @ notCompared
             @ unmodelled
           DesiredStateComplete = desiredComplete }
 

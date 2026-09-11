@@ -334,3 +334,137 @@ let ``creates are ordered before drops`` () =
     let indexOf tag = kinds |> List.findIndex (fun k -> k = tag)
 
     Assert.True(indexOf "create-table" < indexOf "drop-table")
+
+// ---- constraints and defaults ---------------------------------------------
+//
+// None of this was compared until EV-STRATA-2026-D3A8 found `plan` reporting
+// "already matches desired state" for a table whose foreign key, check
+// constraint and column default all differed. Every one of those facts was in
+// the model on both sides; nothing looked at them.
+
+let private tableWith schema name columns pk uniques checks fks =
+    TableObject
+        { Name = qn schema name
+          Columns = columns |> List.mapi (fun i (n, nullable) -> col (i + 1) n nullable)
+          PrimaryKey = pk
+          UniqueConstraints = uniques
+          CheckConstraints = checks
+          ForeignKeys = fks
+          Indexes = []
+          Scope = Managed }
+
+let private fk name cols target targetCols =
+    { ConstraintName = id' name
+      Columns = cols |> List.map id'
+      ReferencedTable = qn "sales" target
+      ReferencedColumns = targetCols |> List.map id' }
+
+let private plain = tableWith "sales" "orders" orders None [] [] []
+
+[<Fact>]
+let ``a foreign key in the database and not in desired state is reported`` () =
+    let withFk = tableWith "sales" "orders" orders None [] [] [ fk "fk_o_c" [ "id" ] "customers" [ "id" ] ]
+    let result = run true managed (complete [ plain ]) (complete [ withFk ])
+
+    Assert.Contains(result.Changes, fun c ->
+        match c with
+        | UnclassifiedChange d -> d.Contains "foreign key" && d.Contains "fk_o_c"
+        | _ -> false)
+
+[<Fact>]
+let ``a foreign key in desired state and not in the database is added`` () =
+    let withFk = tableWith "sales" "orders" orders None [] [] [ fk "fk_o_c" [ "id" ] "customers" [ "id" ] ]
+    let result = run true managed (complete [ withFk ]) (complete [ plain ])
+
+    Assert.Contains(result.Changes, fun c -> c = AddConstraint(qn "sales" "orders", id' "fk_o_c"))
+
+[<Fact>]
+let ``a check constraint present on one side only is reported`` () =
+    let withCheck =
+        tableWith "sales" "orders" orders None [] [ { ConstraintName = id' "ck_x"; Expression = "" } ] []
+
+    let result = run true managed (complete [ plain ]) (complete [ withCheck ])
+
+    Assert.Contains(result.Changes, fun c ->
+        match c with
+        | UnclassifiedChange d -> d.Contains "check constraint" && d.Contains "ck_x"
+        | _ -> false)
+
+[<Fact>]
+let ``a primary key covering different columns is reported`` () =
+    let pkOn cols =
+        Some { PrimaryKey.ConstraintName = id' "pk"; Columns = cols |> List.map id' }
+
+    let result =
+        run true managed
+            (complete [ tableWith "sales" "orders" orders (pkOn [ "id" ]) [] [] [] ])
+            (complete [ tableWith "sales" "orders" orders (pkOn [ "id"; "total" ]) [] [] [] ])
+
+    Assert.Contains(result.Changes, fun c ->
+        match c with
+        | UnclassifiedChange d -> d.Contains "primary key covers"
+        | _ -> false)
+
+[<Fact>]
+let ``a foreign key redefined under the same name is reported`` () =
+    // Matching by name alone would call these equal, which is how a repointed
+    // foreign key would slip through.
+    let result =
+        run true managed
+            (complete [ tableWith "sales" "orders" orders None [] [] [ fk "fk" [ "id" ] "customers" [ "id" ] ] ])
+            (complete [ tableWith "sales" "orders" orders None [] [] [ fk "fk" [ "total" ] "customers" [ "id" ] ] ])
+
+    Assert.Contains(result.Changes, fun c ->
+        match c with
+        | UnclassifiedChange d -> d.Contains "foreign key 'fk' covers"
+        | _ -> false)
+
+[<Fact>]
+let ``a default appearing or disappearing is reported`` () =
+    let withDefault =
+        TableObject
+            { Name = qn "sales" "orders"
+              Columns = [ col 1 "id" false; { col 2 "total" true with HasDefault = true } ]
+              PrimaryKey = None
+              UniqueConstraints = []
+              CheckConstraints = []
+              ForeignKeys = []
+              Indexes = []
+              Scope = Managed }
+
+    let result = run true managed (complete [ withDefault ]) (complete [ plain ])
+
+    Assert.Contains(result.Changes, fun c ->
+        match c with
+        | UnclassifiedChange d -> d.Contains "default present in desired state"
+        | _ -> false)
+
+[<Fact>]
+let ``expressions Strata cannot read are reported as not-compared`` () =
+    // THE honest half. Strata holds a check on both sides and cannot compare
+    // the expressions — the declared side carries no text and the catalog
+    // reports its own normalised rendering. Saying nothing would render "I did
+    // not look" identically to "they are equal".
+    let withCheck =
+        tableWith "sales" "orders" orders None [] [ { ConstraintName = id' "ck"; Expression = "x > 0" } ] []
+
+    let result = run true managed (complete [ withCheck ]) (complete [ withCheck ])
+
+    Assert.Empty result.Changes
+    Assert.Contains(result.Suppressed, fun s ->
+        s.Reason = NotCompared && s.Detail.Contains "check constraint")
+
+[<Fact>]
+let ``an identical table still proposes nothing`` () =
+    // The control. Constraint comparison must not manufacture differences, or
+    // every run reports churn and the signal is worthless.
+    let full =
+        tableWith "sales" "orders" orders
+            (Some { PrimaryKey.ConstraintName = id' "pk"; Columns = [ id' "id" ] })
+            [ { UniqueConstraint.ConstraintName = id' "uq"; Columns = [ id' "total" ] } ]
+            []
+            [ fk "fk" [ "id" ] "customers" [ "id" ] ]
+
+    let result = run true managed (complete [ full ]) (complete [ full ])
+
+    Assert.Empty result.Changes

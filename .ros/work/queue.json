@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 43,
+  "nextSeq": 44,
   "items": [
     {
       "id": "WI-0001",
@@ -716,6 +716,23 @@
       "attachments": [],
       "createdAt": "2026-09-11T22:11:49Z",
       "updatedAt": "2026-09-11T22:11:49Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0043",
+      "title": "Compare constraints and defaults; report what cannot be compared",
+      "description": "Fix the false clean found by EV-STRATA-2026-D3A8. Compare primary keys, foreign keys, uniques, check presence and default presence between tables on both sides; report check and default EXPRESSIONS as not-compared rather than implying equality.",
+      "tags": [
+        "strata",
+        "diff"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T22:15:32Z",
+      "updatedAt": "2026-09-11T22:15:32Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
