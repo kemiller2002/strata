@@ -155,6 +155,28 @@ module DeploymentGate =
                 if List.isEmpty dependents then cleanResultNextMove
                 else "Confirm the new definition returns what the listed sources expect, then approve explicitly." }
 
+        | ReplaceRoutine routine ->
+            let dependents =
+                graph.Dependencies
+                |> List.filter (fun d -> QualifiedName.display d.Target = QualifiedName.display routine)
+                |> List.map (fun d -> d.SourceId)
+                |> List.distinct
+
+            { Change = change
+              Verdict = if List.isEmpty dependents && scopeSupportsAbsence then Allow else RequiresApproval
+              Detected =
+                sprintf
+                    "redefines routine %s, which %d source(s) depend on"
+                    (QualifiedName.display routine)
+                    (List.length dependents)
+              Rationale =
+                if List.isEmpty dependents then cleanResultRationale
+                else "Every caller gets the new behaviour immediately, and a body change that compiles reports nothing."
+              AffectedSources = dependents
+              NextSafeMove =
+                if List.isEmpty dependents then cleanResultNextMove
+                else "Confirm the new body behaves as the listed callers expect, then approve explicitly." }
+
         | CreateRoutine routine ->
             { Change = change
               Verdict = Allow

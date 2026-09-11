@@ -88,6 +88,17 @@ module Schema =
           ArgumentTypes: string list
           ReturnType: string option
           Language: string
+          /// The body as text, when there is one.
+          ///
+          /// PostgreSQL stores a classic `AS $$...$$` body VERBATIM in
+          /// `prosrc`, so a declared body and a deployed one compare directly —
+          /// unlike a view, whose definition is rewritten on the way in.
+          ///
+          /// `None` means the server holds no text: a SQL-standard
+          /// `BEGIN ATOMIC` body is parsed and stored as a tree, and a C
+          /// function's `prosrc` names a symbol rather than a body. It does NOT
+          /// mean the body is empty, and nothing may compare on it.
+          Body: string option
           Scope: ManagementScope }
 
     type SchemaObject =

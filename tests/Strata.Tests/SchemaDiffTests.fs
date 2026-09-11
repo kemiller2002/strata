@@ -522,14 +522,17 @@ let private view name materialized =
           Definition = ""
           Scope = Managed }
 
-let private routine name args =
+let private routineWithBody name args body =
     RoutineObject
         { Name = qn "sales" name
           Kind = Function
           ArgumentTypes = args
           ReturnType = None
           Language = "sql"
+          Body = body
           Scope = Managed }
+
+let private routine name args = routineWithBody name args None
 
 [<Fact>]
 let ``a declared view that does not exist is created`` () =
@@ -663,3 +666,49 @@ let ``a materialized view is never proposed for replacement`` () =
 
     Assert.DoesNotContain(result.Changes, fun c -> c = ReplaceView(qn "sales" "m"))
     Assert.Contains(result.Suppressed, fun s -> s.Reason = NotCompared)
+
+// ---- routine bodies -------------------------------------------------------
+//
+// Unlike a view, a routine needs no shadow: PostgreSQL stores a classic
+// `AS $$...$$` body VERBATIM in prosrc, so the declared text and the deployed
+// text compare directly. Verified against a live server before relying on it.
+
+[<Fact>]
+let ``a routine whose body differs is redefined`` () =
+    let result =
+        run true managed
+            (complete [ routineWithBody "f" [ "bigint" ] (Some " SELECT 2; ") ])
+            (complete [ routineWithBody "f" [ "bigint" ] (Some " SELECT 1; ") ])
+
+    Assert.Contains(result.Changes, fun c -> c = ReplaceRoutine(qn "sales" "f"))
+
+[<Fact>]
+let ``a routine body differing only in surrounding whitespace is not a change`` () =
+    // The file ends with a newline before the closing $$; prosrc keeps it.
+    // Treating that as a difference would report churn on every run.
+    let result =
+        run true managed
+            (complete [ routineWithBody "f" [ "bigint" ] (Some "\n  SELECT 1;\n") ])
+            (complete [ routineWithBody "f" [ "bigint" ] (Some " SELECT 1; ") ])
+
+    Assert.Empty result.Changes
+    Assert.DoesNotContain(result.Suppressed, fun s -> s.Reason = NotCompared)
+
+[<Fact>]
+let ``a routine whose body the server holds as a tree is disclosed, not assumed equal`` () =
+    // A SQL-standard BEGIN ATOMIC body is parsed and stored as a tree, so
+    // prosrc is empty — which means "no text", not "empty body". Verified: a
+    // BEGIN ATOMIC function really does come back with an empty prosrc.
+    let result =
+        run true managed
+            (complete [ routineWithBody "f" [ "bigint" ] (Some " SELECT 1; ") ])
+            (complete [ routineWithBody "f" [ "bigint" ] None ])
+
+    Assert.Empty result.Changes
+    Assert.Contains(result.Suppressed, fun s -> s.Reason = NotCompared)
+
+[<Fact>]
+let ``redefining a routine is destructive, so the gate weighs its callers`` () =
+    // Every caller gets the new behaviour immediately, and a body change that
+    // compiles reports nothing.
+    Assert.True(Change.isPotentiallyDestructive (ReplaceRoutine(qn "sales" "f")))

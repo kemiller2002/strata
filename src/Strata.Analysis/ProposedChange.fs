@@ -37,6 +37,11 @@ module ProposedChange =
         /// change — a filter narrowed, a join changed — which no error reports.
         /// It is judged for dependents like any other destructive change.
         | ReplaceView of view: QualifiedName
+        /// Redefines an existing function or procedure.
+        ///
+        /// NOT additive. Every caller gets the new behaviour immediately, and
+        /// a body change that compiles reports nothing.
+        | ReplaceRoutine of routine: QualifiedName
         /// Creates a function or procedure. Additive for the same reason.
         ///
         /// This does NOT mean the routine's BODY is safe — its body may read
@@ -65,6 +70,7 @@ module ProposedChange =
             | CreateTable _ -> "create-table"
             | CreateView _ -> "create-view"
             | ReplaceView _ -> "replace-view"
+            | ReplaceRoutine _ -> "replace-routine"
             | CreateRoutine _ -> "create-routine"
             | AddConstraint _ -> "add-constraint"
             | TruncateTable _ -> "truncate-table"
@@ -80,6 +86,7 @@ module ProposedChange =
             | CreateTable table
             | CreateView table
             | ReplaceView table
+            | ReplaceRoutine table
             | CreateRoutine table
             | AddConstraint (table, _)
             | TruncateTable table -> Some table
@@ -96,6 +103,7 @@ module ProposedChange =
             | DropColumn _
             | DropTable _
             | ReplaceView _
+            | ReplaceRoutine _
             | AlterColumnType _
             | TruncateTable _
             | UnclassifiedChange _ -> true

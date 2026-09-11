@@ -152,6 +152,12 @@ module CatalogQueries =
         SELECT n.nspname AS schema_name,
                p.proname AS routine_name,
                p.prokind::text AS kind,
+               -- The body AS STORED. PostgreSQL keeps a classic AS $$...$$
+               -- body verbatim, so it compares directly against a declared one.
+               -- Empty for a SQL-standard BEGIN ATOMIC body, which is stored as
+               -- a parse tree instead, and that is reported as "no text" rather
+               -- than as an empty body.
+               COALESCE(p.prosrc, '') AS body,
                -- The IN argument TYPES, as an array, built from proargtypes.
                --
                -- Not `pg_get_function_arguments` and not

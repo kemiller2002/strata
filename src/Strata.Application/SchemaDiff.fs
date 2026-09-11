@@ -250,6 +250,21 @@ module SchemaDiff =
             (QualifiedName.display column.Type.TypeName)
             (if column.Type.IsNullable then "" else " NOT NULL")
 
+    /// Rewrite a leading `CREATE X` into `CREATE OR REPLACE X`.
+    ///
+    /// Only the keyword is touched, so the author's body stays byte-for-byte —
+    /// which is the whole reason the declaring file is used rather than a
+    /// reconstruction. A shape this does not recognise (a materialized view,
+    /// which cannot be replaced in place) yields None and stops the apply
+    /// rather than guessing.
+    let private replaceKeyword (keyword: string) (text: string) =
+        let trimmed = text.TrimStart()
+
+        if trimmed.StartsWith(keyword, StringComparison.OrdinalIgnoreCase) then
+            Some("CREATE OR REPLACE" + trimmed.Substring("CREATE".Length))
+        else
+            None
+
     /// DDL for one change, or `None` when Strata cannot write it faithfully.
     ///
     /// Every `None` here is a deliberate refusal, and each is a gap in the
@@ -289,18 +304,14 @@ module SchemaDiff =
         // The declaring file says CREATE VIEW; replacing needs CREATE OR
         // REPLACE VIEW. Rewriting only the leading keyword keeps the author's
         // body byte-for-byte, which is the whole reason the file is used.
-        | ReplaceView name ->
+        | ReplaceView name -> declaredText name |> Option.bind (replaceKeyword "CREATE VIEW")
+
+        | ReplaceRoutine name ->
             declaredText name
             |> Option.bind (fun text ->
-                let trimmed = text.TrimStart()
-
-                if trimmed.StartsWith("CREATE VIEW", StringComparison.OrdinalIgnoreCase) then
-                    Some("CREATE OR REPLACE VIEW" + trimmed.Substring("CREATE VIEW".Length))
-                else
-                    // A materialized view cannot be replaced in place, and
-                    // anything else is a shape this did not expect. Emitting
-                    // nothing stops the apply rather than guessing.
-                    None)
+                match replaceKeyword "CREATE FUNCTION" text with
+                | Some rewritten -> Some rewritten
+                | None -> replaceKeyword "CREATE PROCEDURE" text)
 
         // The declaring file holds exactly the DDL the author wrote, defaults
         // and check expressions included. Reconstruction below is the fallback
@@ -392,6 +403,7 @@ module SchemaDiff =
         // every table change that might create what they read.
         | CreateView _ -> 4
         | ReplaceView _ -> 4
+        | ReplaceRoutine _ -> 4
         | CreateRoutine _ -> 4
         | TruncateTable _ -> 5
         | DropColumn _ -> 6
@@ -714,6 +726,17 @@ module SchemaDiff =
                             Some(Ok(ReplaceView dv.Name))
                         else
                             None)
+                // A routine body needs no shadow: PostgreSQL stores a classic
+                // `AS $$...$$` body verbatim in prosrc, so the declared text
+                // and the deployed text compare directly. A body the server
+                // holds only as a parse tree (SQL-standard BEGIN ATOMIC) or as
+                // a symbol name (C) yields None on one side and is disclosed.
+                | RoutineObject dr, RoutineObject ar ->
+                    match dr.Body, ar.Body with
+                    | Some declared, Some deployed when declared.Trim() <> deployed.Trim() ->
+                        Some(Ok(ReplaceRoutine dr.Name))
+                    | _ -> None
+
                 | _ -> None)
 
         // Everything on both sides that could NOT be compared. A view that
@@ -726,6 +749,14 @@ module SchemaDiff =
                     match d with
                     | ViewObject dv when not dv.IsMaterialized ->
                         normalisedViews |> List.exists (fun (name, _) -> name = QualifiedName.display dv.Name)
+                    | RoutineObject dr ->
+                        // Compared only when BOTH sides hold body text.
+                        dr.Body.IsSome
+                        && actualOther
+                           |> List.exists (fun a ->
+                               match a with
+                               | RoutineObject ar -> identity a = identity d && ar.Body.IsSome
+                               | _ -> false)
                     | _ -> false
 
                 if comparedExactly then None
@@ -843,6 +874,7 @@ module SchemaDiff =
         | CreateTable table -> sprintf "create-table       %s" (QualifiedName.display table)
         | CreateView view -> sprintf "create-view        %s" (QualifiedName.display view)
         | ReplaceView view -> sprintf "replace-view       %s" (QualifiedName.display view)
+        | ReplaceRoutine r -> sprintf "replace-routine    %s" (QualifiedName.display r)
         | CreateRoutine routine -> sprintf "create-routine     %s" (QualifiedName.display routine)
         | TruncateTable table -> sprintf "truncate-table     %s" (QualifiedName.display table)
 

@@ -120,6 +120,7 @@ module CatalogIntrospection =
           ArgumentTypes: string list
           ReturnType: string
           Language: string
+          Body: string
           ExtensionOwned: bool }
 
     /// Introspect a database into a snapshot.
@@ -213,6 +214,7 @@ module CatalogIntrospection =
                   ArgumentTypes = arrayOf r "argument_types"
                   ReturnType = str r "return_type"
                   Language = str r "language"
+                  Body = str r "body"
                   ExtensionOwned = boolOf r "extension_owned" })
             |> categoryResult "routines"
 
@@ -318,6 +320,10 @@ module CatalogIntrospection =
                       ArgumentTypes = r.ArgumentTypes
                       ReturnType = if String.IsNullOrWhiteSpace r.ReturnType then None else Some r.ReturnType
                       Language = r.Language
+                      // Empty means the server holds no TEXT for this body — a
+                      // BEGIN ATOMIC body is a parse tree — not that the body
+                      // is empty. Nothing may compare on it.
+                      Body = if String.IsNullOrEmpty r.Body then None else Some r.Body
                       Scope = scopeOf r.ExtensionOwned })
 
         // A category that failed is Inaccessible with its reason; one that

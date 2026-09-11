@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 47,
+  "nextSeq": 48,
   "items": [
     {
       "id": "WI-0001",
@@ -784,6 +784,23 @@
       "attachments": [],
       "createdAt": "2026-09-11T23:06:59Z",
       "updatedAt": "2026-09-11T23:06:59Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0047",
+      "title": "Compare routine bodies directly from prosrc",
+      "description": "An edited function body went unnoticed. PostgreSQL stores a classic AS $$...$$ body verbatim in prosrc, so declared and deployed text compare directly with no shadow needed. A BEGIN ATOMIC body is stored as a tree and is disclosed instead.",
+      "tags": [
+        "strata",
+        "diff"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:11:53Z",
+      "updatedAt": "2026-09-11T23:11:53Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null

@@ -905,6 +905,23 @@ module PgParserAdapter =
                         None)
                 |> Option.defaultValue "unknown"
 
+        // The body as the author wrote it, which is what PostgreSQL stores in
+        // prosrc for a classic AS $$...$$ routine — so the two compare
+        // directly. A two-element `AS 'file', 'symbol'` form names an object
+        // file rather than a body and yields None.
+        let body =
+            if isNull (box stmt.Options) then None
+            else
+                stmt.Options
+                |> Seq.choose (fun n -> if isNull (box n.DefElem) then None else Some n.DefElem)
+                |> Seq.tryPick (fun d ->
+                    if d.Defname <> "as" || isNull (box d.Arg) then None
+                    elif not (isNull (box d.Arg.String)) then Some d.Arg.String.Sval
+                    elif not (isNull (box d.Arg.List)) && d.Arg.List.Items.Count = 1 then
+                        let only = d.Arg.List.Items.[0]
+                        if isNull (box only.String) then None else Some only.String.Sval
+                    else None)
+
         { Name = name
           Kind = if stmt.IsProcedure then Procedure else Function
           ArgumentTypes = argumentTypes
@@ -912,6 +929,7 @@ module PgParserAdapter =
             if isNull (box stmt.ReturnType) then None
             else Some(QualifiedName.display (typeNameOf stmt.ReturnType))
           Language = language
+          Body = body
           Scope = Managed }
 
     let private errorOf (e: PgSqlParser.Error) =
