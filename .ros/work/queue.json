@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 96,
+  "nextSeq": 97,
   "items": [
     {
       "id": "WI-0001",
@@ -1476,10 +1476,10 @@
         "strata"
       ],
       "priority": "low",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-12T19:16:35Z",
-      "updatedAt": "2026-09-12T19:16:35Z",
+      "updatedAt": "2026-09-12T23:17:11Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -1615,6 +1615,20 @@
       "attachments": [],
       "createdAt": "2026-09-12T22:34:23Z",
       "updatedAt": "2026-09-12T22:34:49Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0096",
+      "title": "No harness for running the CLI as a process",
+      "description": "Several commands' contracts ARE their exit codes -- drift returns 0/1/2, compile refuses with 1, deploy refuses a version mismatch with 2 -- and the test project has no way to run strata as a process and assert on them. Each is currently covered by a live check recorded in a work item conclusion, which is evidence that does not re-run. A harness that invokes the built binary against a scratch database would turn those into tests.",
+      "tags": [],
+      "priority": "medium",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-12T23:19:53Z",
+      "updatedAt": "2026-09-12T23:19:53Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null

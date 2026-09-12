@@ -45,7 +45,17 @@ type Options =
       Brief: bool
       /// Where the application SQL lives — the one thing neither a directory
       /// tree nor an artifact can say.
-      CorpusRoots: string list }
+      CorpusRoots: string list
+
+      /// Report whether the target matches, and answer with that alone.
+      ///
+      /// `drift` asks a different question from `plan`, and the difference is
+      /// the exit code. `plan` answers "may this be applied?", which is the
+      /// gate's verdict; `drift` answers "does this server still match?", which
+      /// the gate has no opinion about. A monitoring host wants the second: a
+      /// requires-approval verdict on a server that MATCHES is not an incident,
+      /// and a clean-gated difference on one that does not is.
+      DriftOnly: bool }
 
 /// Run the whole deployment path against `connectionString`.
 ///
@@ -237,11 +247,27 @@ let run
     // re-run look like a problem.
     let converged = List.isEmpty diff.Changes
 
-    if converged then
+    // `drift` says this better in its own words, and says it about the right
+    // thing: "nothing to apply" is an answer to a question drift did not ask.
+    if converged && not options.DriftOnly then
         printfn ""
         printfn "Database already matches desired state; nothing to apply."
 
-    if not wantsApply then
+    if options.DriftOnly then
+        printfn ""
+
+        if converged then
+            printfn "NO DRIFT: the target still matches the artifact."
+            0
+        else
+            printfn
+                "DRIFT: the target differs from the artifact in %d way(s), listed above."
+                (List.length diff.Changes)
+
+            printfn "       Nothing was changed. `strata deploy` is what changes a database."
+            1
+
+    elif not wantsApply then
         if converged then 0 else DeploymentGate.Verdict.exitCode gate.Verdict
     elif converged then
         0

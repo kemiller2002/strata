@@ -75,6 +75,72 @@ let versionProblem (compiledWith: ServerVersion option) (target: Result<ServerVe
                 target.Major)
     | Some _, Ok _ -> None
 
+/// Read an artifact and report whether a target still matches it.
+///
+/// The same computation as `deploy`, framed as monitoring, with three
+/// differences that all follow from asking a different question.
+///
+/// - **The exit code is about matching, not about permission.** `plan` answers
+///   "may this be applied?" with the gate's verdict. Drift answers "does this
+///   server still match?", which the gate has no opinion about: a
+///   requires-approval verdict on a server that MATCHES is not an incident, and
+///   a clean-gated difference on one that does not is.
+/// - **Removals are visible.** Drift runs with drops ENABLED even though
+///   `NG-006` keeps them opt-in everywhere else, because an object the target
+///   has and the artifact does not IS drift, and without this it would be
+///   filtered into a suppression and the run would report a match. Nothing is
+///   executed, so nothing is at risk — the guard exists to stop Strata
+///   DELETING on absence, not to stop it noticing.
+/// - **It needs no deploy credentials**, only read access, so it runs from a
+///   monitoring host that could not deploy if it tried.
+let drift
+    (parser: Strata.Analysis.DialectPort.IDialectParser)
+    (connectionString: string)
+    (artifactPath: string)
+    (corpusRoots: string list)
+    (json: bool)
+    : int =
+
+    if not (File.Exists artifactPath) then
+        eprintfn "error: no artifact at %s. Produce one with `strata compile --out %s`." artifactPath artifactPath
+        2
+    else
+
+    match Artifact.ofText (File.ReadAllText artifactPath) with
+    | Microsoft.FSharp.Core.Error message ->
+        eprintfn "error: %s" message
+        2
+    | Ok resolved ->
+
+    match versionProblem resolved.CompiledWith (CatalogIntrospection.readServerVersion connectionString) with
+    | Some problem ->
+        // Refused for the same reason a deployment is: expressions rendered by
+        // another major version would compare unequal, and the report would be
+        // drift that is not there.
+        eprintfn "REFUSED: %s" problem
+        2
+    | None ->
+
+    let (data, dataFailures), dataWarnings = Resolution.resolveData connectionString resolved.Declared
+
+    for warning in dataWarnings do
+        eprintfn "warning: %s" warning
+
+    Deployment.run
+        parser
+        connectionString
+        { AllowDrops = true
+          Apply = false
+          Confirm = false
+          Approve = false
+          Json = json
+          Brief = false
+          CorpusRoots = corpusRoots
+          DriftOnly = true }
+        (managedSchemas resolved)
+        resolved.Declared.Snapshot
+        { resolved with Data = data; DataFailures = dataFailures }
+
 /// Read an artifact and deploy it.
 ///
 /// Exit codes match the rest of the CLI: 0 allow or converged, 1 block, 2

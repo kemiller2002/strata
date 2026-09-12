@@ -52,6 +52,14 @@ COMMANDS
                                    rendering, and deparsing changes between
                                    majors. Same flags as apply: --confirm,
                                    --approve, --allow-drops.
+  drift --artifact <file>          Report whether a target still matches an
+                                   artifact. Read-only: needs only read access,
+                                   so it runs from a monitoring host that could
+                                   not deploy if it tried. Exit 0 matches, 1
+                                   differs, 2 could not tell. Removals ARE
+                                   counted as drift — an object the target has
+                                   and the artifact does not is a difference,
+                                   and drift only reports.
   apply [--project <dir>]          Execute the plan. Requires --confirm, and
                                    refuses unless the gate allows every change
                                    or --approve accepts its requires-approval
@@ -368,6 +376,13 @@ let main argv =
         | "deploy" :: _ -> true
         | _ -> false
 
+    /// `drift` asks whether a server still matches an artifact. Read-only, and
+    /// it needs no deploy credentials — it runs from a monitoring host.
+    let wantsDrift =
+        match positional with
+        | "drift" :: _ -> true
+        | _ -> false
+
     let wantsApply =
         match positional with
         | "apply" :: _ -> true
@@ -397,6 +412,7 @@ let main argv =
         | "apply" :: _ -> Error "apply takes no positional arguments; use --project"
         | "compile" :: _ -> Error "compile takes no positional arguments; use --project and --out"
         | "deploy" :: _ -> Error "deploy takes no positional arguments; use --artifact"
+        | "drift" :: _ -> Error "drift takes no positional arguments; use --artifact"
         | command :: _ -> Error(sprintf "unknown or incomplete command: %s" command)
         | [] -> Error "no command given"
 
@@ -407,9 +423,29 @@ let main argv =
           Approve = List.contains "--approve" args
           Json = List.contains "--json" args
           Brief = List.contains "--brief" args
-          CorpusRoots = corpusRoots }
+          CorpusRoots = corpusRoots
+          DriftOnly = false }
 
-    if wantsDeploy then
+    if wantsDrift then
+        match valueOf "--artifact" args with
+        | None ->
+            eprintfn "error: drift needs --artifact <file>, produced by `strata compile`."
+            2
+        | Some artifactPath ->
+            let parser = PgParserAdapter.PostgresParser() :> Strata.Analysis.DialectPort.IDialectParser
+
+            try
+                Deploy.drift
+                    parser
+                    connectionString
+                    artifactPath
+                    (match corpusDirectory with Some dir -> [ dir ] | None -> [])
+                    (List.contains "--json" args)
+            with ex ->
+                eprintfn "error: %s" ex.Message
+                2
+
+    elif wantsDeploy then
         match valueOf "--artifact" args with
         | None ->
             eprintfn "error: deploy needs --artifact <file>, produced by `strata compile`."

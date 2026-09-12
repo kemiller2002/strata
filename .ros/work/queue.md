@@ -87,8 +87,8 @@
 | WI-0082 | Hoist shadow normalisation out of the CLI ahead of the compile split | complete | strata | high |
 | WI-0083 | strata compile emits a deployable artifact | complete | strata | high |
 | WI-0084 | strata deploy reads an artifact rather than the source tree | complete | strata | high |
-| WI-0085 | strata validate against an artifact, with no database | ready | strata | medium |
-| WI-0086 | strata drift reports whether a server still matches an artifact | captured | strata | low |
+| WI-0085 | strata validate against an artifact, with no database | complete | strata | medium |
+| WI-0086 | strata drift reports whether a server still matches an artifact | complete | strata | low |
 | WI-0087 | Type-check queries with PREPARE | captured | strata | medium |
 | WI-0088 | Declared project invariants as compile-time checks | captured | strata | low |
 | WI-0089 | Sign the compiled artifact | captured | strata | low |
@@ -98,3 +98,4 @@
 | WI-0093 | The awkward-forms corpus cannot see a comparison that silently did not happen | complete |  | high |
 | WI-0094 | normalisePolicies rewrites the table name by blind string replacement | complete |  | medium |
 | WI-0095 | A view with a column-alias list never converges | complete |  | high |
+| WI-0096 | No harness for running the CLI as a process | captured |  | medium |
