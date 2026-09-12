@@ -25,6 +25,7 @@
     <Compile Include="RenameTests.fs" />
     <Compile Include="CatalogIntrospectionTests.fs" />
     <Compile Include="ShadowNormalisationTests.fs" />
+    <Compile Include="ArtifactTests.fs" />
     <Compile Include="AwkwardFormsTests.fs" />
     <Compile Include="Main.fs" />
   </ItemGroup>

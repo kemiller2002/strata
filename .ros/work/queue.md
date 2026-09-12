@@ -85,7 +85,7 @@
 | WI-0080 | Derive the managed schema set from directory names and remove managedSchemas | complete | strata | high |
 | WI-0081 | Project adoption and reconciliation commands | captured | strata | medium |
 | WI-0082 | Hoist shadow normalisation out of the CLI ahead of the compile split | complete | strata | high |
-| WI-0083 | strata compile emits a deployable artifact | captured | strata | high |
+| WI-0083 | strata compile emits a deployable artifact | ready | strata | high |
 | WI-0084 | strata deploy reads an artifact rather than the source tree | captured | strata | high |
 | WI-0085 | strata validate against an artifact, with no database | captured | strata | medium |
 | WI-0086 | strata drift reports whether a server still matches an artifact | captured | strata | low |
@@ -96,5 +96,5 @@
 | WI-0091 | Correct the RLS disclosure that claims policies are not compared | complete |  | medium |
 | WI-0092 | A view whose AS is followed by a newline is silently never compared | complete |  | high |
 | WI-0093 | The awkward-forms corpus cannot see a comparison that silently did not happen | complete |  | high |
-| WI-0094 | normalisePolicies rewrites the table name by blind string replacement | ready |  | medium |
+| WI-0094 | normalisePolicies rewrites the table name by blind string replacement | complete |  | medium |
 | WI-0095 | A view with a column-alias list never converges | complete |  | high |

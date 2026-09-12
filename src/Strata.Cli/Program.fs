@@ -28,6 +28,18 @@ COMMANDS
                                    the database ALREADY MATCHES, whatever the
                                    verdict, because an empty plan from a diff
                                    is convergence rather than a problem.
+  compile [--project <dir>]        Read the project and ask a server what the
+          --out <file>             DECLARED side means — view text, defaults,
+                                   check and policy expressions, reference rows
+                                   through the real column types — and write it
+                                   all to an artifact. Never looks at a target's
+                                   schema, so the connection may be any
+                                   PostgreSQL of the right version. REFUSES on
+                                   any file it could not read or parse: an
+                                   artifact is a claim that the project was read
+                                   whole, and a deployment has no source tree to
+                                   check that claim against. Exit 0 compiled,
+                                   1 the project is wrong, 2 unreadable.
   apply [--project <dir>]          Execute the plan. Requires --confirm, and
                                    refuses unless the gate allows every change
                                    or --approve accepts its requires-approval
@@ -58,6 +70,7 @@ OPTIONS
                      anything runs. It NEVER overrides a block — a block is
                      known breakage, not a judgement call — and it does not
                      enable removals, which need --allow-drops as well.
+  --out <file>       Where `compile` writes the artifact
   --allow-drops      Propose removals. Without it, objects present in the
                      database and absent from the project are REPORTED but
                      never proposed for dropping.
@@ -285,6 +298,15 @@ let main argv =
         | "apply" :: _ -> true
         | _ -> false
 
+    /// `compile` reads the project and asks a server what the DECLARED side
+    /// means. It never looks at the target's schema — that is the half of a
+    /// deployment that cannot be compiled (`DF-STRATA-2026-2F6B`) — so the
+    /// connection it takes may be any PostgreSQL of the right version.
+    let wantsCompile =
+        match positional with
+        | "compile" :: _ -> true
+        | _ -> false
+
     let wantsApply =
         match positional with
         | "apply" :: _ -> true
@@ -312,48 +334,40 @@ let main argv =
         | "validate" :: _ -> Error "validate needs a path to a .sql file"
         | "plan" :: _ -> Error "plan takes no positional arguments; use --project"
         | "apply" :: _ -> Error "apply takes no positional arguments; use --project"
+        | "compile" :: _ -> Error "compile takes no positional arguments; use --project and --out"
         | command :: _ -> Error(sprintf "unknown or incomplete command: %s" command)
         | [] -> Error "no command given"
 
-    if wantsPlan then
+    if wantsCompile then
+        match valueOf "--out" args with
+        | None ->
+            eprintfn "error: compile needs --out <file>, the artifact to write."
+            2
+        | Some outputPath ->
+            let parser = PgParserAdapter.PostgresParser() :> Strata.Analysis.DialectPort.IDialectParser
+            Compile.run parser connectionString projectRoot outputPath
+
+    elif wantsPlan then
         try
-            match Project.read projectRoot with
+            let parser = PgParserAdapter.PostgresParser() :> Strata.Analysis.DialectPort.IDialectParser
+
+            match Compile.load parser projectRoot with
             | Error message ->
                 eprintfn "error: %s" message
                 2
-            | Ok project ->
-                let parser = PgParserAdapter.PostgresParser() :> Strata.Analysis.DialectPort.IDialectParser
-
-                let declared =
-                    DesiredState.loadWithLayout
-                        parser
-                        (project.Files |> List.map (fun f -> f.Path, Some f.Schema, f.Contents))
+            | Ok loaded ->
+                let project = loaded.Project
+                let declared = loaded.Declared
 
                 // A file that could not even be located or read never reached
                 // the loader, so its failure has to be folded in here or the
                 // desired state would call itself complete while missing it.
-                let desired =
-                    if List.isEmpty project.Failures then declared.Snapshot
-                    else
-                        { declared.Snapshot with
-                            Completeness =
-                                Completeness.ofList
-                                    (declared.Snapshot.Completeness.Categories
-                                     |> List.map (fun (name, state) ->
-                                         if name = "relations" then
-                                             name,
-                                             Partial(
-                                                 sprintf
-                                                     "%d project file(s) could not be read"
-                                                     (List.length project.Failures))
-                                         else
-                                             name, state)) }
+                // `compile` refuses instead; the two share the reading so they
+                // cannot disagree about what the project SAYS.
+                let desired = Compile.snapshot loaded
 
-                for path, reason in project.Failures do
+                for path, reason in loaded.Problems do
                     eprintfn "warning: %s: %s" path reason
-
-                for failure in declared.Failures do
-                    eprintfn "warning: %s: %s" failure.Path failure.Reason
 
                 // Taken BEFORE introspection so it covers the whole window in
                 // which the plan is computed, not just the tail of it.

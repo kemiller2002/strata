@@ -120,3 +120,40 @@ vanishingly rare and generally regretted.
 A project cannot manage two schemas differing only by case, because no
 case-insensitive filesystem can hold both directories. That is the filesystem's
 limitation rather than Strata's, and the pattern forbids the second name anyway.
+
+## Resolved: the discrepancy this record left open
+
+`WI-0079`/`WI-0080` implemented the schema/directory check as a `DesiredState`
+load failure rather than a hard error, and recorded the reason: the check needs
+the parser, so it cannot live in `Project.fs` where the hard project errors are,
+and `DesiredState.Failures` is the mechanism every other load failure already
+uses. Special-casing this one to be fatal would have been inconsistent with
+unparseable files and unmodelled statements. That commit also recorded the
+condition on which it would close: *"when `WI-0083` lands `compile`, load
+failures become compile failures uniformly and this becomes fatal with the
+rest of them."*
+
+`WI-0083` landed. `strata compile` refuses on any load failure — a file that
+does not parse, a declaration whose schema does not match its directory, a file
+the project could not read — names every one of them, and writes nothing.
+
+`plan` is deliberately unchanged and stays lenient. The asymmetry is the point
+rather than an oversight:
+
+| | `plan` | `compile` |
+| --- | --- | --- |
+| A file that will not parse | warns, marks desired state incomplete | refuses, writes nothing |
+| What the operator gets | everything Strata *can* say, with drops suppressed | nothing, and the list of files to fix |
+
+An incomplete desired state is safe inside `plan`, because incompleteness
+suppresses every drop (`NG-006`) and a human is reading the output. It is not
+safe inside an artifact. An artifact is a claim that the project was read whole,
+and it travels to a deployment that has no source tree to check that claim
+against — so the hole travels with it, and nothing downstream can see the shape
+it left.
+
+Both commands read the project through one function, `Compile.load`, so they
+cannot disagree about what the project *says* while disagreeing about what to do
+about it. That split is deliberate: the corpus spent its whole life testing a
+pipeline that did not ship because a second reader had been written alongside
+the first (`WI-0093`).

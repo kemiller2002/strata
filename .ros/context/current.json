@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "claude",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-09-12T22:42:53Z",
+  "updatedAt": "2026-09-12T22:55:31Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -1987,6 +1987,31 @@
         "EXE-20260912T223932332Z-9e752cba"
       ],
       "completedAt": "2026-09-12T22:42:53Z"
+    },
+    {
+      "id": "WI-0083",
+      "type": "implementation",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Host.Files/Artifact.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Cli/Compile.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/ArtifactTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T22:55:31Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T224356855Z-155d0bdc"
+      ],
+      "completedAt": "2026-09-12T22:55:31Z"
     }
   ]
 }
