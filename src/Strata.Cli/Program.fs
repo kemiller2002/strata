@@ -71,6 +71,11 @@ PROJECT LAYOUT
   the directory name and is yours to choose; tables/, views/, routines/,
   indexes/ and triggers/ are the conventional ones.
 
+  The <schema> directory names the schema, and Strata CREATES it if the
+  database does not have it — so a project applies against an empty database.
+  It never drops one: a schema holds objects, including any the project never
+  declared.
+
   data/<table>.sql holds a reference table's ROWS, as plain INSERT statements:
 
       INSERT INTO ref.account_type (id, code, label) VALUES
@@ -265,6 +270,19 @@ let main argv =
                     | Microsoft.FSharp.Core.Error _ -> ""
 
                 let actual = CatalogIntrospection.introspect connectionString
+
+                // Read separately from the snapshot because an EMPTY schema has
+                // no objects to appear in it. Without this, "the project
+                // declares objects in ref" and "ref exists" could not be told
+                // apart, and a first apply against a fresh database failed on
+                // the first CREATE TABLE.
+                let existingSchemas =
+                    match CatalogIntrospection.readSchemas connectionString with
+                    | Ok names -> Some names
+                    | Microsoft.FSharp.Core.Error message ->
+                        eprintfn "warning: could not read the database's schema list (%s)." message
+                        eprintfn "         Declared schemas will be reported as not-checked."
+                        None
 
                 let searchPath =
                     match CatalogIntrospection.readSearchPath connectionString with
@@ -465,6 +483,8 @@ let main argv =
                         project.Manifest.ManagedSchemas
                         declared.Declarations
                         declared.TriggerDeclarations
+                        existingSchemas
+                        (DesiredState.schemasDeclaredIn declared)
                         resolvedData
                         dataFailures
                         normalisedViews

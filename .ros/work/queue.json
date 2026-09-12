@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 64,
+  "nextSeq": 65,
   "items": [
     {
       "id": "WI-0001",
@@ -1074,6 +1074,23 @@
       "attachments": [],
       "createdAt": "2026-09-12T00:59:34Z",
       "updatedAt": "2026-09-12T00:59:34Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0064",
+      "title": "Strata cannot create a schema",
+      "description": "The project infers managed schemas from directory names, so it knows every schema's name, and never creates one. Pointed at an empty database, strata apply fails on the first CREATE TABLE because its schema does not exist; every round-trip in development worked around it with a hand-run CREATE SCHEMA. Propose CreateSchema for a declared schema absent from the database, ordered before everything else. Never propose dropping one: a schema holds objects, and absence from desired state is not authority to remove it.",
+      "tags": [
+        "strata",
+        "desired-state"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T01:28:26Z",
+      "updatedAt": "2026-09-12T01:28:26Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null

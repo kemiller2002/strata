@@ -48,12 +48,16 @@ let private partial' = snapshot (Partial "a file did not parse")
 
 let private managed = [ "sales" ]
 
+/// `None` for the database's schema list means "could not read it", which is
+/// deliberately not an empty list: these tests build snapshots directly and
+/// declare objects in no schema, so nothing is proposed either way.
+///
 /// `SchemaDiff.run` also takes the verbatim text that declared each object, so
 /// a CREATE can execute the author's own DDL rather than a reconstruction.
 /// These tests build snapshots directly and have no files, so they pass none
 /// and exercise the reconstruction path deliberately.
 let private run allowDrops managedSchemas desired actual =
-    Strata.Application.SchemaDiff.run allowDrops managedSchemas [] [] [] [] [] [] [] desired actual
+    Strata.Application.SchemaDiff.run allowDrops managedSchemas [] [] None [] [] [] [] [] [] desired actual
 
 /// Existing guard tests pass allowDrops=true deliberately: a test that left
 /// drops globally disabled would pass even if the guard it names were deleted.
@@ -630,7 +634,7 @@ let private viewDefined name definition =
           Scope = Managed }
 
 let private runWithViews normalised desired actual =
-    Strata.Application.SchemaDiff.run true managed [] [] [] [] normalised [] [] desired actual
+    Strata.Application.SchemaDiff.run true managed [] [] None [] [] [] normalised [] [] desired actual
 
 [<Fact>]
 let ``a view whose normalised definition differs is redefined`` () =
@@ -773,7 +777,7 @@ let private tableWithDefault name column deployedDefault =
           Scope = Managed }
 
 let private runWithTables normalisedTables desired actual =
-    Strata.Application.SchemaDiff.run true managed [] [] [] [] [] normalisedTables [] desired actual
+    Strata.Application.SchemaDiff.run true managed [] [] None [] [] [] [] normalisedTables [] desired actual
 
 let private normalisedTable name defaults checks : Strata.Application.SchemaDiff.NormalisedTable =
     { Table = name; Defaults = defaults; Checks = checks }
@@ -858,7 +862,7 @@ let ``a table that could not be normalised keeps its disclosure`` () =
 // ---- renames --------------------------------------------------------------
 
 let private runWithRenames renames desired actual =
-    Strata.Application.SchemaDiff.run true managed [] [] [] [] [] [] renames desired actual
+    Strata.Application.SchemaDiff.run true managed [] [] None [] [] [] [] [] renames desired actual
 
 let private declaredRename object' renamedFrom columns : Strata.Application.SchemaDiff.DeclaredRename =
     { Object = object'; RenamedFrom = renamedFrom; Columns = columns }
@@ -1468,7 +1472,7 @@ let private resolved declaredRows deployedRows : ResolvedData =
       Deployed = deployedRows }
 
 let private runWithData data failures desired actual =
-    Strata.Application.SchemaDiff.run true managed [] [] data failures [] [] [] desired actual
+    Strata.Application.SchemaDiff.run true managed [] [] None [] data failures [] [] [] desired actual
 
 let private accountType = tbl Managed "sales" "account_type" [ "id", false; "label", false ]
 
@@ -1583,3 +1587,69 @@ let ``an update never assigns the key it matches on`` () =
     | Some text ->
         Assert.Contains("WHERE \"id\" = '1'", text)
         Assert.DoesNotContain("SET \"id\"", text)
+
+
+// ---- schemas ---------------------------------------------------------------
+//
+// A project's first apply against an empty database has nothing to put its
+// tables IN until the schema exists. Every round-trip during development
+// worked around this with a hand-run CREATE SCHEMA, which is how it stayed
+// invisible: the tool infers managed schemas from directory names, so it knew
+// every schema's name and created none of them.
+
+let private runWithSchemas existing declaredIn desired actual =
+    Strata.Application.SchemaDiff.run
+        true managed [] [] existing declaredIn [] [] [] [] [] desired actual
+
+[<Fact>]
+let ``a declared schema the database does not have is created`` () =
+    let result = runWithSchemas (Some [ "public" ]) [ "sales" ] (complete []) (complete [])
+
+    Assert.Contains(result.Changes, fun c -> c = CreateSchema(id' "sales"))
+
+[<Fact>]
+let ``a schema that already exists is not created again`` () =
+    let result = runWithSchemas (Some [ "public"; "sales" ]) [ "sales" ] (complete []) (complete [])
+
+    Assert.Empty result.Changes
+
+[<Fact>]
+let ``schema matching ignores case, as PostgreSQL folds unquoted names`` () =
+    let result = runWithSchemas (Some [ "SALES" ]) [ "sales" ] (complete []) (complete [])
+
+    Assert.Empty result.Changes
+
+[<Fact>]
+let ``a schema is created before the tables that live in it`` () =
+    // Rank 0, alone. Everything else fails outright against a namespace that
+    // does not exist yet, and the whole plan is one transaction.
+    let result =
+        runWithSchemas
+            (Some [ "public" ])
+            [ "sales" ]
+            (complete [ tbl Managed "sales" "orders" orders ])
+            (complete [])
+
+    let tags = result.Changes |> List.map Change.tag
+    Assert.True(
+        List.findIndex ((=) "create-schema") tags < List.findIndex ((=) "create-table") tags,
+        sprintf "the schema must exist before its tables, got %A" tags)
+
+[<Fact>]
+let ``an unreadable schema list proposes nothing and says so`` () =
+    // None is not an empty list. A caller that cannot see the schemas must not
+    // conclude one is missing and propose creating it.
+    let result = runWithSchemas None [ "sales" ] (complete []) (complete [])
+
+    Assert.Empty result.Changes
+    Assert.Contains(result.Suppressed, fun s -> s.Reason = NotCompared && s.Detail.Contains "could not be read")
+
+[<Fact>]
+let ``a schema the project declares nothing in is never dropped`` () =
+    // There is no DropSchema case to find. A schema is a container: dropping
+    // one takes everything inside it, including objects the project never
+    // declared and so never claimed. `run` has drops ENABLED here.
+    let result = runWithSchemas (Some [ "public"; "sales"; "legacy" ]) [ "sales" ] (complete []) (complete [])
+
+    Assert.Empty result.Changes
+    Assert.DoesNotContain(result.Changes, fun c -> (Change.tag c).Contains "schema" && (Change.tag c).Contains "drop")

@@ -311,6 +311,14 @@ module DeploymentGate =
                 if List.isEmpty writers then cleanResultNextMove
                 else "Review the new definition against what the old one did, then approve explicitly." }
 
+        | CreateSchema schema ->
+            { Change = change
+              Verdict = Allow
+              Detected = sprintf "creates schema %s" schema.Display
+              Rationale = "Additive. An empty namespace; nothing can already depend on it."
+              AffectedSources = []
+              NextSafeMove = "Proceed." }
+
         | CreateView view ->
             { Change = change
               Verdict = Allow

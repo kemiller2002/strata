@@ -255,6 +255,39 @@ module SchemaDiff =
 
         added @ removed @ altered
 
+    /// Schemas a project declares objects in that the database does not have.
+    ///
+    /// `existing` is `None` when the schema list could not be read, and that is
+    /// not an empty list: a caller that cannot see the schemas must not
+    /// conclude one is missing and propose creating it. It is disclosed instead.
+    ///
+    /// Only schemas something is actually DECLARED in are created. A directory
+    /// that contributes a managed-schema name but no loaded object is a schema
+    /// the project has not shown a use for, and creating it would be acting on
+    /// a name rather than on a declaration.
+    ///
+    /// There is no counterpart for removal, deliberately. A schema is a
+    /// container: dropping one takes everything inside it, including objects
+    /// the project never declared and so never claimed.
+    let private schemaChanges (existing: string list option) (declaredIn: string list) =
+        match existing with
+        | None ->
+            [],
+            (if List.isEmpty declaredIn then
+                 []
+             else
+                 [ { Object = QualifiedName.unqualified (Identifier.unquoted "(schemas)")
+                     Reason = NotCompared
+                     Detail =
+                       "the database's schema list could not be read, so whether the declared schemas exist was NOT checked" } ])
+        | Some present ->
+            let folded = present |> List.map (fun s -> s.ToLowerInvariant())
+
+            declaredIn
+            |> List.filter (fun d -> not (List.contains (d.ToLowerInvariant()) folded))
+            |> List.map (fun d -> Ok(CreateSchema(Identifier.unquoted d))),
+            []
+
     /// Compare desired state against actual state.
     // ---- DDL emission -------------------------------------------------------
 
@@ -380,6 +413,10 @@ module SchemaDiff =
         // and check expressions included. Reconstruction below is the fallback
         // for a snapshot built without files, and it still refuses whatever it
         // cannot render faithfully.
+        // Bare CREATE SCHEMA, with no AUTHORIZATION: the connected role owns
+        // it, and that is the same role that will create everything in it.
+        | CreateSchema schema -> Some(sprintf "CREATE SCHEMA %s" (quote schema))
+
         | CreateTable name when (declaredText name).IsSome -> declaredText name
 
         | CreateTable name ->
@@ -690,42 +727,45 @@ module SchemaDiff =
         // Renames first: they preserve data, and every later statement refers
         // to the NEW name. Column renames precede the table rename so both can
         // name the table as it stands before either runs.
-        | RenameColumn _ -> 0
-        | RenameTable _ -> 1
-        | CreateTable _ -> 1
-        | AddColumn _ -> 2
-        | AlterColumnType _ -> 3
+        // First, and alone at its rank: nothing else can run until the
+        // namespace its objects live in exists.
+        | CreateSchema _ -> 0
+        | RenameColumn _ -> 1
+        | RenameTable _ -> 2
+        | CreateTable _ -> 2
+        | AddColumn _ -> 3
+        | AlterColumnType _ -> 4
         // After the columns they cover exist, before the drops.
-        | CreateIndex _ -> 3
-        | DropIndex _ -> 3
-        | AddConstraint _ -> 3
+        | CreateIndex _ -> 4
+        | DropIndex _ -> 4
+        | AddConstraint _ -> 4
         // One step ahead of the adds, because a constraint whose definition
         // changed is dropped and re-added under the SAME name: the add would
         // fail on a name that is still taken.
-        | DropConstraint _ -> 2
+        | DropConstraint _ -> 3
         // Views and routines reference tables and columns, so they come after
         // every table change that might create what they read.
-        | CreateView _ -> 4
-        | ReplaceView _ -> 4
-        | ReplaceRoutine _ -> 4
-        | CreateRoutine _ -> 4
+        | CreateView _ -> 5
+        | ReplaceView _ -> 5
+        | ReplaceRoutine _ -> 5
+        | CreateRoutine _ -> 5
         // After routines, and strictly after: a trigger names the function it
         // executes, and PostgreSQL rejects a CREATE TRIGGER whose function does
         // not exist yet. Sharing key 4 with CreateRoutine would not be enough —
         // the sort is stable, and trigger changes are assembled before routine
         // ones, so they would run first.
-        | CreateTrigger _ -> 5
-        | ReplaceTrigger _ -> 5
-        | DropTrigger _ -> 5
+        | CreateTrigger _ -> 6
+        | ReplaceTrigger _ -> 6
+        | DropTrigger _ -> 6
         // After the table, its columns and its constraints exist, and after
         // triggers: a trigger on a reference table should see the rows arrive
         // the same way it would see any other write.
-        | InsertRow _ -> 6
-        | UpdateRow _ -> 6
-        | TruncateTable _ -> 7
-        | DropColumn _ -> 8
-        | DropTable _ -> 9
-        | UnclassifiedChange _ -> 10
+        | InsertRow _ -> 7
+        | UpdateRow _ -> 7
+        | TruncateTable _ -> 8
+        | DropColumn _ -> 9
+        | DropTable _ -> 10
+        | UnclassifiedChange _ -> 11
 
     /// Constraint and default differences for a table present on both sides.
     ///
@@ -1617,6 +1657,11 @@ module SchemaDiff =
         (managedSchemas: string list)
         (declarations: (QualifiedName * string) list)
         (triggerDeclarations: ((QualifiedName * Identifier) * string) list)
+        /// Schemas that exist in the database, or `None` when the list could
+        /// not be read. `None` is not an empty list.
+        (existingSchemas: string list option)
+        /// Schemas the project actually declared objects in.
+        (declaredInSchemas: string list)
         /// Declared and deployed reference rows, already rendered by the
         /// server. Empty when the project declares no data files.
         (data: ResolvedData list)
@@ -1830,6 +1875,7 @@ module SchemaDiff =
         let constraintChangeResults = constraintResults |> List.collect fst
         let notCompared = constraintResults |> List.collect snd
 
+        let newSchemas, schemaSuppressions = schemaChanges existingSchemas declaredInSchemas
         let rowChanges, rowSuppressions = dataChanges data dataFailures
 
         let otherChangeResults, otherNotCompared =
@@ -1844,7 +1890,8 @@ module SchemaDiff =
         let unmodelled = otherNotCompared
 
         let all =
-            creations
+            newSchemas
+            @ creations
             @ tableRenames
             @ indexesForNewTables
             @ triggersForNewTables
@@ -1878,6 +1925,7 @@ module SchemaDiff =
             @ notCompared
             @ unmodelled
             @ rowSuppressions
+            @ schemaSuppressions
           DesiredStateComplete = desiredComplete }
 
     // ---- output -------------------------------------------------------------
@@ -1905,6 +1953,7 @@ module SchemaDiff =
                 (ConstraintKind.tag kind)
                 name.Text
         | DropTable table -> sprintf "drop-table         %s" (QualifiedName.display table)
+        | CreateSchema schema -> sprintf "create-schema      %s" schema.Text
         | CreateTable table -> sprintf "create-table       %s" (QualifiedName.display table)
         | RenameTable (from, to') ->
             sprintf "rename-table       %s -> %s" (QualifiedName.display from) (QualifiedName.display to')

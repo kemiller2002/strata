@@ -446,6 +446,25 @@ module CatalogIntrospection =
           ServerVersion = serverVersion
           Completeness = completeness }
 
+    /// Schema names that exist in the database.
+    ///
+    /// Returned as a `Result` rather than folded into the snapshot, and the
+    /// distinction is load-bearing: a caller that cannot read this must not
+    /// conclude a schema is missing and propose creating one. An `Error` means
+    /// "could not tell", which is not "absent".
+    let readSchemas (connectionString: string) : Result<string list, string> =
+        try
+            use connection = new NpgsqlConnection(connectionString)
+            connection.Open()
+            use command = new NpgsqlCommand(CatalogQueries.schemas, connection)
+            use reader = command.ExecuteReader()
+
+            Ok [ while reader.Read() do
+                     if not (reader.IsDBNull 0) then
+                         yield reader.GetString 0 ]
+        with ex ->
+            Error ex.Message
+
     /// The effective search_path of a connection.
     ///
     /// Needed by Tier 2 to resolve unqualified names. Returned as data rather

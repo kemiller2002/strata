@@ -62,6 +62,16 @@ module ProposedChange =
         | RenameTable of from: QualifiedName * to': QualifiedName
         /// Renames a column, preserving its data. Same reasoning.
         | RenameColumn of table: QualifiedName * from: Identifier * to': Identifier
+        /// Creates a schema. Additive, and the precondition for everything
+        /// else: a project's first apply against an empty database has nothing
+        /// to put its tables IN until this runs.
+        ///
+        /// There is deliberately no DropSchema. A schema is a container, and
+        /// dropping one takes everything inside it — including objects the
+        /// project never declared and therefore never claimed. Absence from
+        /// desired state is not authority to remove it (`NG-006`), and here the
+        /// blast radius is the whole namespace rather than one object.
+        | CreateSchema of schema: Identifier
         /// Creates a relation. Additive.
         | CreateTable of table: QualifiedName
         /// Creates an index. Additive to READERS — nothing can depend on an
@@ -163,6 +173,7 @@ module ProposedChange =
             | DropTable _ -> "drop-table"
             | AlterColumnType _ -> "alter-column-type"
             | AddColumn _ -> "add-column"
+            | CreateSchema _ -> "create-schema"
             | CreateTable _ -> "create-table"
             | RenameTable _ -> "rename-table"
             | RenameColumn _ -> "rename-column"
@@ -206,6 +217,9 @@ module ProposedChange =
             | AddConstraint (table, _, _, _)
             | DropConstraint (table, _, _)
             | TruncateTable table -> Some table
+            // A schema is not an object IN a schema, so there is no qualified
+            // target to report. Saying None beats inventing one.
+            | CreateSchema _
             | UnclassifiedChange _ -> None
 
         /// Does this change remove or overwrite something that already exists?
@@ -239,6 +253,7 @@ module ProposedChange =
             | DropConstraint _
             | UnclassifiedChange _ -> true
             | AddColumn _
+            | CreateSchema _
             | CreateTable _
             | InsertRow _
             | CreateIndex _

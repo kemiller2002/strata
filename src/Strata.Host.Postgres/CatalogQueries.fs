@@ -16,6 +16,11 @@ namespace Strata.Host.Postgres
 module CatalogQueries =
 
     /// Schemas visible to the connected role, excluding system schemas.
+    ///
+    /// Read because an EMPTY schema is invisible in the object list — it has
+    /// nothing in it — so "no objects in `ref`" and "no schema called `ref`"
+    /// would otherwise be the same observation, and they call for different
+    /// DDL. This query existed unused until `readSchemas` needed it.
     let schemas =
         """
         SELECT n.nspname
@@ -23,6 +28,7 @@ module CatalogQueries =
         WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
           AND n.nspname NOT LIKE 'pg_toast%'
           AND n.nspname NOT LIKE 'pg_temp%'
+          AND n.nspname NOT LIKE 'pg_toast_temp%'
         ORDER BY n.nspname
         """
 
