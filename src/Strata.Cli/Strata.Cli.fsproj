@@ -15,6 +15,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="Resolution.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
