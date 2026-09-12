@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "claude",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-09-12T23:32:54Z",
+  "updatedAt": "2026-09-12T23:38:02Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -2125,6 +2125,27 @@
         "EXE-20260912T232911878Z-4275fc9c"
       ],
       "completedAt": "2026-09-12T23:32:54Z"
+    },
+    {
+      "id": "WI-0088",
+      "type": "implementation",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Application/Invariants.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/InvariantTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T23:38:02Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T233335009Z-126e5760"
+      ],
+      "completedAt": "2026-09-12T23:38:02Z"
     }
   ]
 }

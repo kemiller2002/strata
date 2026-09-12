@@ -148,8 +148,25 @@ PROJECT LAYOUT
         "include": [
           "schema/app/tables/customer.sql",
           "schema/app/grants/customer.sql"
-        ]
+        ],
+        "invariants": ["everyTableHasAPrimaryKey"]
       }
+
+  "invariants" are rules the project declares about ITSELF, checked at compile
+  time and reported as warnings by `plan`. All opt-in: turning them on by
+  default would fail every existing project on upgrade, and a check everyone
+  disables protects nobody. A name this build does not recognise is an ERROR,
+  never a no-op — a misspelled rule that reads as "no rule" leaves a project
+  believing it has a control it does not have.
+
+      everyTableHasAPrimaryKey  a table with no primary key has no identity, so
+                                nothing can reference or de-duplicate its rows
+      noGrantsToPublic          PUBLIC includes every current and future role, so
+                                a grant to it cannot be reasoned about
+      everyForeignKeyIsIndexed  an unindexed foreign key makes every delete on
+                                the parent scan the child, and locks while it
+                                does. An index BEGINNING with the key's columns
+                                counts; one that merely contains them does not.
 
   Strata owns the directory it is given. A .sql file under the schema root that
   `include` does not list FAILS the load, and so does a listed path that is not
@@ -596,6 +613,17 @@ let main argv =
 
                 for path, reason in loaded.Problems do
                     eprintfn "warning: %s: %s" path reason
+
+                // `plan` reports what `compile` refuses, for the same reason it
+                // reports an unreadable file rather than stopping: a human is
+                // reading this and can decide. The artifact is where a rule the
+                // project declared has to be true.
+                for violation in loaded.Violations do
+                    eprintfn
+                        "warning: %s: %s [%s]"
+                        (QualifiedName.display violation.Object)
+                        violation.Detail
+                        violation.Rule
 
                 // Where the application SQL lives is the one thing the
                 // directory tree cannot say, so it comes from --corpus or

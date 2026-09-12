@@ -24,6 +24,7 @@
     <Compile Include="Validation.fs" />
     <Compile Include="DesiredState.fs" />
     <Compile Include="SchemaDiff.fs" />
+    <Compile Include="Invariants.fs" />
     <Compile Include="ResolvedDesiredState.fs" />
   </ItemGroup>
 

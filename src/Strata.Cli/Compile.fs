@@ -37,7 +37,13 @@ type Loaded =
       Declared: DesiredState.Loaded
       /// Every file-level and declaration-level problem, as
       /// `(path, reason)`. Empty means the project was read whole.
-      Problems: (string * string) list }
+      Problems: (string * string) list
+      /// Rules the project declared about itself and broke.
+      ///
+      /// Separate from `Problems` because they are a different KIND of wrong: a
+      /// problem means Strata could not read the project, an invariant means it
+      /// read it and the project says it should not look like that.
+      Violations: Invariants.Violation list }
 
 /// Read a project directory into the model.
 ///
@@ -54,12 +60,26 @@ let load (parser: Strata.Analysis.DialectPort.IDialectParser) (projectRoot: stri
                 parser
                 (project.Files |> List.map (fun f -> f.Path, Some f.Schema, f.Contents))
 
+        let unknownRules = Invariants.unknown project.Manifest.Invariants
+
         Ok
             { Project = project
               Declared = declared
               Problems =
                 project.Failures
-                @ (declared.Failures |> List.map (fun f -> f.Path, f.Reason)) }
+                @ (declared.Failures |> List.map (fun f -> f.Path, f.Reason))
+                // An unrecognised rule name is reported as a project problem, not
+                // ignored. A control someone believes is on and is not is worse
+                // than one they never asked for.
+                @ (unknownRules
+                   |> List.map (fun name ->
+                       "strata.json",
+                       sprintf
+                           "declares an invariant this build does not know: '%s'. Known invariants: %s"
+                           name
+                           (Invariants.all |> List.map (fun r -> r.Name) |> String.concat ", ")))
+              Violations =
+                Invariants.check project.Manifest.Invariants declared.Snapshot declared.Grants }
 
 /// The desired state as `plan` must see it: incomplete when a file could not be
 /// read, so that absence is never mistaken for a decision to remove (NG-006).
@@ -97,6 +117,30 @@ let run
     | Microsoft.FSharp.Core.Error message ->
         eprintfn "error: %s" message
         2
+    | Ok loaded when not (List.isEmpty loaded.Violations) && List.isEmpty loaded.Problems ->
+        // Named separately from a read problem because they are different
+        // failures. This project was read fine; it just is not what its own
+        // strata.json says it should be.
+        eprintfn
+            "error: the project breaks %d invariant(s) it declares:"
+            (List.length loaded.Violations)
+
+        for violation in loaded.Violations do
+            eprintfn
+                "  %s: %s [%s]"
+                (Strata.Semantic.Identity.QualifiedName.display violation.Object)
+                violation.Detail
+                violation.Rule
+
+        eprintfn ""
+
+        for rule in Invariants.all do
+            if loaded.Violations |> List.exists (fun v -> v.Rule = rule.Name) then
+                eprintfn "  %s: %s" rule.Name rule.Summary
+
+        eprintfn ""
+        eprintfn "Nothing was written. Fix them, or stop declaring the rule in strata.json."
+        1
     | Ok loaded when not (List.isEmpty loaded.Problems) ->
         // Named individually. An artifact is refused because of specific files,
         // and an agent told only "compile failed" has to go looking for them.

@@ -1508,10 +1508,10 @@
         "strata"
       ],
       "priority": "low",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-12T19:16:35Z",
-      "updatedAt": "2026-09-12T19:16:35Z",
+      "updatedAt": "2026-09-12T23:33:34Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
