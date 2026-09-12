@@ -2433,3 +2433,110 @@ let ``grants run after the objects they name exist`` () =
     Assert.True(
         List.findIndex ((=) "create-table") tags < List.findIndex ((=) "grant") tags,
         sprintf "the table must exist before it is granted on, got %A" tags)
+
+// ---- the disclosure must not contradict the comparison ----------------------
+//
+// `policyChanges` compares what the project declares; `rowLevelSecurityDisclosures`
+// reports what it does not. They read the same two inputs and write into the same
+// output, so the way they fail is by disagreeing — and the disagreement that
+// shipped was the disclosure telling a reader no comparison happened while the
+// comparison sat three lines above it in the same output.
+
+[<Fact>]
+let ``a declared policy that matches is never reported as not compared`` () =
+    // The defect this pins. Every RLS-enabled table carried "Strata does not
+    // manage policies, so the N policies here were NOT compared", including
+    // this one — declared, rendered by the server, and compared on every field.
+    let deployed =
+        [ { Table = qn "sales" "orders"
+            Enabled = true
+            Forced = false
+            Policies = [ policy "p" PolicyCommand.Select true [ "PUBLIC" ] (Some "(tenant = 'acme'::text)") None ] } ]
+
+    let result =
+        runWithPolicies
+            [ declaredPolicy "p" PolicyCommand.Select true [ "PUBLIC" ] (Some "(tenant = 'acme'::text)") None ]
+            []
+            deployed
+
+    Assert.Empty result.Changes
+
+    Assert.DoesNotContain(
+        result.Suppressed,
+        fun s -> s.Detail.Contains "NOT compared" && s.Detail.Contains "p (")
+
+[<Fact>]
+let ``a declared table still discloses that its owner bypasses every policy`` () =
+    // Dropping the false half must not drop the true half. Whether the owner is
+    // subject to the policies is not something any policy decides, so it is the
+    // one thing left for this disclosure to say.
+    let deployed =
+        [ { Table = qn "sales" "orders"
+            Enabled = true
+            Forced = false
+            Policies = [ policy "p" PolicyCommand.Select true [ "PUBLIC" ] (Some "(a)") None ] } ]
+
+    let result =
+        runWithPolicies
+            [ declaredPolicy "p" PolicyCommand.Select true [ "PUBLIC" ] (Some "(a)") None ]
+            []
+            deployed
+
+    Assert.Contains(
+        result.Suppressed,
+        fun s -> s.Reason = NotModelled && s.Detail.Contains "the table's owner bypasses every policy")
+
+[<Fact>]
+let ``a table the project says nothing about still reports its policies as not compared`` () =
+    // The claim is true here, so it stays. An undeclared policy is also never
+    // dropped (NG-006), which is exactly why the reader has to be told it exists.
+    let result =
+        runWithPolicies
+            []
+            []
+            [ { Table = qn "sales" "orders"
+                Enabled = true
+                Forced = false
+                Policies = [ policy "leftover" PolicyCommand.All true [ "PUBLIC" ] (Some "(a)") None ] } ]
+
+    Assert.Contains(
+        result.Suppressed,
+        fun s ->
+            s.Reason = NotModelled
+            && s.Detail.Contains "NOT compared"
+            && s.Detail.Contains "leftover")
+
+[<Fact>]
+let ``a default-denying table the plan is about to fix is not listed as unactioned`` () =
+    // The suppression list means "differences Strata saw and will not act on".
+    // A table with row-level security on and no policies IS default-denying, but
+    // when the project declares one the plan creates it, so listing it there
+    // sends the reader to inspect something that is already being handled.
+    let result =
+        runWithPolicies
+            [ declaredPolicy "p" PolicyCommand.Select true [ "PUBLIC" ] (Some "(a)") None ]
+            []
+            [ { Table = qn "sales" "orders"; Enabled = true; Forced = false; Policies = [] } ]
+
+    Assert.Contains(result.Changes, fun c -> c = CreatePolicy(qn "sales" "orders", Identifier.unquoted "p"))
+
+    Assert.DoesNotContain(
+        result.Suppressed,
+        fun s -> s.Detail.Contains "every row is hidden")
+
+[<Fact>]
+let ``a default-denying table nobody declares a policy for is still reported`` () =
+    // The other side of the same line. Nothing will change this table, so the
+    // reader has to hear about it.
+    let result =
+        runWithPolicies
+            []
+            [ qn "sales" "orders", RowSecuritySetting.Enable ]
+            [ { Table = qn "sales" "orders"; Enabled = true; Forced = false; Policies = [] } ]
+
+    Assert.Contains(
+        result.Suppressed,
+        fun s ->
+            s.Reason = NotModelled
+            && s.Detail.Contains "every row is hidden"
+            && s.Detail.Contains "nothing here will change that")

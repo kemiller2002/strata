@@ -40,7 +40,15 @@ module Project =
           /// Where application SQL lives, for the dependency analysis that makes
           /// destructive changes safe. Kept separate from SchemaRoot because a
           /// table definition and a query that reads it are different inputs.
-          CorpusRoots: string list }
+          CorpusRoots: string list
+
+          /// Rules the project declares about itself, by name.
+          ///
+          /// Opt-in, and an unrecognised name is an ERROR rather than a
+          /// no-op: a misspelled rule that reads as "no rule" leaves a project
+          /// believing it has a control it does not have, which is worse than
+          /// never having asked for it.
+          Invariants: string list }
 
     [<RequireQualifiedAccess>]
     module Manifest =
@@ -48,7 +56,8 @@ module Project =
         let defaults =
             { SchemaRoot = "schema"
               Include = []
-              CorpusRoots = [] }
+              CorpusRoots = []
+              Invariants = [] }
 
     /// One desired-state file, located.
     type ObjectFile =
@@ -129,7 +138,8 @@ module Project =
                 Ok
                     { SchemaRoot = stringValue root "schemaRoot" Manifest.defaults.SchemaRoot
                       Include = included
-                      CorpusRoots = stringList root "corpusRoots" }
+                      CorpusRoots = stringList root "corpusRoots"
+                      Invariants = stringList root "invariants" }
         with
         | :? JsonException as ex -> Error(sprintf "strata.json is not valid JSON: %s" ex.Message)
         | ex -> Error ex.Message

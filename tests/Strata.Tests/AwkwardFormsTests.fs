@@ -59,14 +59,68 @@ module private Fixture =
         let dir = directory kind
 
         if Directory.Exists dir then
-            Directory.GetFiles(dir, "*.sql")
+            let files = Directory.GetFiles(dir, "*.sql") |> Array.map Path.GetFileName
+            let directories = Directory.GetDirectories dir |> Array.map Path.GetFileName
+
+            Array.append files directories
             |> Array.sortWith (fun a b -> String.CompareOrdinal(a, b))
-            |> Array.map (fun path -> [| box (Path.GetFileName path) |])
+            |> Array.map (fun name -> [| box name |])
             |> Seq.ofArray
         else
             Seq.empty
 
+    /// A case's declarations, in the order they must be applied.
+    ///
+    /// A case is either ONE `.sql` file or a DIRECTORY of them, and the
+    /// difference is load-bearing rather than cosmetic. `DesiredState` records
+    /// a file's verbatim text only when the file declares exactly one object —
+    /// executing a two-table file to create one of them would create the other
+    /// as a side effect — and normalisation needs that verbatim text. So a
+    /// single-file case declaring a table AND a view records nothing, and the
+    /// view is never normalised, never compared, and passes with an empty
+    /// change list.
+    ///
+    /// That is not a hypothetical. It is why this corpus never once exercised
+    /// view or policy normalisation, and why WI-0092 sat here undetected: a
+    /// view needs a table, a table and a view cannot share a file, and the
+    /// corpus had no way to express two files. Now it does, and a case that
+    /// needs more than one object is a directory — which is how real projects
+    /// are laid out anyway.
+    let parts (kind: string) (name: string) : (string * string) list =
+        let path = Path.Combine(directory kind, name)
+
+        if Directory.Exists path then
+            Directory.GetFiles(path, "*.sql")
+            |> Array.sortWith (fun a b -> String.CompareOrdinal(a, b))
+            |> Array.map (fun f -> Path.GetFileName f, File.ReadAllText f)
+            |> Array.toList
+        else
+            [ name, File.ReadAllText path ]
+
     let read (kind: string) (name: string) = File.ReadAllText(Path.Combine(directory kind, name))
+
+    /// A case may declare that some property of it CANNOT be compared, with the
+    /// reason, by putting `-- NOT-COMPARED: <why>` in any of its parts.
+    ///
+    /// Some limits are real. A `serial` column's default renders as
+    /// `nextval('<table>_<column>_seq')`, and the shadow table has a different
+    /// name, so the two renderings can never match and the diff says so instead
+    /// of churning forever. A fixture covering that shape must be allowed to
+    /// leave a not-compared disclosure behind.
+    ///
+    /// It is an allowance, not an exemption: a case that declares one and then
+    /// produces no such disclosure fails too, so the annotation cannot outlive
+    /// the limit it documents.
+    let notComparedReasons (parts: (string * string) list) =
+        parts
+        |> List.collect (fun (_, text) -> text.Split('\n') |> Array.toList)
+        |> List.choose (fun line ->
+            let trimmed = line.Trim()
+
+            if trimmed.StartsWith "-- NOT-COMPARED:" then
+                Some(trimmed.Substring("-- NOT-COMPARED:".Length).Trim())
+            else
+                None)
 
     /// The scratch schema every case is built in.
     ///
@@ -122,15 +176,29 @@ let refusedCases () = Fixture.cases "refused"
 
 [<RequiresPostgresTheory; MemberData(nameof convergesCases)>]
 let ``Strata reads the declaration the way the server does`` (name: string) =
-    let sql = Fixture.read "converges" name
-    let connection = Fixture.connection.Value
+    let parts = Fixture.parts "converges" name
+
+    // ONE connection string for both sides, and it carries the same
+    // `search_path` the fixture text ran under.
+    //
+    // Both matter. Without the search path an unqualified view body does not
+    // resolve at all and the view falls out of the comparison — silently, which
+    // is the failure this case exists to catch. With it on only one side, the
+    // server deparses `FROM shipment` for one and `FROM awk.shipment` for the
+    // other and every view looks changed. A real project qualifies its names and
+    // uses one connection for both; this reproduces that condition rather than
+    // inventing a third one.
+    let connection = sprintf "%s;Search Path=%s,public" Fixture.connection.Value Fixture.schema
 
     Fixture.reset ()
 
     try
         // The server's reading. `search_path` puts unqualified names in the
-        // scratch schema, so the fixture text runs exactly as written.
-        Fixture.exec (sprintf "SET search_path TO %s; %s" Fixture.schema sql)
+        // scratch schema, so the fixture text runs exactly as written. A
+        // directory case applies its parts in filename order, so a view can
+        // name the table declared before it.
+        for _, sql in parts do
+            Fixture.exec (sprintf "SET search_path TO %s; %s" Fixture.schema sql)
 
         let actual = CatalogIntrospection.introspect connection
 
@@ -147,7 +215,7 @@ let ``Strata reads the declaration the way the server does`` (name: string) =
         // names, so they are qualified with the scratch schema to line the two
         // sides up — the only transformation applied, and applied after parsing
         // rather than to the text.
-        let declared = DesiredState.load parser [ name, sql ]
+        let declared = DesiredState.load parser parts
 
         Assert.Empty declared.Failures
 
@@ -171,27 +239,6 @@ let ``Strata reads the declaration the way the server does`` (name: string) =
         let desired =
             { declared.Snapshot with Objects = declared.Snapshot.Objects |> List.map requalify }
 
-        // Defaults and check expressions are only comparable once the server has
-        // rendered them, exactly as `strata plan` does it.
-        let normalisedTables =
-            declared.Snapshot.Objects
-            |> List.choose (fun o ->
-                match o with
-                | TableObject t ->
-                    declared.Declarations
-                    |> List.tryPick (fun (n, text) ->
-                        if QualifiedName.display n = QualifiedName.display t.Name then
-                            Some(QualifiedName.display (qualify t.Name), text)
-                        else
-                            None)
-                | _ -> None)
-            |> fun tables ->
-                match ShadowNormalisation.normaliseTables connection tables with
-                | Ok normalised ->
-                    normalised
-                    |> List.map (fun n ->
-                        ({ Table = n.Table; Defaults = n.Defaults; Checks = n.Checks }: SchemaDiff.NormalisedTable))
-                | Microsoft.FSharp.Core.Error _ -> []
 
         // The loader sees unqualified names, so a declared grant is qualified
         // with the scratch schema the same way an object is. A SCHEMA grant
@@ -217,17 +264,32 @@ let ``Strata reads the declaration the way the server does`` (name: string) =
                         | None -> false))
             | Microsoft.FSharp.Core.Error _ -> None
 
-        // Policies, compared on everything that does NOT need the server to
-        // render it: the command, the roles, whether the policy is restrictive,
-        // and whether each clause was written at all. The expressions are
-        // disclosed as not-compared rather than guessed, because this harness
-        // does not run shadow normalisation — so a fixture here proves Strata
-        // READS a policy the way the server does, which is what it is for.
-        let declaredPolicies =
-            declared.Policies |> List.map (fun (table, policy) -> qualify table, policy)
+        // Everything the server has to render, rendered — through the SAME
+        // function `strata plan` calls, not a copy of part of it.
+        //
+        // This harness used to hand-roll a subset: it normalised tables and
+        // skipped views and policies entirely. That is how WI-0092 hid. A view
+        // whose `AS` was followed by a newline was never compared, and the
+        // corpus could not notice, because the corpus never compared views at
+        // all. A test that reimplements the pipeline tests a pipeline that does
+        // not ship.
+        //
+        let qualifiedDeclared =
+            { declared with
+                Snapshot = desired
+                Declarations = declared.Declarations |> List.map (fun (n, text) -> qualify n, text)
+                Policies = declared.Policies |> List.map (fun (table, policy) -> qualify table, policy)
+                PolicyDeclarations =
+                    declared.PolicyDeclarations
+                    |> List.map (fun ((table, name), text) -> (qualify table, name), text)
+                RowSecurity = declared.RowSecurity |> List.map (fun (table, setting) -> qualify table, setting)
+                Data = declared.Data |> List.map (fun d -> { d with Table = qualify d.Table }) }
 
-        let declaredRowSecurity =
-            declared.RowSecurity |> List.map (fun (table, setting) -> qualify table, setting)
+        let resolved = Strata.Cli.Resolution.resolve connection qualifiedDeclared
+
+        // A fixture whose normalisation failed proves nothing about how Strata
+        // reads it, so the failure is the test result rather than a footnote.
+        Assert.Empty resolved.Warnings
 
         let actualRowLevelSecurity =
             match CatalogIntrospection.readRowLevelSecurity connection with
@@ -254,8 +316,8 @@ let ``Strata reads the declaration the way the server does`` (name: string) =
                 { SchemaDiff.Inputs.between desired (inScratch actual) with
                     DeclaredExtensions = declared.Extensions
                     ActualExtensions = actualExtensions
-                    DeclaredPolicies = declaredPolicies
-                    DeclaredRowSecurity = declaredRowSecurity
+                    DeclaredPolicies = resolved.Policies
+                    DeclaredRowSecurity = resolved.RowSecurity
                     ActualRowLevelSecurity = actualRowLevelSecurity
                     // Drops ENABLED. A declaration Strata reads as something the
                     // server did not build shows up as a removal, and this must
@@ -265,7 +327,10 @@ let ``Strata reads the declaration the way the server does`` (name: string) =
                     ExistingSchemas = Some [ Fixture.schema ]
                     DeclaredGrants = grants
                     ActualGrants = actualGrants
-                    NormalisedTables = normalisedTables }
+                    Data = resolved.Data
+                    DataFailures = resolved.DataFailures
+                    NormalisedViews = resolved.NormalisedViews
+                    NormalisedTables = resolved.NormalisedTables }
 
         // Rendered so a failure names what diverged rather than just counting.
         // `SchemaDiff.describe` is private, and it stays that way: widening
@@ -281,6 +346,48 @@ let ``Strata reads the declaration the way the server does`` (name: string) =
                 sprintf "%s %s" (Strata.Analysis.ProposedChange.Change.tag c) target)
 
         Assert.Empty rendered
+
+        // The other half of the oracle, and the half that was missing.
+        //
+        // "The change list is empty" is necessary and NOT sufficient. A
+        // comparison that never happened produces an empty change list too, so
+        // for six months this corpus could not tell a fixture Strata read
+        // correctly from a fixture Strata did not read at all. WI-0092 was
+        // exactly that: a view dropped from normalisation over a newline,
+        // reported as not-compared, and passing here.
+        //
+        // So a fixture must also leave nothing it declares in the not-compared
+        // list. `NotModelled` is a different statement — "this exists and the
+        // project says nothing about it" — and is left alone.
+        let declaredNames =
+            desired.Objects
+            |> List.map (fun o -> QualifiedName.display (SchemaObject.name o))
+            |> Set.ofList
+
+        let silentlySkipped =
+            result.Suppressed
+            |> List.filter (fun sup ->
+                sup.Reason = SchemaDiff.SuppressionReason.NotCompared
+                && declaredNames.Contains(QualifiedName.display sup.Object))
+            |> List.map (fun sup -> sprintf "%s: %s" (QualifiedName.display sup.Object) sup.Detail)
+
+        match Fixture.notComparedReasons parts with
+        | [] ->
+            Assert.True(
+                List.isEmpty silentlySkipped,
+                sprintf
+                    "%s declares objects Strata did not compare, so an empty change list proves nothing about them:\n  %s\n\nIf one of these cannot be compared, say so in the fixture with a `-- NOT-COMPARED: <why>` line."
+                    name
+                    (String.concat "\n  " silentlySkipped))
+        | reasons ->
+            // The allowance must be used, or it is documenting a limit that no
+            // longer exists and hiding the next one.
+            Assert.True(
+                not (List.isEmpty silentlySkipped),
+                sprintf
+                    "%s declares NOT-COMPARED (%s) but everything it declares was compared. Remove the line."
+                    name
+                    (String.concat "; " reasons))
     finally
         Fixture.drop ()
 
@@ -318,8 +425,12 @@ let ``every fixture states its contract in the file`` () =
             for case in Fixture.cases kind do
                 let name = string (Array.head case)
 
-                if not ((Fixture.read kind name).StartsWith "-- CONTRACT:") then
-                    yield sprintf "%s/%s" kind name ]
+                // A directory case states its contract in its first part, the
+                // one that declares the object the rest hang off.
+                match Fixture.parts kind name with
+                | [] -> yield sprintf "%s/%s (no .sql parts)" kind name
+                | (_, text) :: _ when not (text.StartsWith "-- CONTRACT:") -> yield sprintf "%s/%s" kind name
+                | _ -> () ]
 
     Assert.Empty missing
 

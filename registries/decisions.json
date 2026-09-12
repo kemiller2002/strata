@@ -110,6 +110,28 @@
   },
   {
     "confidence": "high",
+    "created": "2026-09-12",
+    "created_by_agent": "claude",
+    "decision_type": "product-architecture",
+    "evidence": [],
+    "id": "DF-STRATA-2026-9A41",
+    "path": "research/decisions/DF-STRATA-2026-9A41--an-artifact-carries-no-target-state.md",
+    "status": "accepted",
+    "superseded_by": [],
+    "supersedes": [],
+    "tags": [
+      "strata",
+      "artifact",
+      "compile",
+      "deployment",
+      "reference-data",
+      "er-008"
+    ],
+    "title": "An artifact carries desired state only, and never a fact about a database",
+    "updated": "2026-09-12"
+  },
+  {
+    "confidence": "high",
     "created": "2026-09-11",
     "created_by_agent": "claude",
     "decision_type": "architecture",

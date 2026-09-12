@@ -24,6 +24,12 @@
     <Compile Include="SchemaDiffTests.fs" />
     <Compile Include="RenameTests.fs" />
     <Compile Include="CatalogIntrospectionTests.fs" />
+    <Compile Include="ShadowNormalisationTests.fs" />
+    <Compile Include="ArtifactTests.fs" />
+    <Compile Include="TypeCheckTests.fs" />
+    <Compile Include="InvariantTests.fs" />
+    <Compile Include="ManifestTests.fs" />
+    <Compile Include="CliTests.fs" />
     <Compile Include="AwkwardFormsTests.fs" />
     <Compile Include="Main.fs" />
   </ItemGroup>
@@ -41,6 +47,7 @@
     <ProjectReference Include="../../src/Strata.Host.Postgres/Strata.Host.Postgres.fsproj" />
     <ProjectReference Include="../../src/Strata.Application/Strata.Application.fsproj" />
     <ProjectReference Include="../../src/Strata.Host.Files/Strata.Host.Files.fsproj" />
+    <ProjectReference Include="../../src/Strata.Cli/Strata.Cli.fsproj" />
   </ItemGroup>
 
   <ItemGroup>

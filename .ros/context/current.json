@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "claude",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-09-12T21:39:40Z",
+  "updatedAt": "2026-09-12T23:52:01Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -1882,6 +1882,337 @@
         "EXE-20260912T212943610Z-d0d928b6"
       ],
       "completedAt": "2026-09-12T21:39:40Z"
+    },
+    {
+      "id": "WI-0091",
+      "type": "implementation",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Application/SchemaDiff.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/SchemaDiffTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T22:14:43Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T221420567Z-1ebb4fde"
+      ],
+      "completedAt": "2026-09-12T22:14:43Z"
+    },
+    {
+      "id": "WI-0092",
+      "type": "implementation",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Host.Postgres/ShadowNormalisation.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/ShadowNormalisationTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T22:23:59Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T221515769Z-f1f2990e"
+      ],
+      "completedAt": "2026-09-12T22:23:59Z"
+    },
+    {
+      "id": "WI-0093",
+      "type": "implementation",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/AwkwardFormsTests.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "tests/Strata.Tests/awkward/converges/view-formatting/02-pending-shipment.sql"
+        }
+      ],
+      "updatedAt": "2026-09-12T22:37:16Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T222439489Z-529e3faa"
+      ],
+      "completedAt": "2026-09-12T22:37:16Z"
+    },
+    {
+      "id": "WI-0095",
+      "type": "implementation",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Host.Postgres/ShadowNormalisation.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/ShadowNormalisationTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T22:37:16Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T223450443Z-561949b9"
+      ],
+      "completedAt": "2026-09-12T22:37:16Z"
+    },
+    {
+      "id": "WI-0094",
+      "type": "implementation",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Host.Postgres/ShadowNormalisation.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/ShadowNormalisationTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T22:42:53Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T223932332Z-9e752cba"
+      ],
+      "completedAt": "2026-09-12T22:42:53Z"
+    },
+    {
+      "id": "WI-0083",
+      "type": "implementation",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Host.Files/Artifact.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Cli/Compile.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/ArtifactTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T22:55:31Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T224356855Z-155d0bdc"
+      ],
+      "completedAt": "2026-09-12T22:55:31Z"
+    },
+    {
+      "id": "WI-0084",
+      "type": "implementation",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Cli/Deploy.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Cli/Deployment.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/ArtifactTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T23:10:31Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T225610510Z-0651bd86"
+      ],
+      "completedAt": "2026-09-12T23:10:31Z"
+    },
+    {
+      "id": "WI-0085",
+      "type": "implementation",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Cli/OfflineValidation.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/ArtifactTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T23:15:57Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T231109221Z-829410c0"
+      ],
+      "completedAt": "2026-09-12T23:15:57Z"
+    },
+    {
+      "id": "WI-0086",
+      "type": "implementation",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Cli/Deploy.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/ArtifactTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T23:19:52Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T231712245Z-4252f4ca"
+      ],
+      "completedAt": "2026-09-12T23:19:52Z"
+    },
+    {
+      "id": "WI-0089",
+      "type": "implementation",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Host.Files/Attestation.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/ArtifactTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T23:27:02Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T232042816Z-5535d8d3"
+      ],
+      "completedAt": "2026-09-12T23:27:02Z"
+    },
+    {
+      "id": "WI-0087",
+      "type": "implementation",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Host.Postgres/TypeCheck.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Cli/TypeChecking.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/TypeCheckTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T23:32:54Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T232911878Z-4275fc9c"
+      ],
+      "completedAt": "2026-09-12T23:32:54Z"
+    },
+    {
+      "id": "WI-0088",
+      "type": "implementation",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Application/Invariants.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/InvariantTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T23:38:02Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T233335009Z-126e5760"
+      ],
+      "completedAt": "2026-09-12T23:38:02Z"
+    },
+    {
+      "id": "WI-0081",
+      "type": "implementation",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Cli/ProjectCommands.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Host.Files/Manifests.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/ManifestTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T23:43:42Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T233817068Z-11875b3c"
+      ],
+      "completedAt": "2026-09-12T23:43:42Z"
+    },
+    {
+      "id": "WI-0061",
+      "type": "implementation",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "scripts/check-queue-mirror.sh"
+        },
+        {
+          "type": "tests",
+          "path": "scripts/ros-validate.sh"
+        }
+      ],
+      "updatedAt": "2026-09-12T23:46:41Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T234557119Z-c98f6b77"
+      ],
+      "completedAt": "2026-09-12T23:46:41Z"
+    },
+    {
+      "id": "WI-0096",
+      "type": "implementation",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/CliTests.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Cli/Program.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T23:52:01Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T234722651Z-16178fc4"
+      ],
+      "completedAt": "2026-09-12T23:52:01Z"
     }
   ]
 }

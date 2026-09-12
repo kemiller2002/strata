@@ -17,11 +17,19 @@
   <ItemGroup>
     <Compile Include="FileCorpus.fs" />
     <Compile Include="Project.fs" />
+    <Compile Include="Manifests.fs" />
     <Compile Include="RenameAnnotations.fs" />
+    <Compile Include="Artifact.fs" />
+    <Compile Include="Attestation.fs" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="../Strata.Analysis/Strata.Analysis.fsproj" />
+    <!--
+      Tier 3, for the artifact's own type. Dependencies point downward: Tier 3
+      never references a host adapter, so this direction is the legal one.
+    -->
+    <ProjectReference Include="../Strata.Application/Strata.Application.fsproj" />
   </ItemGroup>
 
 </Project>

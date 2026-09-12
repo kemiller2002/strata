@@ -149,11 +149,18 @@ let private renderPolicies connectionString (declared: DesiredState.Loaded) =
 
 /// Declared reference rows, resolved against the live tables.
 ///
+/// PUBLIC, and the only part of resolution that is, because it is the only part
+/// that is NOT compilable. Everything else here renders the declared side and
+/// nothing else; this one reads the rows a table actually holds, so its answer
+/// belongs to a TARGET rather than to a project. `strata deploy` calls it again
+/// against its own target rather than trusting an artifact's copy — see the
+/// note in `Artifact.render` for what happened when the artifact carried it.
+///
 /// Both sides come back rendered by the SERVER, through the real column types,
 /// so `1.250` in a file and `1.25` in a `numeric(12,2)` column are recognised as
 /// the same value rather than reported as a difference forever. Everything
 /// happens in a transaction that is rolled back.
-let private renderData connectionString (declared: DesiredState.Loaded) =
+let resolveData connectionString (declared: DesiredState.Loaded) =
     let declaredData =
         declared.Data
         |> List.map (fun d ->
@@ -204,7 +211,19 @@ let resolve (connectionString: string) (declared: DesiredState.Loaded) : Resolve
     let views, viewWarnings = renderViews connectionString declared
     let tables, tableWarnings = renderTables connectionString declared
     let policies, policyWarnings = renderPolicies connectionString declared
-    let (data, dataFailures), dataWarnings = renderData connectionString declared
+    let (data, dataFailures), dataWarnings = resolveData connectionString declared
+
+    // The version of the server that rendered all of the above. Read rather
+    // than assumed, and left as `None` when it cannot be read: `deploy` refuses
+    // a major-version mismatch, and it can only refuse what it knows.
+    let compiledWith, versionWarnings =
+        match CatalogIntrospection.readServerVersion connectionString with
+        | Ok version -> Some version, []
+        | Microsoft.FSharp.Core.Error message ->
+            None,
+            [ sprintf
+                  "could not read the version of the server used to render declared expressions (%s); a deployment cannot then check that its target agrees."
+                  message ]
 
     { Declared = declared
       NormalisedViews = views
@@ -213,4 +232,6 @@ let resolve (connectionString: string) (declared: DesiredState.Loaded) : Resolve
       RowSecurity = declared.RowSecurity
       Data = data
       DataFailures = dataFailures
-      Warnings = List.concat [ viewWarnings; tableWarnings; policyWarnings; dataWarnings ] }
+      Warnings =
+        List.concat [ viewWarnings; tableWarnings; policyWarnings; dataWarnings; versionWarnings ]
+      CompiledWith = compiledWith }

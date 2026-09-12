@@ -63,7 +63,7 @@
 | WI-0058 | Constraint differences cannot be applied | complete | strata, diff | high |
 | WI-0059 | CI builds nothing and runs no tests | complete | strata, ci | high |
 | WI-0060 | Every PR commit ran CI twice | complete | strata, ci | medium |
-| WI-0061 | ros work complete does not update queue.md when an item is captured and completed in the same run | blocked | ros, tooling | low |
+| WI-0061 | ros work complete does not update queue.md when an item is captured and completed in the same run | complete | ros, tooling | low |
 | WI-0062 | CLI help claims narrower behaviour than the code has | complete | strata, docs | low |
 | WI-0063 | Record metrics for the validation and deployment increment | complete | strata, metrics | medium |
 | WI-0064 | Strata cannot create a schema | complete | strata, desired-state | high |
@@ -83,14 +83,19 @@
 | WI-0078 | Destructive changes never receive an Allow verdict | complete | strata | high |
 | WI-0079 | Require an explicit include list in strata.json | complete | strata | high |
 | WI-0080 | Derive the managed schema set from directory names and remove managedSchemas | complete | strata | high |
-| WI-0081 | Project adoption and reconciliation commands | captured | strata | medium |
-| WI-0082 | Hoist shadow normalisation out of the CLI ahead of the compile split | active | strata | high |
-| WI-0083 | strata compile emits a deployable artifact | captured | strata | high |
-| WI-0084 | strata deploy reads an artifact rather than the source tree | captured | strata | high |
-| WI-0085 | strata validate against an artifact, with no database | captured | strata | medium |
-| WI-0086 | strata drift reports whether a server still matches an artifact | captured | strata | low |
-| WI-0087 | Type-check queries with PREPARE | captured | strata | medium |
-| WI-0088 | Declared project invariants as compile-time checks | captured | strata | low |
-| WI-0089 | Sign the compiled artifact | captured | strata | low |
+| WI-0081 | Project adoption and reconciliation commands | complete | strata | medium |
+| WI-0082 | Hoist shadow normalisation out of the CLI ahead of the compile split | complete | strata | high |
+| WI-0083 | strata compile emits a deployable artifact | complete | strata | high |
+| WI-0084 | strata deploy reads an artifact rather than the source tree | complete | strata | high |
+| WI-0085 | strata validate against an artifact, with no database | complete | strata | medium |
+| WI-0086 | strata drift reports whether a server still matches an artifact | complete | strata | low |
+| WI-0087 | Type-check queries with PREPARE | complete | strata | medium |
+| WI-0088 | Declared project invariants as compile-time checks | complete | strata | low |
+| WI-0089 | Sign the compiled artifact | complete | strata | low |
 | WI-0090 | Record the compile/deploy design decisions | complete | strata, decisions | high |
-| WI-0091 | Correct the RLS disclosure that claims policies are not compared | captured |  | medium |
+| WI-0091 | Correct the RLS disclosure that claims policies are not compared | complete |  | medium |
+| WI-0092 | A view whose AS is followed by a newline is silently never compared | complete |  | high |
+| WI-0093 | The awkward-forms corpus cannot see a comparison that silently did not happen | complete |  | high |
+| WI-0094 | normalisePolicies rewrites the table name by blind string replacement | complete |  | medium |
+| WI-0095 | A view with a column-alias list never converges | complete |  | high |
+| WI-0096 | No harness for running the CLI as a process | complete |  | medium |

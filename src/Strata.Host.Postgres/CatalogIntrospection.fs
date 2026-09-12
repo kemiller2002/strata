@@ -647,6 +647,34 @@ module CatalogIntrospection =
         with ex ->
             Error ex.Message
 
+    /// The server's version, on its own.
+    ///
+    /// `introspect` already reads this, but reading it needs the whole of
+    /// `introspect` — and `compile` must not introspect. A compiling server is a
+    /// scratch server whose SCHEMA is nobody's business; only its VERSION
+    /// matters, because it is the thing that rendered every expression in the
+    /// artifact (`WI-0084`). So this asks the one question.
+    let readServerVersion (connectionString: string) : Result<ServerVersion, string> =
+        try
+            use connection = new NpgsqlConnection(connectionString)
+            connection.Open()
+            use command = new NpgsqlCommand(CatalogQueries.serverVersion, connection)
+
+            match command.ExecuteScalar() with
+            | :? string as full ->
+                let major =
+                    match Int32.TryParse(full.Split('.').[0]) with
+                    | true, m -> m
+                    // A version string PostgreSQL rendered that Strata cannot
+                    // read is not version zero. Refused rather than guessed:
+                    // deploy compares majors, and a wrong major compares wrong.
+                    | false, _ -> failwithf "could not read a major version from '%s'" full
+
+                Ok { Major = major; Full = full }
+            | _ -> Error "the server returned no version"
+        with ex ->
+            Error ex.Message
+
     /// The effective search_path of a connection.
     ///
     /// Needed by Tier 2 to resolve unqualified names. Returned as data rather

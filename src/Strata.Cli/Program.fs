@@ -28,10 +28,81 @@ COMMANDS
                                    the database ALREADY MATCHES, whatever the
                                    verdict, because an empty plan from a diff
                                    is convergence rather than a problem.
+  init [--project <dir>]           Write strata.json from the .sql files under
+       [--from-tree] [--force]     the schema root, and print every one so a
+                                   human reads the list once. Refuses to
+                                   overwrite an existing manifest without
+                                   --force; `sync` is the command for a project
+                                   that already has one. Needs no database.
+  add <path>...                    Append paths to "include". Each must exist,
+                                   sit under the schema root, and end in .sql —
+                                   a manifest line for a file that is not there
+                                   is one of the two errors a load raises, so
+                                   writing one would be adding a known failure.
+                                   Needs no database.
+  sync [--project <dir>]           Reconcile strata.json with the tree. PRINTS
+       [--confirm]                 every path it would add or remove and writes
+                                   nothing without --confirm: a sync that
+                                   silently adopts whatever is on disk is the
+                                   directory walk again, and a file dropped into
+                                   the tree would join the project with nobody
+                                   deciding. Needs no database.
+  compile [--project <dir>]        Read the project and ask a server what the
+          --out <file>             DECLARED side means — view text, defaults,
+                                   check and policy expressions, reference rows
+                                   through the real column types — and write it
+                                   all to an artifact. Never looks at a target's
+                                   schema, so the connection may be any
+                                   PostgreSQL of the right version. REFUSES on
+                                   any file it could not read or parse: an
+                                   artifact is a claim that the project was read
+                                   whole, and a deployment has no source tree to
+                                   check that claim against. Exit 0 compiled,
+                                   1 the project is wrong, 2 unreadable.
+  deploy --artifact <file>         Deploy a compiled artifact to a target.
+                                   Never reads the project directory — the same
+                                   bytes go to staging and to production, so
+                                   "what we tested is what we shipped" is a fact
+                                   about the input rather than a claim about a
+                                   process. REFUSES when the target's PostgreSQL
+                                   MAJOR version differs from the one that
+                                   compiled the artifact: expressions in an
+                                   artifact are the compiling server's
+                                   rendering, and deparsing changes between
+                                   majors. Same flags as apply: --confirm,
+                                   --approve, --allow-drops.
+  keygen --key <priv.pem>          Make a signing key pair. The private key is
+         --public-key <pub.pem>    the whole of the guarantee: signing proves
+                                   that whoever holds THAT FILE signed the
+                                   artifact, and nothing more. An agent that can
+                                   read it can forge exactly as well as you can,
+                                   so where it lives is the decision that
+                                   matters. Needs no database.
+  sign --artifact <file>           Sign a compiled artifact in place. Needs no
+       --key <priv.pem>            database.
+  drift --artifact <file>          Report whether a target still matches an
+                                   artifact. Read-only: needs only read access,
+                                   so it runs from a monitoring host that could
+                                   not deploy if it tried. Exit 0 matches, 1
+                                   differs, 2 could not tell. Removals ARE
+                                   counted as drift — an object the target has
+                                   and the artifact does not is a difference,
+                                   and drift only reports.
   apply [--project <dir>]          Execute the plan. Requires --confirm, and
                                    refuses unless the gate allows every change
                                    or --approve accepts its requires-approval
                                    findings. A block is never overridden.
+  validate <file.sql>              Check every relation and column in a SQL file
+          --artifact <file>        against a COMPILED ARTIFACT instead of a live
+                                   database. Needs NO connection and no
+                                   credentials, which is what makes it usable in
+                                   an editor, a pre-commit hook, or a pull
+                                   request from a fork. It also asks the better
+                                   question: a query valid against the artifact
+                                   and failing against production has found a
+                                   stale server, not a bad query. Unqualified
+                                   names resolve against the schemas the
+                                   artifact manages; widen with --search-path.
   validate <file.sql>              Check every relation and column in a SQL file
                                    against the live schema. Exit 0 valid,
                                    1 provably wrong — a reference that does not
@@ -58,6 +129,24 @@ OPTIONS
                      anything runs. It NEVER overrides a block — a block is
                      known breakage, not a judgement call — and it does not
                      enable removals, which need --allow-drops as well.
+  --out <file>       Where `compile` writes the artifact
+  --artifact <file>  The artifact `deploy` and `validate` read
+  --types            Have the server PLAN each statement, with PREPARE, inside a
+                     rolled-back transaction. Catches what a reference check
+                     cannot: `WHERE total = 'abc'` on a numeric column, a
+                     function that has no such signature, an ambiguous column in
+                     a join. Opt-in because PREPARE takes no DDL, so turning it
+                     on everywhere would report most files as unverifiable and
+                     teach everyone to ignore that.
+  --search-path <s>  Comma-separated schemas for `validate --artifact`
+  --key <file>       PEM private key, for `keygen` and `sign`
+  --public-key <file>  PEM public key, for `keygen` and for verifying a
+                     signature on deploy
+  --require-signature  Refuse an artifact that is unsigned, or whose signature
+                     does not check out against --public-key. Every compiled
+                     artifact carries an unkeyed integrity digest already, which
+                     catches an edited or truncated file; a SIGNATURE is what
+                     resists someone who wants to change it.
   --allow-drops      Propose removals. Without it, objects present in the
                      database and absent from the project are REPORTED but
                      never proposed for dropping.
@@ -78,8 +167,25 @@ PROJECT LAYOUT
         "include": [
           "schema/app/tables/customer.sql",
           "schema/app/grants/customer.sql"
-        ]
+        ],
+        "invariants": ["everyTableHasAPrimaryKey"]
       }
+
+  "invariants" are rules the project declares about ITSELF, checked at compile
+  time and reported as warnings by `plan`. All opt-in: turning them on by
+  default would fail every existing project on upgrade, and a check everyone
+  disables protects nobody. A name this build does not recognise is an ERROR,
+  never a no-op — a misspelled rule that reads as "no rule" leaves a project
+  believing it has a control it does not have.
+
+      everyTableHasAPrimaryKey  a table with no primary key has no identity, so
+                                nothing can reference or de-duplicate its rows
+      noGrantsToPublic          PUBLIC includes every current and future role, so
+                                a grant to it cannot be reasoned about
+      everyForeignKeyIsIndexed  an unindexed foreign key makes every delete on
+                                the parent scan the child, and locks while it
+                                does. An index BEGINNING with the key's columns
+                                counts; one that merely contains them does not.
 
   Strata owns the directory it is given. A .sql file under the schema root that
   `include` does not list FAILS the load, and so does a listed path that is not
@@ -246,13 +352,159 @@ let main argv =
             | null | "" -> None
             | value -> Some value
 
+    /// The arguments that are not flags, and not a flag's VALUE.
+    ///
+    /// Filtering on `--` alone is not enough and was wrong: in
+    /// `add schema/x.sql --project ./db`, the directory does not start with `--`,
+    /// so it survived the filter and `add` tried to add it as an object file.
+    /// It went unnoticed because every earlier command reads at most one
+    /// positional and the stray value landed after it.
+    let positional =
+        // The flags that consume the argument after them. Listed rather than
+        // guessed, because guessing is the bug above.
+        let takesValue =
+            set [ "--connection"; "--corpus"; "--project"; "--out"; "--artifact"
+                  "--search-path"; "--key"; "--public-key" ]
+
+        let rec collect remaining acc =
+            match remaining with
+            | [] -> List.rev acc
+            | (flag: string) :: rest when takesValue.Contains flag ->
+                collect (match rest with _ :: tail -> tail | [] -> []) acc
+            | flag :: rest when flag.StartsWith "--" -> collect rest acc
+            | value :: rest -> collect rest (value :: acc)
+
+        collect args []
+
+    let projectRoot =
+        match valueOf "--project" args with
+        | Some dir -> dir
+        | None -> "."
+
+    // `keygen`, `sign` and `validate --artifact` touch no database, so they are
+    // dispatched BEFORE a connection is required. That is not a convenience: the
+    // machine holding a signing key has no business holding deployment
+    // credentials, and the places offline validation is worth the most — an
+    // editor, a pre-commit hook, a fork's pull request — have neither
+    // (`DF-STRATA-2026-2F6B`).
+    match positional, valueOf "--artifact" args with
+    // The manifest commands need no database either. A manifest is a statement
+    // about FILES, and someone adding a table is in a checkout, not in front of
+    // a production connection string.
+    | "init" :: _, _ ->
+        ProjectCommands.init projectRoot (List.contains "--force" args)
+
+    | "add" :: paths, _ when not (List.isEmpty paths) ->
+        ProjectCommands.add projectRoot paths
+
+    | "add" :: _, _ ->
+        eprintfn "error: add needs at least one path, relative to the project root."
+        2
+
+    | "sync" :: _, _ ->
+        ProjectCommands.sync projectRoot (List.contains "--confirm" args)
+
+    | "keygen" :: _, _ ->
+        match valueOf "--key" args, valueOf "--public-key" args with
+        | Some privatePath, Some publicPath ->
+            let privatePem, publicPem = Attestation.generateKeyPair ()
+
+            // A missing directory, a read-only volume, a path that is a
+            // directory: all ordinary, and all of them used to come out as an
+            // unhandled exception and a SIGABRT. A tool that aborts instead of
+            // saying what went wrong teaches people to distrust its exit codes.
+            try
+                IO.File.WriteAllText(privatePath, privatePem)
+                IO.File.WriteAllText(publicPath, publicPem)
+            with ex ->
+                eprintfn "error: could not write the key pair (%s)" ex.Message
+                exit 2
+
+            // Best effort: on Unix this is the difference between a key only its
+            // owner can read and one every process on the box can.
+            try
+                IO.File.SetUnixFileMode(privatePath, IO.UnixFileMode.UserRead ||| IO.UnixFileMode.UserWrite)
+            with _ ->
+                eprintfn "warning: could not restrict permissions on %s. Check them yourself." privatePath
+
+            printfn "Wrote a private key to %s and its public key to %s." privatePath publicPath
+            printfn ""
+            printfn "The private key is the whole of the guarantee. `strata deploy --require-signature`"
+            printfn "proves that whoever holds THIS FILE signed the artifact, and nothing more — so an"
+            printfn "agent that can read it can forge exactly as well as you can."
+            0
+        | _ ->
+            eprintfn "error: keygen needs --key <private.pem> and --public-key <public.pem>."
+            2
+
+    | "sign" :: _, Some artifactPath ->
+        match valueOf "--key" args with
+        | None ->
+            eprintfn "error: sign needs --key <private.pem>. Make one with `strata keygen`."
+            2
+        | Some keyPath when not (IO.File.Exists artifactPath) ->
+            ignore keyPath
+            eprintfn "error: no artifact at %s." artifactPath
+            2
+        | Some keyPath when not (IO.File.Exists keyPath) ->
+            eprintfn "error: no key at %s. Make one with `strata keygen`." keyPath
+            2
+        | Some keyPath ->
+            match Attestation.readFile (IO.File.ReadAllText artifactPath) with
+            | Error message ->
+                eprintfn "error: %s" message
+                2
+            | Ok (resolved, wrapper) ->
+                match Attestation.sign (IO.File.ReadAllText keyPath) resolved with
+                | Error message ->
+                    eprintfn "error: %s" message
+                    2
+                | Ok signature ->
+                    try
+                        IO.File.WriteAllText(
+                            artifactPath,
+                            Attestation.renderFile
+                                { wrapper with
+                                    Digest = Some(Attestation.digestOf resolved)
+                                    Signature = Some(Attestation.SignatureAlgorithm, signature) }
+                                resolved)
+
+                        printfn "Signed %s." artifactPath
+                        0
+                    with ex ->
+                        eprintfn "error: could not write the signed artifact (%s)" ex.Message
+                        2
+
+    | "sign" :: _, None ->
+        eprintfn "error: sign needs --artifact <file>."
+        2
+
+    | "validate" :: sqlPath :: _, Some artifactPath ->
+        let parser = PgParserAdapter.PostgresParser() :> Strata.Analysis.DialectPort.IDialectParser
+
+        try
+            OfflineValidation.run
+                parser
+                artifactPath
+                sqlPath
+                (valueOf "--search-path" args)
+                (List.contains "--json" args)
+        with ex ->
+            eprintfn "error: %s" ex.Message
+            2
+
+    | "validate" :: _, Some _ ->
+        eprintfn "error: validate needs a path to a .sql file."
+        2
+
+    | _ ->
+
     match connection with
     | None ->
         eprintfn "error: no connection string. Pass --connection or set STRATA_PG."
         2
     | Some connectionString ->
 
-    let positional = args |> List.filter (fun a -> not (a.StartsWith "--")) 
 
     // `check` is not a retrieval query — it reads a file and returns an exit
     // code — so it is dispatched before the query parser.
@@ -274,16 +526,37 @@ let main argv =
         | "validate" :: path :: _ -> Some path
         | _ -> None
 
-    let projectRoot =
-        match valueOf "--project" args with
-        | Some dir -> dir
-        | None -> "."
-
     let wantsPlan =
         match positional with
         | "plan" :: _
         | "apply" :: _ -> true
         | _ -> false
+
+    /// `compile` reads the project and asks a server what the DECLARED side
+    /// means. It never looks at the target's schema — that is the half of a
+    /// deployment that cannot be compiled (`DF-STRATA-2026-2F6B`) — so the
+    /// connection it takes may be any PostgreSQL of the right version.
+    let wantsCompile =
+        match positional with
+        | "compile" :: _ -> true
+        | _ -> false
+
+    /// `deploy` reads an artifact and a target, and never the project. That is
+    /// the guarantee: the same bytes go to staging and to production, so "what
+    /// we tested is what we shipped" is a fact about the input rather than a
+    /// claim about a process.
+    let wantsDeploy =
+        match positional with
+        | "deploy" :: _ -> true
+        | _ -> false
+
+    /// `drift` asks whether a server still matches an artifact. Read-only, and
+    /// it needs no deploy credentials — it runs from a monitoring host.
+    let wantsDrift =
+        match positional with
+        | "drift" :: _ -> true
+        | _ -> false
+
 
     let wantsApply =
         match positional with
@@ -312,120 +585,121 @@ let main argv =
         | "validate" :: _ -> Error "validate needs a path to a .sql file"
         | "plan" :: _ -> Error "plan takes no positional arguments; use --project"
         | "apply" :: _ -> Error "apply takes no positional arguments; use --project"
+        | "compile" :: _ -> Error "compile takes no positional arguments; use --project and --out"
+        | "init" :: _ -> Error "init takes no positional arguments; use --project"
+        | "sync" :: _ -> Error "sync takes no positional arguments; use --project"
+        | "deploy" :: _ -> Error "deploy takes no positional arguments; use --artifact"
+        | "drift" :: _ -> Error "drift takes no positional arguments; use --artifact"
+        | "keygen" :: _ -> Error "keygen takes no positional arguments; use --key and --public-key"
+        | "sign" :: _ -> Error "sign takes no positional arguments; use --artifact and --key"
         | command :: _ -> Error(sprintf "unknown or incomplete command: %s" command)
         | [] -> Error "no command given"
 
-    if wantsPlan then
+    let deploymentOptions corpusRoots : Deployment.Options =
+        { AllowDrops = List.contains "--allow-drops" args
+          Apply = List.contains "--confirm" args || wantsApply
+          Confirm = List.contains "--confirm" args
+          Approve = List.contains "--approve" args
+          Json = List.contains "--json" args
+          Brief = List.contains "--brief" args
+          CorpusRoots = corpusRoots
+          DriftOnly = false }
+
+    if wantsDrift then
+        match valueOf "--artifact" args with
+        | None ->
+            eprintfn "error: drift needs --artifact <file>, produced by `strata compile`."
+            2
+        | Some artifactPath ->
+            let parser = PgParserAdapter.PostgresParser() :> Strata.Analysis.DialectPort.IDialectParser
+
+            try
+                Deploy.drift
+                    parser
+                    connectionString
+                    artifactPath
+                    (match corpusDirectory with Some dir -> [ dir ] | None -> [])
+                    (List.contains "--json" args)
+            with ex ->
+                eprintfn "error: %s" ex.Message
+                2
+
+    elif wantsDeploy then
+        match valueOf "--artifact" args with
+        | None ->
+            eprintfn "error: deploy needs --artifact <file>, produced by `strata compile`."
+            2
+        | Some artifactPath ->
+            let parser = PgParserAdapter.PostgresParser() :> Strata.Analysis.DialectPort.IDialectParser
+
+            // No manifest to fall back on: an artifact records the project, and
+            // the corpus is the one thing it deliberately does not carry —
+            // where the application SQL lives is a property of the deploying
+            // environment, not of the compiled schema.
+            let corpusRoots =
+                match corpusDirectory with
+                | Some dir -> [ dir ]
+                | None -> []
+
+            // The warning for an empty corpus is `Deployment.run`'s, not this
+            // branch's — saying it twice teaches people to skim it.
+            try
+                Deploy.run
+                    parser
+                    connectionString
+                    artifactPath
+                    (List.contains "--require-signature" args)
+                    (valueOf "--public-key" args |> Option.map IO.File.ReadAllText)
+                    { deploymentOptions corpusRoots with Apply = true }
+            with ex ->
+                eprintfn "error: %s" ex.Message
+                2
+
+    elif wantsCompile then
+        match valueOf "--out" args with
+        | None ->
+            eprintfn "error: compile needs --out <file>, the artifact to write."
+            2
+        | Some outputPath ->
+            let parser = PgParserAdapter.PostgresParser() :> Strata.Analysis.DialectPort.IDialectParser
+            Compile.run parser connectionString projectRoot outputPath
+
+    elif wantsPlan then
         try
-            match Project.read projectRoot with
+            let parser = PgParserAdapter.PostgresParser() :> Strata.Analysis.DialectPort.IDialectParser
+
+            match Compile.load parser projectRoot with
             | Error message ->
                 eprintfn "error: %s" message
                 2
-            | Ok project ->
-                let parser = PgParserAdapter.PostgresParser() :> Strata.Analysis.DialectPort.IDialectParser
-
-                let declared =
-                    DesiredState.loadWithLayout
-                        parser
-                        (project.Files |> List.map (fun f -> f.Path, Some f.Schema, f.Contents))
+            | Ok loaded ->
+                let project = loaded.Project
+                let declared = loaded.Declared
 
                 // A file that could not even be located or read never reached
                 // the loader, so its failure has to be folded in here or the
                 // desired state would call itself complete while missing it.
-                let desired =
-                    if List.isEmpty project.Failures then declared.Snapshot
-                    else
-                        { declared.Snapshot with
-                            Completeness =
-                                Completeness.ofList
-                                    (declared.Snapshot.Completeness.Categories
-                                     |> List.map (fun (name, state) ->
-                                         if name = "relations" then
-                                             name,
-                                             Partial(
-                                                 sprintf
-                                                     "%d project file(s) could not be read"
-                                                     (List.length project.Failures))
-                                         else
-                                             name, state)) }
+                // `compile` refuses instead; the two share the reading so they
+                // cannot disagree about what the project SAYS.
+                let desired = Compile.snapshot loaded
 
-                for path, reason in project.Failures do
+                for path, reason in loaded.Problems do
                     eprintfn "warning: %s: %s" path reason
 
-                for failure in declared.Failures do
-                    eprintfn "warning: %s: %s" failure.Path failure.Reason
-
-                // Taken BEFORE introspection so it covers the whole window in
-                // which the plan is computed, not just the tail of it.
-                let fingerprintBeforePlanning =
-                    match Execution.fingerprint connectionString with
-                    | Ok value -> value
-                    | Microsoft.FSharp.Core.Error _ -> ""
-
-                let actual = CatalogIntrospection.introspect connectionString
-
-                // Read separately from the snapshot because an EMPTY schema has
-                // no objects to appear in it. Without this, "the project
-                // declares objects in ref" and "ref exists" could not be told
-                // apart, and a first apply against a fresh database failed on
-                // the first CREATE TABLE.
-                let existingSchemas =
-                    match CatalogIntrospection.readSchemas connectionString with
-                    | Ok names -> Some names
-                    | Microsoft.FSharp.Core.Error message ->
-                        eprintfn "warning: could not read the database's schema list (%s)." message
-                        eprintfn "         Declared schemas will be reported as not-checked."
-                        None
-
-                // Read for the same reason and with the same care: an ACL that
-                // could not be read is not an absent privilege.
-                let actualGrants =
-                    match CatalogIntrospection.readGrants connectionString with
-                    | Ok grants -> Some grants
-                    | Microsoft.FSharp.Core.Error message ->
-                        eprintfn "warning: could not read the database's privileges (%s)." message
-                        eprintfn "         Declared grants will be reported as not-compared."
-                        None
-
-                // Reported, not compared — but READ, which is the point. Nothing
-                // looked at row-level security before, so a table with it
-                // enabled and no policies, hiding every row from every role,
-                // rendered exactly like a table with no row-level security at
-                // all: a clean plan and not a word about either.
-                //
-                // The snapshot's own `rls_policies` category stays
-                // `NotRequested`, the same as `grants`: the snapshot genuinely
-                // does not carry them, and this is read alongside it.
-                let actualRowLevelSecurity =
-                    match CatalogIntrospection.readRowLevelSecurity connectionString with
-                    | Ok state -> Some(Ok state)
-                    | Microsoft.FSharp.Core.Error message ->
-                        eprintfn "warning: could not read the database's row-level security (%s)." message
-                        eprintfn "         Which rows any role can see is unknown, and will be reported as such."
-                        // `Some (Error _)`, never `None`: the CLI DID ask, and
-                        // that failure is reported. `None` is reserved for a
-                        // caller that never asked.
-                        Some(Microsoft.FSharp.Core.Error message)
-
-                let actualExtensions =
-                    match CatalogIntrospection.readExtensions connectionString with
-                    | Ok installed -> Some(Ok installed)
-                    | Microsoft.FSharp.Core.Error message ->
-                        eprintfn "warning: could not read the database's extensions (%s)." message
-                        eprintfn "         Declared extensions will be reported as not-compared."
-                        Some(Microsoft.FSharp.Core.Error message)
-
-                let searchPath =
-                    match CatalogIntrospection.readSearchPath connectionString with
-                    | Ok p -> p
-                    | Error _ -> []
+                // `plan` reports what `compile` refuses, for the same reason it
+                // reports an unreadable file rather than stopping: a human is
+                // reading this and can decide. The artifact is where a rule the
+                // project declared has to be true.
+                for violation in loaded.Violations do
+                    eprintfn
+                        "warning: %s: %s [%s]"
+                        (QualifiedName.display violation.Object)
+                        violation.Detail
+                        violation.Rule
 
                 // Where the application SQL lives is the one thing the
-                // directory tree cannot say, so it comes from --corpus or from
-                // the manifest. Without it the gate can still run, but it can
-                // only ever answer requires-approval on a removal: "no
-                // dependency found" is not "no dependency exists" when nothing
-                // was searched.
+                // directory tree cannot say, so it comes from --corpus or
+                // from the manifest.
                 let corpusRoots =
                     match corpusDirectory with
                     | Some dir -> [ dir ]
@@ -433,226 +707,23 @@ let main argv =
                         project.Manifest.CorpusRoots
                         |> List.map (fun root -> IO.Path.Combine(projectRoot, root))
 
-                if List.isEmpty corpusRoots then
-                    eprintfn "warning: no SQL corpus given (--corpus or corpusRoots in strata.json)."
-                    eprintfn "         Removals cannot be cleared, only approved: with nothing indexed,"
-                    eprintfn "         \"no dependency found\" is not evidence that none exists."
-
-                let corpusSources =
-                    corpusRoots
-                    |> List.collect (fun root ->
-                        match FileCorpus.read root with
-                        | Ok r -> r.Sources
-                        | Error _ -> [])
-
-                let analysis = CorpusPipeline.analyse parser actual searchPath corpusSources
-                let graph = CorpusPipeline.buildGraph actual analysis
-                let scope = CorpusPipeline.toScope parser actual analysis
-
-                let allowDrops = List.contains "--allow-drops" args
-
                 // Everything about the declared side that only a server can
                 // settle: view text, defaults, check and policy expressions,
-                // and reference rows through the real column types. One named
-                // boundary, because it is exactly what `strata compile` will
-                // produce and hand to `strata deploy`
-                // (`DF-STRATA-2026-2F6B`).
+                // and reference rows through the real column types. `deploy`
+                // is handed the same value, read from an artifact something
+                // else resolved earlier (`DF-STRATA-2026-2F6B`).
                 let resolved = Resolution.resolve connectionString declared
 
                 for warning in resolved.Warnings do
                     eprintfn "warning: %s" warning
 
-                for failure in resolved.DataFailures do
-                    eprintfn "warning: %s: %s" failure.Table failure.Reason
-
-                // Rename intent, read from the raw file text: libpg_query
-                // discards comments, so there is nothing to read in the tree.
-                let renames =
-                    declared.Declarations
-                    |> List.map (fun (name, text) ->
-                        let annotations = RenameAnnotations.read text
-
-                        let qualify (raw: string) =
-                            match raw.Split('.') with
-                            | [| schema; object' |] ->
-                                QualifiedName.qualified
-                                    (Identifier.unquoted (schema.Trim '"'))
-                                    (Identifier.unquoted (object'.Trim '"'))
-                            | _ ->
-                                // An unqualified old name means the same schema
-                                // the object is declared in. Reaching across
-                                // schemas has to be spelled out.
-                                match name.Schema with
-                                | Some schema ->
-                                    QualifiedName.qualified schema (Identifier.unquoted (raw.Trim '"'))
-                                | None -> QualifiedName.unqualified (Identifier.unquoted (raw.Trim '"'))
-
-                        ({ Object = name
-                           RenamedFrom = annotations.Object |> Option.map qualify
-                           Columns = annotations.Columns }: SchemaDiff.DeclaredRename))
-                    |> List.filter (fun r -> r.RenamedFrom.IsSome || not (List.isEmpty r.Columns))
-
-                for r in renames do
-                    match r.RenamedFrom with
-                    | Some from ->
-                        eprintfn
-                            "note: %s declares a rename from %s"
-                            (QualifiedName.display r.Object)
-                            (QualifiedName.display from)
-                    | None -> ()
-
-                let diff =
-                    SchemaDiff.run
-                        { SchemaDiff.Inputs.between desired actual with
-                            AllowDrops = allowDrops
-                            ManagedSchemas = project.Schemas
-                            Declarations = declared.Declarations
-                            TriggerDeclarations = declared.TriggerDeclarations
-                            ExistingSchemas = existingSchemas
-                            DeclaredGrants = declared.Grants
-                            ActualGrants = actualGrants
-                            ActualRowLevelSecurity = actualRowLevelSecurity
-                            PolicyDeclarations = declared.PolicyDeclarations
-                            DeclaredPolicies = resolved.Policies
-                            DeclaredRowSecurity = declared.RowSecurity
-                            DeclaredExtensions = declared.Extensions
-                            ActualExtensions = actualExtensions
-                            Data = resolved.Data
-                            DataFailures = resolved.DataFailures
-                            NormalisedViews = resolved.NormalisedViews
-                            NormalisedTables = resolved.NormalisedTables
-                            Renames = renames }
-                let gate = DeploymentGate.run graph scope diff.Changes
-
-                if List.contains "--json" args then
-                    printfn "%s" (SchemaDiff.toJson diff gate)
-                else
-                    printfn "%s" (SchemaDiff.toText diff gate)
-
-                // An empty change list means two different things depending on
-                // where it came from, and the gate cannot tell them apart.
-                //
-                // From a parsed migration script it means "Strata recognised
-                // nothing in what you gave it", which the gate rightly treats
-                // as requires-approval. From a DIFF it means the database
-                // already matches desired state — convergence, which is the
-                // success case a declarative tool exists to reach. Reporting
-                // the second as requires-approval would make every idempotent
-                // re-run look like a problem.
-                let converged = List.isEmpty diff.Changes
-
-                if converged then
-                    printfn ""
-                    printfn "Database already matches desired state; nothing to apply."
-
-                if not wantsApply then
-                    if converged then 0 else DeploymentGate.Verdict.exitCode gate.Verdict
-                elif converged then
-                    0
-                else
-
-                // Everything below is the only irreversible thing Strata does,
-                // so each refusal is separate and each says which one fired.
-                let unwritable =
-                    diff.Statements |> List.filter (fun s -> s.Sql.IsNone)
-
-                let approved = List.contains "--approve" args
-
-                // `--approve` answers requires-approval, which is precisely the
-                // question the gate asks a human. It never answers a BLOCK:
-                // that verdict means Strata found the breakage, not that it
-                // could not tell, and a flag that overrode both would make the
-                // three verdicts two.
-                let gateSatisfied =
-                    match gate.Verdict with
-                    | DeploymentGate.Allow -> true
-                    | DeploymentGate.RequiresApproval -> approved
-                    | DeploymentGate.Block -> false
-
-                if not gateSatisfied then
-                    eprintfn ""
-                    eprintfn "REFUSED: the gate did not allow this plan (%s)." (DeploymentGate.Verdict.tag gate.Verdict)
-
-                    match gate.Verdict with
-                    | DeploymentGate.RequiresApproval ->
-                        eprintfn "         Nothing was executed. Address the findings above, or pass --approve"
-                        eprintfn "         to record that a human accepted them."
-                    | DeploymentGate.Block ->
-                        // Saying this explicitly matters: someone who just
-                        // learned about --approve will reach for it here, and
-                        // the answer is that it does not apply.
-                        eprintfn "         Nothing was executed. A block is known breakage, not a judgement"
-                        eprintfn "         call, and --approve does not override it. Fix what the findings name."
-                    | DeploymentGate.Allow -> ()
-
-                    DeploymentGate.Verdict.exitCode gate.Verdict
-
-                elif not (List.isEmpty unwritable) then
-                    // Running the rest would leave the database matching neither
-                    // the desired state nor the state the plan was computed from.
-                    eprintfn ""
-                    eprintfn "REFUSED: %d change(s) were classified but cannot be written as DDL:" (List.length unwritable)
-
-                    for s in unwritable do
-                        eprintfn "         - %s" (Strata.Analysis.ProposedChange.Change.tag s.Change)
-
-                    eprintfn "         Applying the remainder would leave the database matching neither side."
-                    2
-
-                elif not (List.contains "--confirm" args) then
-                    printfn ""
-                    printfn "Dry run only. Re-run with --confirm to execute these %d statement(s)." (List.length diff.Changes)
-                    2
-
-                else
-
-                // The plan was computed against a snapshot. If the database has
-                // moved since, the plan's assumptions are already falsified —
-                // so it is re-fingerprinted immediately before executing and
-                // compared with the value taken before planning.
-                match Execution.fingerprint connectionString with
-                | Microsoft.FSharp.Core.Error message ->
-                    eprintfn "REFUSED: could not fingerprint the database before applying: %s" message
-                    2
-                | Ok afterPlanning when afterPlanning <> fingerprintBeforePlanning ->
-                    eprintfn ""
-                    eprintfn "REFUSED: the database schema changed while this plan was being computed."
-                    eprintfn "         The plan was built against a state that no longer exists. Re-run."
-                    2
-                | Ok _ ->
-                    // An approval nobody can see afterwards is not a decision
-                    // anyone can review. Each finding the human accepted is
-                    // restated here, in the run's own output, before it runs.
-                    if approved && gate.Verdict = DeploymentGate.RequiresApproval then
-                        printfn ""
-                        printfn "APPROVED by --approve:"
-
-                        for f in gate.Findings do
-                            if f.Verdict = DeploymentGate.RequiresApproval then
-                                printfn "  %s" f.Detected
-
-                    let statements = diff.Statements |> List.choose (fun s -> s.Sql)
-                    let result = Execution.apply connectionString statements
-
-                    printfn ""
-
-                    for outcome in result.Outcomes do
-                        match outcome with
-                        | Execution.Executed sql -> printfn "  ok      %s" (sql.Replace("\n", " "))
-                        | Execution.Failed (sql, message) ->
-                            printfn "  FAILED  %s" (sql.Replace("\n", " "))
-                            printfn "          %s" message
-                        | Execution.Skipped sql ->
-                            printfn "  skipped %s" (sql.Replace("\n", " "))
-
-                    printfn ""
-
-                    if result.RolledBack then
-                        printfn "ROLLED BACK. The database is unchanged; no statement took effect."
-                        1
-                    else
-                        printfn "Applied %d statement(s)." (List.length statements)
-                        0
+                Deployment.run
+                    parser
+                    connectionString
+                    { deploymentOptions corpusRoots with Apply = wantsApply }
+                    project.Schemas
+                    desired
+                    resolved
         with ex ->
             eprintfn "error: %s" ex.Message
             2
@@ -672,14 +743,42 @@ let main argv =
                 | Error _ -> []
 
             let parser = PgParserAdapter.PostgresParser() :> Strata.Analysis.DialectPort.IDialectParser
-            let report = Validation.validate parser snapshot searchPath (IO.File.ReadAllText path)
+            let text = IO.File.ReadAllText path
+            let report = Validation.validate parser snapshot searchPath text
 
             if List.contains "--json" args then
                 printfn "%s" (Validation.toJson path report)
             else
                 printfn "%s" (Validation.toText path report)
 
-            Validation.Report.exitCode report
+            let referenceCode = Validation.Report.exitCode report
+
+            // Tier 3. Opt-in, and the reason is in `TypeChecking`: running it
+            // automatically would turn every DDL file from a clean exit 0 into
+            // "unverifiable", and `unverifiable` only works as a signal while it
+            // is rare.
+            if List.contains "--types" args then
+                match TypeCheck.check connectionString (TypeChecking.statements parser text) with
+                | Microsoft.FSharp.Core.Error message ->
+                    eprintfn ""
+                    eprintfn "warning: types could not be checked (%s)." message
+                    eprintfn "         References were still checked; types were not." 
+                    max referenceCode 2
+                | Ok result ->
+                    // The stronger claim wins, so a file whose references are
+                    // fine and whose types are wrong is WRONG.
+                    max referenceCode (TypeChecking.report result)
+            else
+                // The record warns the two tiers must not disagree SILENTLY.
+                // They cannot disagree here — one of them did not run — so the
+                // gap is named instead.
+                if not (List.contains "--json" args) then
+                    printfn ""
+                    printfn "Types were NOT checked. Re-run with --types to have the server plan each"
+                    printfn "statement, which catches type mismatches, bad function signatures and"
+                    printfn "ambiguous columns that a reference check cannot see."
+
+                referenceCode
         with ex ->
             eprintfn "error: %s" ex.Message
             2

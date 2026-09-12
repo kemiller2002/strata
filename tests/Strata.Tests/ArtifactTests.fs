@@ -1,0 +1,749 @@
+module Strata.Tests.ArtifactTests
+
+open Xunit
+open Microsoft.FSharp.Reflection
+open Strata.Semantic.Identity
+open Strata.Semantic.Evidence
+open Strata.Semantic.AnalysisScope
+open Strata.Semantic.Schema
+open Strata.Analysis.DialectPort
+open Strata.Application
+open Strata.Host.Files
+
+/// The compiled artifact, written and read back.
+///
+/// ## What these tests are for
+///
+/// The format is hand-written in both directions, which is the requirement
+/// (`BOUNDARY-PRESERVATION.md`) and also the hazard: two functions three lines
+/// apart can still disagree, and when they do the artifact is written one way
+/// and read another. The symptom would not be an error. It would be a
+/// deployment that is subtly not what was compiled — a policy expression that
+/// came back `None` instead of `Some ""`, an unnamed constraint that acquired a
+/// name, a `Partial` completeness that read as `Complete`.
+///
+/// So the sample below is deliberately hostile. It carries every union case,
+/// every `option` in both states, and the three-state clauses in all three
+/// states, and a coverage test fails if a new union case is added without
+/// reaching the sample.
+
+let private id' = Identifier.unquoted
+let private qn schema name = QualifiedName.qualified (id' schema) (id' name)
+
+let private column name position hasDefault defaultExpr generated identity : Column =
+    { Name = id' name
+      Type = { TypeName = QualifiedName.unqualified (id' "text"); IsNullable = false }
+      Position = position
+      HasDefault = hasDefault
+      DefaultExpression = defaultExpr
+      IsGenerated = generated
+      IsIdentity = identity }
+
+let private table : Table =
+    { Name = qn "shop" "product"
+      Columns =
+        [ column "id" 1 false None false true
+          // A default that IS rendered, next to one that is not.
+          column "status" 2 true (Some "'open'::text") false false
+          column "total" 3 true None true false ]
+      PrimaryKey = Some { ConstraintName = Some(id' "product_pkey"); Columns = [ id' "id" ] }
+      UniqueConstraints =
+        [ // Named and UNNAMED, because an unnamed constraint that acquires a
+          // name on the way through never converges again (WI-0054).
+          { ConstraintName = Some(id' "product_code_key"); Columns = [ id' "code" ] }
+          { ConstraintName = None; Columns = [ id' "slug" ] } ]
+      CheckConstraints =
+        [ { ConstraintName = Some(id' "product_total_positive"); Expression = "(total > (0)::numeric)" }
+          { ConstraintName = None; Expression = "(status <> ''::text)" } ]
+      ForeignKeys =
+        [ { ConstraintName = Some(id' "product_bin_fkey")
+            Columns = [ id' "bin_id" ]
+            ReferencedTable = qn "shop" "bin"
+            ReferencedColumns = [ id' "id" ] } ]
+      Indexes =
+        [ { Name = id' "product_status_idx"; Columns = [ id' "status" ]; IsUnique = false; Predicate = None }
+          { Name = id' "product_open_idx"
+            Columns = [ id' "id" ]
+            IsUnique = true
+            Predicate = Some "(status = 'open'::text)" } ]
+      Triggers =
+        [ { Name = id' "set_updated_at"
+            Timing = TriggerTiming.Before
+            Events = [ "UPDATE" ]
+            Level = TriggerLevel.Row
+            UpdateColumns = [ id' "status" ]
+            Function = qn "shop" "touch"
+            Arguments = [ "'a'" ]
+            HasCondition = true }
+          { Name = id' "audit_after"
+            Timing = TriggerTiming.After
+            Events = [ "INSERT"; "DELETE" ]
+            Level = TriggerLevel.Statement
+            UpdateColumns = []
+            Function = qn "shop" "audit"
+            Arguments = []
+            HasCondition = false }
+          { Name = id' "instead_of_it"
+            Timing = TriggerTiming.InsteadOf
+            Events = [ "INSERT" ]
+            Level = TriggerLevel.Row
+            UpdateColumns = []
+            Function = qn "shop" "redirect"
+            Arguments = []
+            HasCondition = false } ]
+      Scope = Managed }
+
+let private view : View =
+    { Name = qn "shop" "open_product"
+      Columns = [ column "id" 1 false None false false ]
+      IsMaterialized = false
+      Definition = " SELECT id\n   FROM shop.product;"
+      Scope = Managed }
+
+let private materialized : View =
+    { view with Name = qn "shop" "product_totals"; IsMaterialized = true; Scope = Observed }
+
+let private routine : Routine =
+    { Name = qn "shop" "touch"
+      Kind = Function
+      ArgumentTypes = [ "text" ]
+      ReturnType = Some "trigger"
+      Language = "plpgsql"
+      Body = Some "BEGIN RETURN NEW; END"
+      Scope = Managed }
+
+let private procedure' : Routine =
+    { routine with
+        Name = qn "shop" "rebuild"
+        Kind = Procedure
+        // Both `option` fields in their EMPTY state: a routine the server holds
+        // only as a symbol name has no body, and that is not an empty body.
+        ReturnType = None
+        Body = None
+        Scope = ExtensionOwned }
+
+let private sequence : Sequence =
+    { Name = qn "shop" "product_id_seq"
+      DataType = "bigint"
+      Start = 1L
+      Increment = 1L
+      MinValue = 1L
+      // bigint's maximum, which is exactly the value a naive int32 rendering
+      // would lose.
+      MaxValue = 9223372036854775807L
+      Cache = 1L
+      Cycle = false
+      Scope = SystemOwned }
+
+let private policy name command permissive using check : Policy =
+    { Name = id' name
+      Command = command
+      IsPermissive = permissive
+      Roles = [ "PUBLIC" ]
+      Using = using
+      WithCheck = check }
+
+let private sample : ResolvedDesiredState =
+    { Declared =
+        { Snapshot =
+            { Objects =
+                [ TableObject table
+                  ViewObject view
+                  ViewObject materialized
+                  RoutineObject routine
+                  RoutineObject procedure'
+                  SequenceObject sequence ]
+              ServerVersion =
+                Fact.create
+                    High
+                    [ { Source = Catalog "pg_settings"; Detail = "server_version" } ]
+                    { Major = 16; Full = "16.15" }
+              Completeness =
+                Completeness.ofList
+                    [ "relations", Complete
+                      "grants", Partial "the role cannot read one schema"
+                      "policies", Inaccessible "permission denied"
+                      "triggers", NotRequested ] }
+          Failures = [ { Path = "schema/shop/tables/broken.sql"; Reason = "could not be parsed" } ]
+          Declarations = [ qn "shop" "product", "CREATE TABLE shop.product (id bigint);" ]
+          TriggerDeclarations =
+            [ (qn "shop" "product", id' "set_updated_at"), "CREATE TRIGGER set_updated_at ..." ]
+          Data =
+            [ { Table = qn "shop" "account_type"
+                Columns = [ id' "id"; id' "name" ]
+                Rows = [ [ "1"; "'new'" ]; [ "2"; "'old'" ] ]
+                Path = "schema/shop/data/account_type.sql" } ]
+          Grants =
+            [ { Target = GrantTarget.Relation(qn "shop" "product")
+                Grantee = "app_user"
+                Privileges = [ "SELECT" ]
+                Grantable = [] }
+              { Target = GrantTarget.Schema(id' "shop"); Grantee = "app_user"; Privileges = [ "USAGE" ]; Grantable = [] }
+              { Target = GrantTarget.Routine(qn "shop" "touch", [ "text" ])
+                Grantee = "app_user"
+                Privileges = [ "EXECUTE" ]
+                Grantable = [ "EXECUTE" ] }
+              { Target = GrantTarget.RelationColumn(qn "shop" "product", id' "status")
+                Grantee = "app_user"
+                Privileges = [ "UPDATE" ]
+                Grantable = [] } ]
+          Policies =
+            [ // All five commands, and the THREE clause states: absent,
+              // written-but-unrendered (`Some ""`), and rendered.
+              qn "shop" "product", policy "p_all" PolicyCommand.All true (Some "(a)") None
+              qn "shop" "product", policy "p_select" PolicyCommand.Select true (Some "") None
+              qn "shop" "product", policy "p_insert" PolicyCommand.Insert true None (Some "(b)")
+              qn "shop" "product", policy "p_update" PolicyCommand.Update false None None
+              qn "shop" "product", policy "p_delete" PolicyCommand.Delete true (Some "(c)") (Some "") ]
+          PolicyDeclarations = [ (qn "shop" "product", id' "p_all"), "CREATE POLICY p_all ON shop.product ..." ]
+          RowSecurity =
+            [ qn "shop" "product", RowSecuritySetting.Enable
+              qn "shop" "product", RowSecuritySetting.Disable
+              qn "shop" "product", RowSecuritySetting.Force
+              qn "shop" "product", RowSecuritySetting.NoForce ]
+          Extensions =
+            [ { Name = id' "citext"; Schema = Some(id' "public"); Version = Some "1.6"; IsRelocatable = true }
+              // A file that pinned no version and named no schema. Neither is
+              // the same as choosing the default.
+              { Name = id' "pgcrypto"; Schema = None; Version = None; IsRelocatable = false } ] }
+      NormalisedViews = [ "shop.open_product", " SELECT id\n   FROM shop.product;" ]
+      NormalisedTables =
+        [ { Table = "shop.product"
+            Defaults = [ "status", "'open'::text" ]
+            Checks = [ "product_total_positive", "(total > (0)::numeric)" ] } ]
+      Policies = [ qn "shop" "product", policy "p_all" PolicyCommand.All true (Some "(a)") None ]
+      RowSecurity = [ qn "shop" "product", RowSecuritySetting.Enable ]
+      Data =
+        [ { Table = "shop.account_type"
+            Columns = [ "id"; "name" ]
+            KeyColumns = [ "id" ]
+            Declared = [ { Key = "(1)"; Rendered = "(1,new)"; Literals = [ "'1'"; "'new'" ] } ]
+            Deployed = [ { Key = "(2)"; Rendered = "(2,old)"; Literals = [] } ] } ]
+      DataFailures = [ { Table = "shop.locked"; Reason = "permission denied" } ]
+      Warnings = [ "could not normalise declared views (no CREATE privilege)" ]
+      CompiledWith = Some { Major = 16; Full = "16.15" } }
+
+[<Fact>]
+let ``an artifact reads back as exactly what was written`` () =
+    // The property the whole format exists to have. Structural equality, so a
+    // field that reads back as a different SHAPE — None for Some "", an unnamed
+    // constraint that acquired a name, a Partial completeness that read as
+    // Complete — fails here rather than at a deployment.
+    //
+    // Resolved reference rows are excluded on BOTH sides because they are
+    // deliberately not carried: they describe a target, not a project. The test
+    // below pins that they come back empty.
+    let carried (r: ResolvedDesiredState) = { r with Data = []; DataFailures = [] }
+
+    match Artifact.ofText (Artifact.toText sample) with
+    | Ok restored -> Assert.Equal<ResolvedDesiredState>(carried sample, carried restored)
+    | Microsoft.FSharp.Core.Error message -> failwithf "the artifact could not be read: %s" message
+
+[<Fact>]
+let ``rendering is stable across a round trip`` () =
+    // Byte-identical, not merely equivalent. NFR-001: an artifact that changed
+    // shape on re-render would break any signature over it (WI-0089) and any
+    // diff of two compiles.
+    let once = Artifact.toText sample
+
+    match Artifact.ofText once with
+    | Ok restored -> Assert.Equal(once, Artifact.toText restored)
+    | Microsoft.FSharp.Core.Error message -> failwithf "the artifact could not be read: %s" message
+
+[<Fact>]
+let ``rendering the same state twice gives the same bytes`` () =
+    Assert.Equal(Artifact.toText sample, Artifact.toText sample)
+
+[<Fact>]
+let ``a policy clause written but not rendered survives as its own state`` () =
+    // Called out on its own because collapsing `Some ""` into `None` or into a
+    // rendered expression is the defect that made a changed policy expression
+    // produce zero changes, and structural equality above would catch it in a
+    // way nobody reading the failure would recognise.
+    match Artifact.ofText (Artifact.toText sample) with
+    | Ok restored ->
+        let clauses =
+            restored.Declared.Policies
+            |> List.map (fun (_, p) -> p.Name.Text, p.Using, p.WithCheck)
+
+        Assert.Contains(("p_select", Some "", None), clauses)
+        Assert.Contains(("p_update", None, None), clauses)
+        Assert.Contains(("p_delete", Some "(c)", Some ""), clauses)
+    | Microsoft.FSharp.Core.Error message -> failwithf "the artifact could not be read: %s" message
+
+[<Fact>]
+let ``an unnamed constraint does not acquire a name`` () =
+    match Artifact.ofText (Artifact.toText sample) with
+    | Ok restored ->
+        let tables =
+            restored.Declared.Snapshot.Objects
+            |> List.choose (fun o -> match o with TableObject t -> Some t | _ -> None)
+
+        Assert.Contains(tables, fun t -> t.UniqueConstraints |> List.exists (fun u -> u.ConstraintName.IsNone))
+        Assert.Contains(tables, fun t -> t.CheckConstraints |> List.exists (fun c -> c.ConstraintName.IsNone))
+    | Microsoft.FSharp.Core.Error message -> failwithf "the artifact could not be read: %s" message
+
+[<Fact>]
+let ``a sequence bound larger than an int survives`` () =
+    // bigint's maximum is the DEFAULT maxValue, so this is the ordinary case
+    // rather than an edge one, and a JSON number would have lost it.
+    match Artifact.ofText (Artifact.toText sample) with
+    | Ok restored ->
+        let sequences =
+            restored.Declared.Snapshot.Objects
+            |> List.choose (fun o -> match o with SequenceObject s -> Some s | _ -> None)
+
+        Assert.Contains(sequences, fun s -> s.MaxValue = 9223372036854775807L)
+    | Microsoft.FSharp.Core.Error message -> failwithf "the artifact could not be read: %s" message
+
+[<Fact>]
+let ``an artifact from a different format version is refused by name`` () =
+    // Not parsed optimistically. A reader that guessed would deploy something
+    // other than what was compiled, which is the one thing compiling rules out.
+    let text = (Artifact.toText sample).Replace("\"formatVersion\":1", "\"formatVersion\":99")
+
+    match Artifact.ofText text with
+    | Ok _ -> failwith "a future format version was accepted"
+    | Microsoft.FSharp.Core.Error message ->
+        Assert.Contains("99", message)
+        Assert.Contains("Recompile", message)
+
+[<Fact>]
+let ``text that is not an artifact is refused rather than half-read`` () =
+    match Artifact.ofText "{\"hello\":1}" with
+    | Ok _ -> failwith "arbitrary JSON was accepted as an artifact"
+    | Microsoft.FSharp.Core.Error message -> Assert.Contains("artifact", message)
+
+[<Fact>]
+let ``malformed JSON is refused`` () =
+    match Artifact.ofText "{not json" with
+    | Ok _ -> failwith "malformed JSON was accepted"
+    | Microsoft.FSharp.Core.Error message -> Assert.Contains("could not be read", message)
+
+// ---- coverage ---------------------------------------------------------------
+//
+// The sample is only an oracle while it carries every case. A new union case
+// added to the model would otherwise be rendered by a `match` that does not
+// compile — or worse, by one that does, through a catch-all nobody noticed.
+
+let private renderedText = Artifact.toText sample
+
+let private assertEveryCaseReaches (expectedTags: (string * string) list) =
+    let missing = expectedTags |> List.filter (fun (_, tag) -> not (renderedText.Contains tag))
+
+    Assert.True(
+        List.isEmpty missing,
+        sprintf
+            "the sample does not exercise: %s"
+            (missing |> List.map fst |> String.concat ", "))
+
+[<Fact>]
+let ``the sample carries every SchemaObject case`` () =
+    let cases = FSharpType.GetUnionCases typeof<SchemaObject> |> Array.map (fun c -> c.Name)
+
+    Assert.Equal<string array>(
+        [| "TableObject"; "ViewObject"; "RoutineObject"; "SequenceObject" |],
+        cases)
+
+    assertEveryCaseReaches
+        [ "TableObject", "\"kind\":\"table\""
+          "ViewObject", "\"kind\":\"view\""
+          "RoutineObject", "\"kind\":\"routine\""
+          "SequenceObject", "\"kind\":\"sequence\"" ]
+
+[<Fact>]
+let ``the sample carries every GrantTarget case`` () =
+    Assert.Equal(4, (FSharpType.GetUnionCases typeof<GrantTarget>).Length)
+
+    assertEveryCaseReaches
+        [ "Relation", "\"kind\":\"relation\""
+          "Schema", "\"kind\":\"schema\""
+          "Routine", "\"kind\":\"routine\""
+          "RelationColumn", "\"kind\":\"relation-column\"" ]
+
+[<Fact>]
+let ``the sample carries every PolicyCommand case`` () =
+    Assert.Equal(5, (FSharpType.GetUnionCases typeof<PolicyCommand>).Length)
+
+    assertEveryCaseReaches
+        [ "All", "\"command\":\"all\""
+          "Select", "\"command\":\"select\""
+          "Insert", "\"command\":\"insert\""
+          "Update", "\"command\":\"update\""
+          "Delete", "\"command\":\"delete\"" ]
+
+[<Fact>]
+let ``the sample carries every CategoryState case`` () =
+    Assert.Equal(4, (FSharpType.GetUnionCases typeof<CategoryState>).Length)
+
+    assertEveryCaseReaches
+        [ "Complete", "\"state\":\"complete\""
+          "Partial", "\"state\":\"partial\""
+          "Inaccessible", "\"state\":\"inaccessible\""
+          "NotRequested", "\"state\":\"not-requested\"" ]
+
+[<Fact>]
+let ``the sample carries every RowSecuritySetting case`` () =
+    Assert.Equal(4, (FSharpType.GetUnionCases typeof<RowSecuritySetting>).Length)
+    assertEveryCaseReaches [ "Enable", "\"enable\""; "Disable", "\"disable\""; "Force", "\"force\""; "NoForce", "\"no-force\"" ]
+
+[<Fact>]
+let ``the sample carries every trigger timing and level`` () =
+    Assert.Equal(3, (FSharpType.GetUnionCases typeof<TriggerTiming>).Length)
+    Assert.Equal(2, (FSharpType.GetUnionCases typeof<TriggerLevel>).Length)
+
+    assertEveryCaseReaches
+        [ "Before", "\"timing\":\"before\""
+          "After", "\"timing\":\"after\""
+          "InsteadOf", "\"timing\":\"instead-of\""
+          "Row", "\"level\":\"row\""
+          "Statement", "\"level\":\"statement\"" ]
+
+[<Fact>]
+let ``the sample carries every ManagementScope case`` () =
+    Assert.Equal(5, (FSharpType.GetUnionCases typeof<ManagementScope>).Length)
+
+    assertEveryCaseReaches
+        [ "Managed", "\"scope\":\"managed\""
+          "Observed", "\"scope\":\"observed\""
+          "ExtensionOwned", "\"scope\":\"extension-owned\""
+          "SystemOwned", "\"scope\":\"system-owned\"" ]
+
+// ---- what compile refuses ---------------------------------------------------
+//
+// `plan` reports an unreadable file as a warning and carries on with an
+// incomplete desired state, which suppresses every drop and still shows the
+// operator what Strata CAN say. `compile` refuses. An artifact is a claim that
+// the project was read whole, and a deployment has no source tree to check the
+// claim against, so a hole in it travels.
+
+open System.IO
+open Strata.Host.PgParser
+
+let private parser =
+    PgParserAdapter.PostgresParser() :> Strata.Analysis.DialectPort.IDialectParser
+
+let private withProject (files: (string * string) list) (body: string -> unit) =
+    let root = Path.Combine(Path.GetTempPath(), "strata-artifact-" + System.Guid.NewGuid().ToString("N"))
+
+    try
+        for relative, contents in files do
+            let path = Path.Combine(root, relative)
+            Directory.CreateDirectory(Path.GetDirectoryName path) |> ignore
+            File.WriteAllText(path, contents)
+
+        body root
+    finally
+        try Directory.Delete(root, true) with _ -> ()
+
+let private manifest (includes: string list) =
+    "{\"include\":["
+    + (includes |> List.map (fun i -> "\"" + i + "\"") |> String.concat ",")
+    + "]}"
+
+[<Fact>]
+let ``a project that reads whole has no problems`` () =
+    withProject
+        [ "strata.json", manifest [ "schema/shop/tables/product.sql" ]
+          "schema/shop/tables/product.sql", "CREATE TABLE shop.product (id bigint PRIMARY KEY);" ]
+        (fun root ->
+            match Strata.Cli.Compile.load parser root with
+            | Ok loaded ->
+                Assert.Empty loaded.Problems
+                Assert.Single loaded.Declared.Snapshot.Objects |> ignore
+            | Microsoft.FSharp.Core.Error message -> failwithf "the project would not load: %s" message)
+
+[<Fact>]
+let ``a file that does not parse is a problem, named by path`` () =
+    withProject
+        [ "strata.json", manifest [ "schema/shop/tables/broken.sql" ]
+          "schema/shop/tables/broken.sql", "CREATE TABL shop.broken (id bigint);" ]
+        (fun root ->
+            match Strata.Cli.Compile.load parser root with
+            | Ok loaded ->
+                Assert.NotEmpty loaded.Problems
+                Assert.Contains(loaded.Problems, fun (path, _) -> path.EndsWith "broken.sql")
+            | Microsoft.FSharp.Core.Error message -> failwithf "the project would not load: %s" message)
+
+[<Fact>]
+let ``a declaration in the wrong schema directory is a problem`` () =
+    // `DF-STRATA-2026-C3A2` calls this a COMPILE ERROR. It landed as a load
+    // failure, because the check needs the parser and the hard project errors do
+    // not, and that record says so explicitly: it becomes fatal when compile
+    // arrives. This is the test that it did.
+    withProject
+        [ "strata.json", manifest [ "schema/shop/tables/thing.sql" ]
+          "schema/shop/tables/thing.sql", "CREATE TABLE other.thing (id bigint);" ]
+        (fun root ->
+            match Strata.Cli.Compile.load parser root with
+            | Ok loaded ->
+                Assert.Contains(
+                    loaded.Problems,
+                    fun (_, reason) -> reason.Contains "schema directory")
+            | Microsoft.FSharp.Core.Error message -> failwithf "the project would not load: %s" message)
+
+[<Fact>]
+let ``plan and compile read the same project the same way`` () =
+    // The duplication that let the awkward-forms corpus test a pipeline that did
+    // not ship (WI-0093). With no problems, the snapshot `plan` works from is
+    // the one `compile` writes down — not a copy of it.
+    withProject
+        [ "strata.json", manifest [ "schema/shop/tables/product.sql" ]
+          "schema/shop/tables/product.sql", "CREATE TABLE shop.product (id bigint PRIMARY KEY);" ]
+        (fun root ->
+            match Strata.Cli.Compile.load parser root with
+            | Ok loaded -> Assert.Equal(loaded.Declared.Snapshot, Strata.Cli.Compile.snapshot loaded)
+            | Microsoft.FSharp.Core.Error message -> failwithf "the project would not load: %s" message)
+
+[<Fact>]
+let ``an artifact records the server that rendered it`` () =
+    // Every normalised expression in an artifact is the COMPILING server's
+    // rendering. Without knowing which server that was, a deployment cannot
+    // tell whether its target would render the same way, and WI-0084's refusal
+    // has nothing to stand on.
+    match Artifact.ofText (Artifact.toText sample) with
+    | Ok restored -> Assert.Equal(Some 16, restored.CompiledWith |> Option.map (fun v -> v.Major))
+    | Microsoft.FSharp.Core.Error message -> failwithf "the artifact could not be read: %s" message
+
+[<Fact>]
+let ``an unreadable compiling version survives as unknown, not as a match`` () =
+    // ER-008. An artifact whose compiling version could not be read must come
+    // back as None so a deployment refuses to assume compatibility, rather than
+    // reading absent as agreeable.
+    let blind = { sample with CompiledWith = None }
+
+    match Artifact.ofText (Artifact.toText blind) with
+    | Ok restored -> Assert.True(restored.CompiledWith.IsNone)
+    | Microsoft.FSharp.Core.Error message -> failwithf "the artifact could not be read: %s" message
+
+// ---- what deploy refuses ----------------------------------------------------
+
+open Strata.Semantic.Schema
+
+let private pg (major: int) (full: string) : ServerVersion = { Major = major; Full = full }
+
+[<Fact>]
+let ``a matching major version deploys`` () =
+    Assert.Equal(None, Strata.Cli.Deploy.versionProblem (Some(pg 16 "16.2")) (Ok(pg 16 "16.15")))
+
+[<Fact>]
+let ``a different major version is refused`` () =
+    // Every normalised expression in an artifact is the COMPILING server's
+    // rendering, and deparsing changes between majors. Deploying across one
+    // would compare against renderings the target never produces: not an error,
+    // a plan full of changes to objects nobody touched — indistinguishable from
+    // real drift, and `--approve` would wave it through.
+    match Strata.Cli.Deploy.versionProblem (Some(pg 14 "14.9")) (Ok(pg 16 "16.15")) with
+    | None -> failwith "a cross-major deployment was allowed"
+    | Some problem ->
+        Assert.Contains("14.9", problem)
+        Assert.Contains("16.15", problem)
+        Assert.Contains("Recompile", problem)
+
+[<Fact>]
+let ``a differing minor version is not refused`` () =
+    // PostgreSQL does not change catalog output in a minor release. Refusing
+    // here would refuse every ordinary deployment and teach everyone to bypass
+    // the check, which is worse than not having it.
+    Assert.Equal(None, Strata.Cli.Deploy.versionProblem (Some(pg 16 "16.2")) (Ok(pg 16 "16.15")))
+
+[<Fact>]
+let ``an artifact that records no version is refused, not assumed compatible`` () =
+    // ER-008: unknown is not compatible.
+    match Strata.Cli.Deploy.versionProblem None (Ok(pg 16 "16.15")) with
+    | None -> failwith "an artifact with no recorded version was allowed"
+    | Some problem -> Assert.Contains("does not record", problem)
+
+[<Fact>]
+let ``an unreadable target version is refused, not assumed compatible`` () =
+    match Strata.Cli.Deploy.versionProblem (Some(pg 16 "16.15")) (Microsoft.FSharp.Core.Error "permission denied") with
+    | None -> failwith "an unreadable target version was allowed"
+    | Some problem -> Assert.Contains("could not be read", problem)
+
+[<Fact>]
+let ``the schemas an artifact manages come from the objects it declares`` () =
+    // Derived rather than carried, because a declaration's schema must match its
+    // directory and an empty schema directory does not compile
+    // (DF-STRATA-2026-C3A2) — so the two sets are equal by construction and a
+    // second copy could only ever disagree with the first.
+    Assert.Equal<string list>([ "shop" ], Strata.Cli.Deploy.managedSchemas sample)
+
+[<Fact>]
+let ``resolved reference rows are not carried in the artifact`` () =
+    // Half of a resolved row is what the TARGET already holds, so an artifact
+    // carrying it would carry one database's contents to another. It did,
+    // briefly: an artifact compiled against a populated database deployed to an
+    // empty one and inserted nothing — four statements instead of six, exit 0,
+    // and a lookup table with no rows. `deploy` resolves them against its own
+    // target instead, so they must come back EMPTY here.
+    Assert.NotEmpty sample.Data
+    Assert.NotEmpty sample.DataFailures
+
+    match Artifact.ofText (Artifact.toText sample) with
+    | Ok restored ->
+        Assert.Empty restored.Data
+        Assert.Empty restored.DataFailures
+        // The DECLARED rows are carried, as the literal tokens the author wrote.
+        // Those are desired state and are what deploy resolves from.
+        Assert.NotEmpty restored.Declared.Data
+    | Microsoft.FSharp.Core.Error message -> failwithf "the artifact could not be read: %s" message
+
+// ---- validating against an artifact -----------------------------------------
+
+[<Fact>]
+let ``the default search path is the schemas the artifact manages`` () =
+    // And NOT `public`. A real connection's search_path usually ends there, so
+    // including it looks obviously right — but the artifact says nothing about
+    // an unmanaged schema, so `FROM product` becomes genuinely ambiguous
+    // between the declared `shop.product` and a `public.product` that may or may
+    // not exist. Strata then says so, correctly, for every unqualified name in
+    // every file. Measured: the same query is VALID against `shop` and
+    // UNVERIFIABLE against `shop,public`. Being uselessly right is still not
+    // useful.
+    Assert.Equal<string list>(
+        [ "shop" ],
+        Strata.Cli.OfflineValidation.searchPathFor None sample
+        |> List.map (fun (i: Identifier) -> i.Text))
+
+[<Fact>]
+let ``an explicit search path is taken as given`` () =
+    // Including a schema the artifact knows nothing about: the caller asked for
+    // the honest ambiguity back.
+    Assert.Equal<string list>(
+        [ "shop"; "public" ],
+        Strata.Cli.OfflineValidation.searchPathFor (Some " shop , public ") sample
+        |> List.map (fun (i: Identifier) -> i.Text))
+
+[<Fact>]
+let ``an empty search path entry is dropped rather than becoming a schema`` () =
+    Assert.Equal<string list>(
+        [ "shop" ],
+        Strata.Cli.OfflineValidation.searchPathFor (Some "shop,,") sample
+        |> List.map (fun (i: Identifier) -> i.Text))
+
+// ---- integrity and signature ------------------------------------------------
+//
+// Two different claims, and the tests keep them apart because the code does.
+// Integrity answers "is this the artifact that was compiled?" and anyone who
+// changes the content can recompute it. A signature answers "did the holder of
+// this key produce it?" and is the only one of the two that resists someone who
+// WANTS to change the artifact.
+
+let private digested (r: ResolvedDesiredState) =
+    { Attestation.none with Digest = Some(Attestation.digestOf r) }
+
+[<Fact>]
+let ``a digest covers the content, not the file's formatting`` () =
+    // The digest is taken over the canonical body, which the reader reconstructs
+    // rather than reading from the file. So re-laying-out the wrapper cannot
+    // break it, and changing a single declared character must.
+    let changed =
+        { sample with
+            Declared = { sample.Declared with Declarations = [ qn "shop" "product", "CREATE TABLE shop.product (id int);" ] } }
+
+    Assert.NotEqual<string>(Attestation.digestOf sample, Attestation.digestOf changed)
+    Assert.Equal(Attestation.digestOf sample, Attestation.digestOf sample)
+
+[<Fact>]
+let ``an artifact that matches its digest reads back`` () =
+    match Attestation.readFile (Attestation.renderFile (digested sample) sample) with
+    | Ok (_, wrapper) -> Assert.True wrapper.Digest.IsSome
+    | Microsoft.FSharp.Core.Error message -> failwithf "a well-formed artifact was refused: %s" message
+
+[<Fact>]
+let ``an artifact edited after compiling is refused by its own digest`` () =
+    // The ordinary failure: a file changed by hand, truncated by a bad copy,
+    // merged badly. Caught without any key at all.
+    let text = Attestation.renderFile (digested sample) sample
+    let tampered = text.Replace("CREATE TABLE shop.product (id bigint);", "CREATE TABLE shop.product (id int);")
+    Assert.NotEqual<string>(text, tampered)
+
+    match Attestation.readFile tampered with
+    | Ok _ -> failwith "an edited artifact was accepted"
+    | Microsoft.FSharp.Core.Error message -> Assert.Contains("integrity digest", message)
+
+[<Fact>]
+let ``a bare artifact with no wrapper still reads`` () =
+    // Written by a build that predates this. Whether that is ACCEPTABLE is the
+    // caller's policy, not the reader's — `--require-signature` is where a
+    // decision about provenance belongs.
+    match Attestation.readFile (Artifact.toText sample) with
+    | Ok (_, wrapper) ->
+        Assert.True wrapper.Digest.IsNone
+        Assert.True wrapper.Signature.IsNone
+    | Microsoft.FSharp.Core.Error message -> failwithf "a bare artifact was refused: %s" message
+
+[<Fact>]
+let ``a signature made by a key verifies against its public half`` () =
+    let privatePem, publicPem = Attestation.generateKeyPair ()
+
+    match Attestation.sign privatePem sample with
+    | Microsoft.FSharp.Core.Error message -> failwithf "signing failed: %s" message
+    | Ok signature -> Assert.Equal(Ok(), Attestation.verify publicPem sample signature)
+
+[<Fact>]
+let ``a signature does not verify against a different key`` () =
+    let privatePem, _ = Attestation.generateKeyPair ()
+    let _, otherPublicPem = Attestation.generateKeyPair ()
+
+    match Attestation.sign privatePem sample with
+    | Microsoft.FSharp.Core.Error message -> failwithf "signing failed: %s" message
+    | Ok signature ->
+        match Attestation.verify otherPublicPem sample signature with
+        | Ok () -> failwith "a signature verified against the wrong key"
+        | Microsoft.FSharp.Core.Error message -> Assert.Contains("does not match", message)
+
+[<Fact>]
+let ``a signature does not verify against changed content`` () =
+    // The case the digest CANNOT catch, because an attacker who changes content
+    // recomputes the digest. This is what the key is for.
+    let privatePem, publicPem = Attestation.generateKeyPair ()
+    let changed = { sample with Warnings = [ "injected" ] }
+
+    match Attestation.sign privatePem sample with
+    | Microsoft.FSharp.Core.Error message -> failwithf "signing failed: %s" message
+    | Ok signature ->
+        match Attestation.verify publicPem changed signature with
+        | Ok () -> failwith "a signature verified against changed content"
+        | Microsoft.FSharp.Core.Error message -> Assert.Contains("does not match", message)
+
+[<Fact>]
+let ``an unsigned artifact is refused when a signature is required`` () =
+    match Attestation.provenanceProblem true None sample Attestation.none with
+    | None -> failwith "an unsigned artifact satisfied --require-signature"
+    | Some problem -> Assert.Contains("not signed", problem)
+
+[<Fact>]
+let ``a signature with no key to check it against is refused`` () =
+    // "A signature nobody verifies is decoration." Accepting it would make
+    // --require-signature a flag that proves the artifact has SOME signature.
+    let wrapper = { Attestation.none with Signature = Some(Attestation.SignatureAlgorithm, "irrelevant") }
+
+    match Attestation.provenanceProblem true None sample wrapper with
+    | None -> failwith "a signature with no key satisfied --require-signature"
+    | Some problem -> Assert.Contains("no --public-key", problem)
+
+[<Fact>]
+let ``a signature algorithm this build cannot check is refused, not ignored`` () =
+    let wrapper = { Attestation.none with Signature = Some("ed25519", "irrelevant") }
+    let _, publicPem = Attestation.generateKeyPair ()
+
+    match Attestation.provenanceProblem true (Some publicPem) sample wrapper with
+    | None -> failwith "an unknown signature algorithm was ignored"
+    | Some problem -> Assert.Contains("ed25519", problem)
+
+[<Fact>]
+let ``an unsigned artifact passes when no signature is required`` () =
+    // The default. Requiring one by default would make every existing pipeline
+    // fail on upgrade, and a check everyone disables protects nobody.
+    Assert.Equal(None, Attestation.provenanceProblem false None sample Attestation.none)
+
+[<Fact>]
+let ``a valid signature satisfies the requirement`` () =
+    let privatePem, publicPem = Attestation.generateKeyPair ()
+
+    match Attestation.sign privatePem sample with
+    | Microsoft.FSharp.Core.Error message -> failwithf "signing failed: %s" message
+    | Ok signature ->
+        let wrapper = { Attestation.none with Signature = Some(Attestation.SignatureAlgorithm, signature) }
+        Assert.Equal(None, Attestation.provenanceProblem true (Some publicPem) sample wrapper)

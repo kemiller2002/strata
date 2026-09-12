@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 92,
+  "nextSeq": 97,
   "items": [
     {
       "id": "WI-0001",
@@ -1035,14 +1035,13 @@
         "tooling"
       ],
       "priority": "low",
-      "status": "blocked",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-12T00:54:31Z",
-      "updatedAt": "2026-09-12T00:59:08Z",
+      "updatedAt": "2026-09-12T23:46:48Z",
       "createdBy": "claude",
       "source": "manual",
-      "sourceReference": null,
-      "blockedReason": "The ros CLI is an upstream self-contained binary fetched by ./ros, and queue.md is generated. Reported, not fixed here."
+      "sourceReference": null
     },
     {
       "id": "WI-0062",
@@ -1396,10 +1395,10 @@
         "strata"
       ],
       "priority": "medium",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-12T19:16:35Z",
-      "updatedAt": "2026-09-12T19:16:35Z",
+      "updatedAt": "2026-09-12T23:45:03Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -1428,10 +1427,10 @@
         "strata"
       ],
       "priority": "high",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-12T19:16:35Z",
-      "updatedAt": "2026-09-12T19:16:35Z",
+      "updatedAt": "2026-09-12T22:43:56Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -1444,10 +1443,10 @@
         "strata"
       ],
       "priority": "high",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-12T19:16:35Z",
-      "updatedAt": "2026-09-12T19:16:35Z",
+      "updatedAt": "2026-09-12T22:56:09Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -1460,10 +1459,10 @@
         "strata"
       ],
       "priority": "medium",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-12T19:16:35Z",
-      "updatedAt": "2026-09-12T19:16:35Z",
+      "updatedAt": "2026-09-12T23:11:08Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -1476,10 +1475,10 @@
         "strata"
       ],
       "priority": "low",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-12T19:16:35Z",
-      "updatedAt": "2026-09-12T19:16:35Z",
+      "updatedAt": "2026-09-12T23:17:11Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -1492,10 +1491,10 @@
         "strata"
       ],
       "priority": "medium",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-12T19:16:35Z",
-      "updatedAt": "2026-09-12T19:16:35Z",
+      "updatedAt": "2026-09-12T23:29:11Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -1508,10 +1507,10 @@
         "strata"
       ],
       "priority": "low",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-12T19:16:35Z",
-      "updatedAt": "2026-09-12T19:16:35Z",
+      "updatedAt": "2026-09-12T23:33:34Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -1524,10 +1523,10 @@
         "strata"
       ],
       "priority": "low",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-12T19:16:35Z",
-      "updatedAt": "2026-09-12T19:16:35Z",
+      "updatedAt": "2026-09-12T23:20:42Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -1555,10 +1554,80 @@
       "description": null,
       "tags": [],
       "priority": "medium",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-12T21:38:38Z",
-      "updatedAt": "2026-09-12T21:38:38Z",
+      "updatedAt": "2026-09-12T22:14:19Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0092",
+      "title": "A view whose AS is followed by a newline is silently never compared",
+      "description": "ShadowNormalisation.normaliseViews locates the view body with ddl.IndexOf(\" AS \"), which requires a SPACE on both sides of the keyword. The ordinary formatting CREATE VIEW x AS<newline>    SELECT ... does not match, so the view is dropped from the result by List.choose and never compared. Reproduced live: the deployed body was changed from status = 'open' to status = 'closed' and the plan proposed ZERO changes. The not-compared disclosure fires, so nothing is claimed falsely, but a declared view can drift with no proposed change. Fix by finding the first AS keyword at nesting depth zero and outside quotes, rather than by a literal substring.",
+      "tags": [],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T22:14:06Z",
+      "updatedAt": "2026-09-12T22:15:15Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0093",
+      "title": "The awkward-forms corpus cannot see a comparison that silently did not happen",
+      "description": "AwkwardFormsTests asserts only that result.Changes is EMPTY. WI-0092 produced an empty change list precisely BECAUSE the comparison was skipped, so the corpus is blind to the defect class it exists to catch: a false clean and a correct clean look identical to it. Add an assertion that no fixture in awkward/converges produces a not-compared disclosure for the objects it declares, and add fixtures for the formatting shapes that triggered WI-0092 (AS followed by a newline; a leading comment containing a parenthesis).",
+      "tags": [],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T22:23:35Z",
+      "updatedAt": "2026-09-12T22:24:38Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0094",
+      "title": "normalisePolicies rewrites the table name by blind string replacement",
+      "description": "ShadowNormalisation.normalisePolicies rewrites a policy's table references with acc.Replace(spelling, target), which is the same lexically-unaware surgery WI-0092 removed from the two body-offset searches. A table name appearing inside a string literal in the policy expression -- USING (note = 'see shop.product') -- is rewritten too, so the shadow policy carries a different literal than the declared one and its rendered expression compares unequal forever. Route it through the scanner added in WI-0092 so replacement happens only in significant text.",
+      "tags": [],
+      "priority": "medium",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T22:23:36Z",
+      "updatedAt": "2026-09-12T22:39:31Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0095",
+      "title": "A view with a column-alias list never converges",
+      "description": "normaliseViews reconstructs the declaration as CREATE VIEW <shadow> AS <body>, discarding everything between the name and the AS keyword -- including the column-alias list. pg_get_viewdef FOLDS that list into the query it renders: CREATE VIEW v (a, b) AS SELECT id, weight comes back as SELECT id AS a, weight AS b. So the shadow renders without the aliases, the deployed view renders with them, and Strata proposes replace-view on every run forever. Same family as WI-0054, an unnamed constraint never converging. Found by the view-formatting corpus case added in WI-0093, which is the first time the corpus compared a view at all.",
+      "tags": [],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T22:34:23Z",
+      "updatedAt": "2026-09-12T22:34:49Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0096",
+      "title": "No harness for running the CLI as a process",
+      "description": "Several commands' contracts ARE their exit codes -- drift returns 0/1/2, compile refuses with 1, deploy refuses a version mismatch with 2 -- and the test project has no way to run strata as a process and assert on them. Each is currently covered by a live check recorded in a work item conclusion, which is evidence that does not re-run. A harness that invokes the built binary against a scratch database would turn those into tests.",
+      "tags": [],
+      "priority": "medium",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T23:19:53Z",
+      "updatedAt": "2026-09-12T23:52:02Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null
