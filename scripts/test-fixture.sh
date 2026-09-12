@@ -39,7 +39,8 @@ psql -v ON_ERROR_STOP=1 -q -d postgres -c "DROP DATABASE IF EXISTS ${DB}"
 psql -v ON_ERROR_STOP=1 -q -d postgres -c "CREATE DATABASE ${DB} OWNER ${ROLE}"
 psql -v ON_ERROR_STOP=1 -q -d "${DB}" -f scripts/test-fixture.sql
 
+CONNECTION="Host=${PGHOST:-localhost};Port=${PGPORT:-5432};Database=${DB};Username=${ROLE};Password=${PASSWORD}"
+
 echo "Fixture ready. Run the live tests with:"
 echo
-echo "  STRATA_TEST_PG=\"Host=localhost;Port=\${PGPORT:-5432};Database=${DB};Username=${ROLE};Password=${PASSWORD}\" \\"
-echo "    dotnet test Strata.sln -c Release"
+echo "  STRATA_TEST_PG=\"${CONNECTION}\" dotnet test Strata.sln -c Release"

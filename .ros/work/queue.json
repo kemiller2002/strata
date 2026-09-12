@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 59,
+  "nextSeq": 60,
   "items": [
     {
       "id": "WI-0001",
@@ -988,6 +988,23 @@
       "attachments": [],
       "createdAt": "2026-09-12T00:34:52Z",
       "updatedAt": "2026-09-12T00:34:52Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0059",
+      "title": "CI builds nothing and runs no tests",
+      "description": "The only workflow runs ROS validation. No machine but the author's has ever compiled the F# or run a test. Add a build-and-test job with a PostgreSQL service, build the fixture, run the suite, and fail the run if any test was skipped — a suite that skips the live tests passes while testing nothing.",
+      "tags": [
+        "strata",
+        "ci"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T00:46:36Z",
+      "updatedAt": "2026-09-12T00:46:36Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
