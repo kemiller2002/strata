@@ -1,5 +1,27 @@
 [
   {
+    "confidence": "medium",
+    "created": "2026-09-12",
+    "created_by_agent": "claude",
+    "decision_type": "product-architecture",
+    "evidence": [],
+    "id": "DF-STRATA-2026-2F6B",
+    "path": "research/decisions/DF-STRATA-2026-2F6B--compile-to-a-deployable-artifact.md",
+    "status": "accepted",
+    "superseded_by": [],
+    "supersedes": [],
+    "tags": [
+      "strata",
+      "compile",
+      "artifact",
+      "deployment",
+      "dacpac",
+      "agents"
+    ],
+    "title": "Strata compiles a project to a deployable artifact, and deployment reads the artifact rather than the source tree",
+    "updated": "2026-09-12"
+  },
+  {
     "confidence": "high",
     "created": "2026-09-11",
     "created_by_agent": "claude",
@@ -20,6 +42,71 @@
     ],
     "title": "Adopt pgsqlparser as Strata's PostgreSQL parser adapter",
     "updated": "2026-09-11"
+  },
+  {
+    "confidence": "high",
+    "created": "2026-09-12",
+    "created_by_agent": "claude",
+    "decision_type": "architecture",
+    "evidence": [],
+    "id": "DF-STRATA-2026-5E9F",
+    "path": "research/decisions/DF-STRATA-2026-5E9F--destructive-changes-never-allow.md",
+    "status": "accepted",
+    "superseded_by": [],
+    "supersedes": [],
+    "tags": [
+      "strata",
+      "gate",
+      "destructive",
+      "analysis-scope",
+      "er-008"
+    ],
+    "title": "A potentially destructive change never receives an Allow verdict, whatever the corpus found",
+    "updated": "2026-09-12"
+  },
+  {
+    "confidence": "medium",
+    "created": "2026-09-12",
+    "created_by_agent": "claude",
+    "decision_type": "product-architecture",
+    "evidence": [],
+    "id": "DF-STRATA-2026-7D14",
+    "path": "research/decisions/DF-STRATA-2026-7D14--the-project-directory-is-closed.md",
+    "status": "accepted",
+    "superseded_by": [],
+    "supersedes": [
+      "DF-STRATA-2026-A4D9"
+    ],
+    "tags": [
+      "strata",
+      "project-file",
+      "manifest",
+      "determinism",
+      "agents"
+    ],
+    "title": "A Strata project is a closed directory with an explicit include list, and every mismatch is an error",
+    "updated": "2026-09-12"
+  },
+  {
+    "confidence": "medium",
+    "created": "2026-09-12",
+    "created_by_agent": "claude",
+    "decision_type": "product",
+    "evidence": [],
+    "id": "DF-STRATA-2026-8B60",
+    "path": "research/decisions/DF-STRATA-2026-8B60--what-compile-time-safe-claims.md",
+    "status": "accepted",
+    "superseded_by": [],
+    "supersedes": [],
+    "tags": [
+      "strata",
+      "validation",
+      "compile-time",
+      "scope",
+      "er-008"
+    ],
+    "title": "What Strata's compile-time safety claims, and what it does not",
+    "updated": "2026-09-12"
   },
   {
     "confidence": "high",
@@ -54,8 +141,11 @@
     ],
     "id": "DF-STRATA-2026-A4D9",
     "path": "research/decisions/DF-STRATA-2026-A4D9--project-file-and-layout.md",
-    "status": "accepted",
-    "superseded_by": [],
+    "status": "superseded",
+    "superseded_by": [
+      "DF-STRATA-2026-7D14",
+      "DF-STRATA-2026-C3A2"
+    ],
     "supersedes": [],
     "tags": [
       "strata",
@@ -65,7 +155,7 @@
       "q-003"
     ],
     "title": "A Strata project is a strata.json manifest plus per-object SQL files under schema/, and both validation and deployment read it",
-    "updated": "2026-09-11"
+    "updated": "2026-09-12"
   },
   {
     "confidence": "high",
@@ -87,6 +177,29 @@
     ],
     "title": "Desired schema is authored as one declarative file per object, DACPAC-style, and Strata's job is to diff it against the live database",
     "updated": "2026-09-11"
+  },
+  {
+    "confidence": "medium",
+    "created": "2026-09-12",
+    "created_by_agent": "claude",
+    "decision_type": "product-architecture",
+    "evidence": [],
+    "id": "DF-STRATA-2026-C3A2",
+    "path": "research/decisions/DF-STRATA-2026-C3A2--schema-names-are-directory-names.md",
+    "status": "accepted",
+    "superseded_by": [],
+    "supersedes": [
+      "DF-STRATA-2026-A4D9"
+    ],
+    "tags": [
+      "strata",
+      "schemas",
+      "identifiers",
+      "portability",
+      "ng-006"
+    ],
+    "title": "The managed schema set is derived from directory names, which must equal the schema name exactly and match a portable identifier pattern",
+    "updated": "2026-09-12"
   },
   {
     "confidence": "medium",

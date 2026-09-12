@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "claude",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-09-12T11:02:12Z",
+  "updatedAt": "2026-09-12T20:05:01Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -1744,6 +1744,61 @@
         "EXE-20260912T110156643Z-499d7945"
       ],
       "completedAt": "2026-09-12T11:02:12Z"
+    },
+    {
+      "id": "WI-0090",
+      "type": "research",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "research-record",
+          "path": "research/decisions/DF-STRATA-2026-2F6B--compile-to-a-deployable-artifact.md"
+        },
+        {
+          "type": "research-record",
+          "path": "research/decisions/DF-STRATA-2026-7D14--the-project-directory-is-closed.md"
+        },
+        {
+          "type": "research-record",
+          "path": "research/decisions/DF-STRATA-2026-C3A2--schema-names-are-directory-names.md"
+        },
+        {
+          "type": "research-record",
+          "path": "research/decisions/DF-STRATA-2026-5E9F--destructive-changes-never-allow.md"
+        },
+        {
+          "type": "research-record",
+          "path": "research/decisions/DF-STRATA-2026-8B60--what-compile-time-safe-claims.md"
+        }
+      ],
+      "updatedAt": "2026-09-12T19:17:20Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T191710819Z-2477b980"
+      ],
+      "completedAt": "2026-09-12T19:17:20Z",
+      "conclusion": "Five decision records written, DF-STRATA-2026-A4D9 marked superseded in part, roadmap updated, and WI-0078..WI-0089 captured. The rejected alternatives are recorded alongside the conclusions — Strata generating SQL, and signing each source file — because both were proposed seriously and the reasons against them are the load-bearing part. One finding from checking rather than assuming: DF-STRATA-2026-5E9F documents that the gate currently promotes a clean corpus scan into an Allow verdict for DropTable, which contradicts the analysis-scope discipline the rest of the codebase enforces."
+    },
+    {
+      "id": "WI-0078",
+      "type": "implementation",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Application/DeploymentGate.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/DeploymentGateTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T20:05:01Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T195811585Z-adba25b5"
+      ],
+      "completedAt": "2026-09-12T20:05:01Z"
     }
   ]
 }

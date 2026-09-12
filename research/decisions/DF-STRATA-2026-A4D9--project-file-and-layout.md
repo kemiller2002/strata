@@ -1,19 +1,32 @@
 ---
 id: DF-STRATA-2026-A4D9
 title: A Strata project is a strata.json manifest plus per-object SQL files under schema/, and both validation and deployment read it
-status: accepted
+status: superseded
 decision_type: product-architecture
 created: 2026-09-11
-updated: 2026-09-11
+updated: 2026-09-12
 created_by_agent: claude
 confidence: medium
 supersedes: []
-superseded_by: []
+superseded_by: [DF-STRATA-2026-7D14, DF-STRATA-2026-C3A2]
 evidence: [EV-STRATA-2026-C2F5]
 tags: [strata, project-file, desired-state, layout, q-003]
 ---
 
 # Decision Record
+
+> **Superseded, in part.** `strata.json` and the `schema/<name>/<kind>/` layout
+> stand. Two things here were replaced on 2026-09-12:
+>
+> - project membership is no longer a directory walk — an explicit `include`
+>   list is required and every mismatch is a compile error
+>   (`DF-STRATA-2026-7D14`);
+> - `managedSchemas` is removed — the managed schema set is derived from the
+>   directory names under `schemaRoot` (`DF-STRATA-2026-C3A2`).
+>
+> The `managedSchemas` rationale below is retained because it records *why* an
+> explicit managed scope was required in the first place, which the replacement
+> also satisfies.
 
 ## Decision
 
