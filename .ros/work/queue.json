@@ -899,10 +899,10 @@
         "testing"
       ],
       "priority": "medium",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-11T23:51:15Z",
-      "updatedAt": "2026-09-11T23:51:15Z",
+      "updatedAt": "2026-09-12T00:43:49Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null

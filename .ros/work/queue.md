@@ -55,9 +55,9 @@
 | WI-0050 | Indexes as desired state | complete | strata, desired-state | high |
 | WI-0051 | Triggers as desired state | complete | strata, desired-state | high |
 | WI-0052 | Table creations are not ordered by foreign key | complete | strata, diff | high |
-| WI-0053 | The live test fixture is not reproducible | captured | strata, testing | medium |
+| WI-0053 | The live test fixture is not reproducible | ready | strata, testing | medium |
 | WI-0054 | An unnamed constraint never converges | complete | strata, diff | high |
 | WI-0055 | apply has no way to accept a requires-approval finding | complete | strata, deployment | high |
 | WI-0056 | Reference data as desired state | complete | strata, desired-state | high |
-| WI-0057 | A declared row colliding with an undeclared deployed row is caught late | ready | strata, reference-data | medium |
+| WI-0057 | A declared row colliding with an undeclared deployed row is caught late | complete | strata, reference-data | medium |
 | WI-0058 | Constraint differences cannot be applied | complete | strata, diff | high |

@@ -34,8 +34,13 @@ and `.sde/architecture/FOUR-TIER-ARCHITECTURE.md`.
   slower on the extraction path, so never take a timing from one — a Debug
   `strata` binary says so on stderr.
 - Tests: `dotnet test tests/Strata.Tests/Strata.Tests.fsproj -c Release`
-- Live integration tests: set `STRATA_TEST_PG` to a PostgreSQL connection string;
-  without it those tests **skip** rather than pass silently.
+- Live integration tests: build the fixture with `scripts/test-fixture.sh`
+  (needs a superuser connection; drops and recreates `strata_test`), then set
+  `STRATA_TEST_PG` to the connection string it prints. Without `STRATA_TEST_PG`
+  those tests **skip** rather than pass silently — which looks like a green
+  suite while testing nothing, so build the fixture.
+  The test role must NOT be a superuser: three tests exist because the
+  connected role cannot read the `hidden` schema, and a superuser can.
 
 ## Areas without separate manifests
 

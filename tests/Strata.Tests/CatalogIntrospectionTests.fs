@@ -30,7 +30,8 @@ type RequiresPostgresAttribute() =
         base.Skip <-
             match connectionString with
             | Some _ -> null
-            | None -> "STRATA_TEST_PG not set; live PostgreSQL integration test skipped"
+            | None ->
+                "STRATA_TEST_PG not set; live PostgreSQL integration test skipped.                  Build the fixture with scripts/test-fixture.sh and set the connection string it prints."
 
 let private snapshot = lazy (CatalogIntrospection.introspect connectionString.Value)
 
