@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 67,
+  "nextSeq": 68,
   "items": [
     {
       "id": "WI-0001",
@@ -1125,6 +1125,23 @@
       "attachments": [],
       "createdAt": "2026-09-12T02:00:13Z",
       "updatedAt": "2026-09-12T02:00:13Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0067",
+      "title": "A column-level GRANT was widened to the whole table",
+      "description": "GRANT SELECT (id, total) ON t parses with the same RangeVar as a table-wide grant; the columns live in AccessPriv.cols, which the adapter never read. Column ACLs live in pg_attribute.attacl, which introspection does not read either, so the catalog side showed nothing and the diff proposed the TABLE-wide grant, which the gate allowed as additive. Strata would have handed out more access than the file asked for and executed it. Refuse column-level grants until column privileges are modelled.",
+      "tags": [
+        "strata",
+        "security"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T09:19:49Z",
+      "updatedAt": "2026-09-12T09:19:49Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null

@@ -740,3 +740,35 @@ let ``CURRENT_USER is refused: a file cannot fix who is connected`` () =
 
     Assert.Empty loaded.Grants
     Assert.Contains(loaded.Failures, fun f -> f.Reason.Contains "not declarable")
+
+[<Fact>]
+let ``a column-level GRANT is refused, never widened to the whole table`` () =
+    // The escalation this prevents: `GRANT SELECT (id) ON t` parses with the
+    // same RangeVar as a table-wide grant, and the columns live in a list that
+    // was not being read. Column ACLs live in pg_attribute.attacl, which is not
+    // read either — so the catalog side showed nothing, the diff proposed the
+    // TABLE-wide grant, and the gate allowed it as additive. Strata would have
+    // handed out more access than the file asked for, and executed it.
+    let loaded = load [ "g.sql", "GRANT SELECT (id, total) ON ref.a TO app_user;" ]
+
+    Assert.Empty loaded.Grants
+    Assert.Contains(loaded.Failures, fun f -> f.Reason.Contains "column-level GRANT")
+
+[<Fact>]
+let ``a table-wide GRANT on the same object is still read`` () =
+    // The guard must key on the column list, not on the statement shape: the
+    // ordinary case parses identically apart from that list.
+    let loaded = load [ "g.sql", "GRANT SELECT ON ref.a TO app_user;" ]
+
+    Assert.Equal<string list>([ "SELECT" ], (List.head loaded.Grants).Privileges)
+
+[<Fact>]
+let ``a schema or routine GRANT says which it was, not "no resolvable object"`` () =
+    // Both parse fine; they name their object as a String or an ObjectWithArgs
+    // rather than a RangeVar, so they reach the same branch a malformed
+    // statement would. The message has to tell them apart.
+    let schemaGrant = load [ "g.sql", "GRANT USAGE ON SCHEMA ref TO app_user;" ]
+    let routineGrant = load [ "g.sql", "GRANT EXECUTE ON FUNCTION ref.f(int) TO app_user;" ]
+
+    Assert.Contains(schemaGrant.Failures, fun f -> f.Reason.Contains "GRANT ON SCHEMA")
+    Assert.Contains(routineGrant.Failures, fun f -> f.Reason.Contains "GRANT ON FUNCTION")

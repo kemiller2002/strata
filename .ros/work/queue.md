@@ -68,4 +68,5 @@
 | WI-0063 | Record metrics for the validation and deployment increment | complete | strata, metrics | medium |
 | WI-0064 | Strata cannot create a schema | complete | strata, desired-state | high |
 | WI-0065 | Sequences as desired state | complete | strata, desired-state | high |
-| WI-0066 | Grants as desired state | ready | strata, desired-state | high |
+| WI-0066 | Grants as desired state | complete | strata, desired-state | high |
+| WI-0067 | A column-level GRANT was widened to the whole table | ready | strata, security | high |

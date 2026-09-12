@@ -1255,6 +1255,25 @@ module PgParserAdapter =
             Microsoft.FSharp.Core.Error "only a grant on a named object is read as declared state"
         else
 
+        // A COLUMN-level grant is refused, and this is the one refusal here that
+        // exists to prevent an escalation rather than a churn.
+        //
+        // `GRANT SELECT (id, total) ON t` parses with the same RangeVar as a
+        // table-wide grant; the columns live in `AccessPriv.cols`. Reading the
+        // privilege name and ignoring that list turns a two-column grant into a
+        // whole-table one — and because column ACLs live in
+        // `pg_attribute.attacl`, which is not read, the catalog side shows
+        // nothing, so the diff PROPOSES the table-wide grant and the gate
+        // allows it as additive. Strata would hand out more access than the
+        // file asked for, silently, and execute it.
+        let columnScoped =
+            not (isNull (box stmt.Privileges))
+            && stmt.Privileges
+               |> Seq.exists (fun n ->
+                   not (isNull (box n.AccessPriv))
+                   && not (isNull (box n.AccessPriv.Cols))
+                   && n.AccessPriv.Cols.Count > 0)
+
         let privileges =
             if isNull (box stmt.Privileges) || stmt.Privileges.Count = 0 then
                 allPrivileges stmt.Objtype
@@ -1291,8 +1310,24 @@ module PgParserAdapter =
                     else Some(qualifiedNameOf n.RangeVar.Schemaname n.RangeVar.Relname))
                 |> List.ofSeq
 
-        if List.isEmpty objects then
-            Microsoft.FSharp.Core.Error "GRANT with no resolvable object"
+        if columnScoped then
+            Microsoft.FSharp.Core.Error
+                "a column-level GRANT is not yet read as declared state: Strata does not model column privileges, and reading one as a table-wide grant would hand out more access than the file asked for"
+        elif List.isEmpty objects then
+            // A schema or routine grant parses fine but names its object as a
+            // String or an ObjectWithArgs rather than a RangeVar, so it lands
+            // here. Saying which it was beats "no resolvable object", which
+            // reads like a malformed statement.
+            match stmt.Objtype with
+            | ObjectType.ObjectSchema ->
+                Microsoft.FSharp.Core.Error "GRANT ON SCHEMA is not yet read as declared state"
+            | ObjectType.ObjectFunction
+            | ObjectType.ObjectProcedure
+            | ObjectType.ObjectRoutine ->
+                Microsoft.FSharp.Core.Error "GRANT ON FUNCTION, PROCEDURE or ROUTINE is not yet read as declared state"
+            | other ->
+                Microsoft.FSharp.Core.Error(
+                    sprintf "GRANT on %s is not read as declared state: no resolvable object" (string other))
         elif List.isEmpty grantees then
             Microsoft.FSharp.Core.Error "GRANT with no grantee a file can fix (CURRENT_USER and SESSION_USER are not declarable)"
         elif List.isEmpty privileges then
