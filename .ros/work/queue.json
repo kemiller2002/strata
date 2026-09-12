@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 93,
+  "nextSeq": 95,
   "items": [
     {
       "id": "WI-0001",
@@ -1569,10 +1569,38 @@
       "description": "ShadowNormalisation.normaliseViews locates the view body with ddl.IndexOf(\" AS \"), which requires a SPACE on both sides of the keyword. The ordinary formatting CREATE VIEW x AS<newline>    SELECT ... does not match, so the view is dropped from the result by List.choose and never compared. Reproduced live: the deployed body was changed from status = 'open' to status = 'closed' and the plan proposed ZERO changes. The not-compared disclosure fires, so nothing is claimed falsely, but a declared view can drift with no proposed change. Fix by finding the first AS keyword at nesting depth zero and outside quotes, rather than by a literal substring.",
       "tags": [],
       "priority": "high",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-12T22:14:06Z",
-      "updatedAt": "2026-09-12T22:14:06Z",
+      "updatedAt": "2026-09-12T22:15:15Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0093",
+      "title": "The awkward-forms corpus cannot see a comparison that silently did not happen",
+      "description": "AwkwardFormsTests asserts only that result.Changes is EMPTY. WI-0092 produced an empty change list precisely BECAUSE the comparison was skipped, so the corpus is blind to the defect class it exists to catch: a false clean and a correct clean look identical to it. Add an assertion that no fixture in awkward/converges produces a not-compared disclosure for the objects it declares, and add fixtures for the formatting shapes that triggered WI-0092 (AS followed by a newline; a leading comment containing a parenthesis).",
+      "tags": [],
+      "priority": "high",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-12T22:23:35Z",
+      "updatedAt": "2026-09-12T22:23:35Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0094",
+      "title": "normalisePolicies rewrites the table name by blind string replacement",
+      "description": "ShadowNormalisation.normalisePolicies rewrites a policy's table references with acc.Replace(spelling, target), which is the same lexically-unaware surgery WI-0092 removed from the two body-offset searches. A table name appearing inside a string literal in the policy expression -- USING (note = 'see shop.product') -- is rewritten too, so the shadow policy carries a different literal than the declared one and its rendered expression compares unequal forever. Route it through the scanner added in WI-0092 so replacement happens only in significant text.",
+      "tags": [],
+      "priority": "medium",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-12T22:23:36Z",
+      "updatedAt": "2026-09-12T22:23:36Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null

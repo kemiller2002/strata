@@ -57,6 +57,144 @@ module ShadowNormalisation =
           /// Constraint name -> check definition, as the catalog renders it.
           Checks: (string * string) list }
 
+    /// The first offset in a SQL string where a predicate holds, considering
+    /// only text that is NOT inside a string literal, a quoted identifier, a
+    /// dollar-quoted string or a comment, and telling the predicate what
+    /// parenthesis depth it is looking at.
+    ///
+    /// Authority for: where a piece of SQL text can be split without a parser.
+    ///
+    /// ## Why this is worth eighty lines
+    ///
+    /// Everything in this module reshapes declared DDL into a statement the
+    /// shadow schema can execute, and every reshaping needs one offset: where a
+    /// view's body begins, where a table's column list begins. Both were found
+    /// with a naive substring search, and both are wrong the same way — the
+    /// search does not know that a match inside a comment, a quoted name or a
+    /// string is not the thing it is looking for, nor that a match at the wrong
+    /// nesting depth is a different thing entirely.
+    ///
+    /// `ddl.IndexOf(" AS ")` shipped and cost real comparisons. It wants a space
+    /// on BOTH sides, so `CREATE VIEW v AS` followed by a newline — the way
+    /// almost every view is written — never matched: the view was dropped from
+    /// normalisation and a deployed body could drift from its file with a clean
+    /// plan to show for it. `ddl.IndexOf '('` had the same shape and a more
+    /// ordinary trigger: one leading comment containing a parenthesis, such as
+    /// `-- products (catalogue)` or a `-- strata:renamed_from (shop.item)`
+    /// annotation, silently took the check constraints, the column defaults, the
+    /// policy expressions AND the view out of the comparison at once. Measured,
+    /// not supposed: four disclosures appeared and nothing was proposed.
+    ///
+    /// The tier rules keep the parser out of this project
+    /// (`DF-STRATA-2026-D3F8`: the catalog adapter does not parse SQL), so the
+    /// answer cannot be "use the parse tree". It can be a scanner that knows the
+    /// four things PostgreSQL's lexer knows about hiding text, which is this.
+    ///
+    /// The depth passed to the predicate is the depth BEFORE the character is
+    /// applied, so the `(` that opens a column list reads as depth zero.
+    ///
+    /// Written as direct recursion rather than a `seq { yield! }` generator on
+    /// purpose: recursive `yield!` composes one enumerator per character, so
+    /// reading the sequence is quadratic in the length of the DDL. A table
+    /// declaration of a few thousand characters is ordinary.
+    let private scanFor (isMatch: int -> char -> int -> bool) (sql: string) : int option =
+        let n = sql.Length
+
+        // `$tag$` opens a dollar-quoted string and `$$` is the empty tag.
+        // Anything else beginning with `$` is an ordinary character —
+        // PostgreSQL identifiers may contain one.
+        let dollarTag i =
+            let rec tagEnd j =
+                if j >= n then None
+                elif sql.[j] = '$' then Some j
+                elif Char.IsLetterOrDigit sql.[j] || sql.[j] = '_' then tagEnd (j + 1)
+                else None
+
+            if i >= n || sql.[i] <> '$' then None
+            else tagEnd (i + 1) |> Option.map (fun j -> sql.Substring(i, j - i + 1))
+
+        let rec scan i depth =
+            if i >= n then None
+            elif i + 1 < n && sql.[i] = '-' && sql.[i + 1] = '-' then
+                let e = sql.IndexOf('\n', i)
+                scan (if e < 0 then n else e + 1) depth
+            elif i + 1 < n && sql.[i] = '/' && sql.[i + 1] = '*' then
+                // Block comments nest in PostgreSQL, unlike C.
+                block (i + 2) 1 depth
+            elif sql.[i] = '\'' || sql.[i] = '"' then
+                quoted (i + 1) sql.[i] depth
+            elif sql.[i] = '$' && (dollarTag i).IsSome then
+                let tag = (dollarTag i).Value
+                let e = sql.IndexOf(tag, i + tag.Length, StringComparison.Ordinal)
+                scan (if e < 0 then n else e + tag.Length) depth
+            elif isMatch i sql.[i] depth then
+                Some i
+            else
+                let next =
+                    if sql.[i] = '(' then depth + 1
+                    elif sql.[i] = ')' then max 0 (depth - 1)
+                    else depth
+
+                scan (i + 1) next
+
+        and block i level depth =
+            if i >= n then None
+            elif i + 1 < n && sql.[i] = '/' && sql.[i + 1] = '*' then block (i + 2) (level + 1) depth
+            elif i + 1 < n && sql.[i] = '*' && sql.[i + 1] = '/' then
+                if level = 1 then scan (i + 2) depth else block (i + 2) (level - 1) depth
+            else
+                block (i + 1) level depth
+
+        and quoted i quote depth =
+            if i >= n then None
+            elif sql.[i] = quote then
+                // A doubled quote is an escaped quote, not the end.
+                if i + 1 < n && sql.[i + 1] = quote then quoted (i + 2) quote depth
+                else scan (i + 1) depth
+            else
+                quoted (i + 1) quote depth
+
+        scan 0 0
+
+    /// PostgreSQL identifiers may contain `$`, so a word boundary is not
+    /// `Char.IsLetterOrDigit` alone.
+    let private isWordChar c = Char.IsLetterOrDigit c || c = '_' || c = '$'
+
+    /// Where a view's body starts: the offset just past the first `AS` KEYWORD.
+    ///
+    /// `AS` counts only as a bare word at parenthesis depth zero and outside
+    /// everything `scanFor` hides. That is what rules out the column list in
+    /// `CREATE VIEW v (a, b) AS`, the options in `WITH (security_barrier)`, a
+    /// view named `"my AS view"`, and an `AS` in a leading comment — each of
+    /// which a looser match takes for the keyword and then hands the server a
+    /// fragment.
+    ///
+    /// `None` means no such keyword was found, and the caller must not guess: a
+    /// view Strata cannot split is a view it cannot normalise, which is
+    /// disclosed rather than assumed to match.
+    let viewBodyStart (ddl: string) : int option =
+        let n = ddl.Length
+
+        ddl
+        |> scanFor (fun i c depth ->
+            depth = 0
+            && (c = 'a' || c = 'A')
+            && i + 1 < n
+            && (ddl.[i + 1] = 's' || ddl.[i + 1] = 'S')
+            && (i = 0 || not (isWordChar ddl.[i - 1]))
+            && (i + 2 >= n || not (isWordChar ddl.[i + 2])))
+        |> Option.map (fun i -> i + 2)
+
+    /// Where a table's column list starts: the offset of the `(` that opens it.
+    ///
+    /// The same reasoning as `viewBodyStart`, and a more ordinary trigger — a
+    /// leading comment containing a parenthesis is enough.
+    ///
+    /// `None` for DDL with no column list at all, which includes
+    /// `CREATE TABLE x AS SELECT ...`; that is skipped rather than mangled.
+    let tableBodyStart (ddl: string) : int option =
+        ddl |> scanFor (fun _ c depth -> c = '(' && depth = 0)
+
     /// Normalise declared view DDL into the catalog's rendering.
     ///
     /// Takes `(name, ddl)` pairs and returns `(name, normalisedDefinition)` for
@@ -107,11 +245,10 @@ module ShadowNormalisation =
                             // one by wrapping the body, rather than rewriting
                             // the author's text: `CREATE VIEW x AS <body>` is
                             // reconstructed as `CREATE VIEW shadow AS <body>`.
-                            let bodyStart = ddl.IndexOf(" AS ", StringComparison.OrdinalIgnoreCase)
-
-                            if bodyStart < 0 then None
-                            else
-                                let body = ddl.Substring(bodyStart + 4).TrimEnd().TrimEnd(';')
+                            match viewBodyStart ddl with
+                            | None -> None
+                            | Some bodyStart ->
+                                let body = ddl.Substring(bodyStart).TrimEnd().TrimEnd(';')
                                 exec (sprintf "CREATE VIEW %s AS %s" shadowName body)
 
                                 use command =
@@ -193,10 +330,9 @@ module ShadowNormalisation =
                             // shadow one; the author's body is untouched.
                             // `CREATE TABLE x AS SELECT ...` has no such body
                             // and is skipped rather than mangled.
-                            let bodyStart = ddl.IndexOf '('
-
-                            if bodyStart < 0 then None
-                            else
+                            match tableBodyStart ddl with
+                            | None -> None
+                            | Some bodyStart ->
                                 let shadowName =
                                     sprintf "%s.t_%s" schema (Guid.NewGuid().ToString("N").Substring(0, 12))
 
@@ -302,7 +438,7 @@ module ShadowNormalisation =
                                 | -1 -> table
                                 | i -> table.Substring(i + 1)
 
-                            let bodyStart = tableDdl.IndexOf '('
+                            let bodyStart = tableBodyStart tableDdl |> Option.defaultValue -1
 
                             if bodyStart < 0 then
                                 try exec (sprintf "ROLLBACK TO SAVEPOINT %s" savepoint) with _ -> ()
