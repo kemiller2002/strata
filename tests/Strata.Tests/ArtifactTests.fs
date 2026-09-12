@@ -220,15 +220,23 @@ let private sample : ResolvedDesiredState =
             Declared = [ { Key = "(1)"; Rendered = "(1,new)"; Literals = [ "'1'"; "'new'" ] } ]
             Deployed = [ { Key = "(2)"; Rendered = "(2,old)"; Literals = [] } ] } ]
       DataFailures = [ { Table = "shop.locked"; Reason = "permission denied" } ]
-      Warnings = [ "could not normalise declared views (no CREATE privilege)" ] }
+      Warnings = [ "could not normalise declared views (no CREATE privilege)" ]
+      CompiledWith = Some { Major = 16; Full = "16.15" } }
 
 [<Fact>]
 let ``an artifact reads back as exactly what was written`` () =
     // The property the whole format exists to have. Structural equality, so a
-    // field that reads back as a different SHAPE — None for Some "", a name for
-    // an unnamed constraint — fails here rather than at a deployment.
+    // field that reads back as a different SHAPE — None for Some "", an unnamed
+    // constraint that acquired a name, a Partial completeness that read as
+    // Complete — fails here rather than at a deployment.
+    //
+    // Resolved reference rows are excluded on BOTH sides because they are
+    // deliberately not carried: they describe a target, not a project. The test
+    // below pins that they come back empty.
+    let carried (r: ResolvedDesiredState) = { r with Data = []; DataFailures = [] }
+
     match Artifact.ofText (Artifact.toText sample) with
-    | Ok restored -> Assert.Equal<ResolvedDesiredState>(sample, restored)
+    | Ok restored -> Assert.Equal<ResolvedDesiredState>(carried sample, carried restored)
     | Microsoft.FSharp.Core.Error message -> failwithf "the artifact could not be read: %s" message
 
 [<Fact>]
@@ -486,3 +494,96 @@ let ``plan and compile read the same project the same way`` () =
             match Strata.Cli.Compile.load parser root with
             | Ok loaded -> Assert.Equal(loaded.Declared.Snapshot, Strata.Cli.Compile.snapshot loaded)
             | Microsoft.FSharp.Core.Error message -> failwithf "the project would not load: %s" message)
+
+[<Fact>]
+let ``an artifact records the server that rendered it`` () =
+    // Every normalised expression in an artifact is the COMPILING server's
+    // rendering. Without knowing which server that was, a deployment cannot
+    // tell whether its target would render the same way, and WI-0084's refusal
+    // has nothing to stand on.
+    match Artifact.ofText (Artifact.toText sample) with
+    | Ok restored -> Assert.Equal(Some 16, restored.CompiledWith |> Option.map (fun v -> v.Major))
+    | Microsoft.FSharp.Core.Error message -> failwithf "the artifact could not be read: %s" message
+
+[<Fact>]
+let ``an unreadable compiling version survives as unknown, not as a match`` () =
+    // ER-008. An artifact whose compiling version could not be read must come
+    // back as None so a deployment refuses to assume compatibility, rather than
+    // reading absent as agreeable.
+    let blind = { sample with CompiledWith = None }
+
+    match Artifact.ofText (Artifact.toText blind) with
+    | Ok restored -> Assert.True(restored.CompiledWith.IsNone)
+    | Microsoft.FSharp.Core.Error message -> failwithf "the artifact could not be read: %s" message
+
+// ---- what deploy refuses ----------------------------------------------------
+
+open Strata.Semantic.Schema
+
+let private pg (major: int) (full: string) : ServerVersion = { Major = major; Full = full }
+
+[<Fact>]
+let ``a matching major version deploys`` () =
+    Assert.Equal(None, Strata.Cli.Deploy.versionProblem (Some(pg 16 "16.2")) (Ok(pg 16 "16.15")))
+
+[<Fact>]
+let ``a different major version is refused`` () =
+    // Every normalised expression in an artifact is the COMPILING server's
+    // rendering, and deparsing changes between majors. Deploying across one
+    // would compare against renderings the target never produces: not an error,
+    // a plan full of changes to objects nobody touched — indistinguishable from
+    // real drift, and `--approve` would wave it through.
+    match Strata.Cli.Deploy.versionProblem (Some(pg 14 "14.9")) (Ok(pg 16 "16.15")) with
+    | None -> failwith "a cross-major deployment was allowed"
+    | Some problem ->
+        Assert.Contains("14.9", problem)
+        Assert.Contains("16.15", problem)
+        Assert.Contains("Recompile", problem)
+
+[<Fact>]
+let ``a differing minor version is not refused`` () =
+    // PostgreSQL does not change catalog output in a minor release. Refusing
+    // here would refuse every ordinary deployment and teach everyone to bypass
+    // the check, which is worse than not having it.
+    Assert.Equal(None, Strata.Cli.Deploy.versionProblem (Some(pg 16 "16.2")) (Ok(pg 16 "16.15")))
+
+[<Fact>]
+let ``an artifact that records no version is refused, not assumed compatible`` () =
+    // ER-008: unknown is not compatible.
+    match Strata.Cli.Deploy.versionProblem None (Ok(pg 16 "16.15")) with
+    | None -> failwith "an artifact with no recorded version was allowed"
+    | Some problem -> Assert.Contains("does not record", problem)
+
+[<Fact>]
+let ``an unreadable target version is refused, not assumed compatible`` () =
+    match Strata.Cli.Deploy.versionProblem (Some(pg 16 "16.15")) (Microsoft.FSharp.Core.Error "permission denied") with
+    | None -> failwith "an unreadable target version was allowed"
+    | Some problem -> Assert.Contains("could not be read", problem)
+
+[<Fact>]
+let ``the schemas an artifact manages come from the objects it declares`` () =
+    // Derived rather than carried, because a declaration's schema must match its
+    // directory and an empty schema directory does not compile
+    // (DF-STRATA-2026-C3A2) — so the two sets are equal by construction and a
+    // second copy could only ever disagree with the first.
+    Assert.Equal<string list>([ "shop" ], Strata.Cli.Deploy.managedSchemas sample)
+
+[<Fact>]
+let ``resolved reference rows are not carried in the artifact`` () =
+    // Half of a resolved row is what the TARGET already holds, so an artifact
+    // carrying it would carry one database's contents to another. It did,
+    // briefly: an artifact compiled against a populated database deployed to an
+    // empty one and inserted nothing — four statements instead of six, exit 0,
+    // and a lookup table with no rows. `deploy` resolves them against its own
+    // target instead, so they must come back EMPTY here.
+    Assert.NotEmpty sample.Data
+    Assert.NotEmpty sample.DataFailures
+
+    match Artifact.ofText (Artifact.toText sample) with
+    | Ok restored ->
+        Assert.Empty restored.Data
+        Assert.Empty restored.DataFailures
+        // The DECLARED rows are carried, as the literal tokens the author wrote.
+        // Those are desired state and are what deploy resolves from.
+        Assert.NotEmpty restored.Declared.Data
+    | Microsoft.FSharp.Core.Error message -> failwithf "the artifact could not be read: %s" message

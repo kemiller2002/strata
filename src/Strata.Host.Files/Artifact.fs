@@ -74,7 +74,15 @@ module Artifact =
     // malformed one means tampering or version skew, not a typo to recover
     // from field by field.
 
-    let private prop (name: string) (e: JsonElement) = e.GetProperty name
+    /// `JsonElement.GetProperty` throws a `KeyNotFoundException` that does not
+    /// say which key, and the commonest way to reach it is an artifact written
+    /// by a build that did not have the field yet. Naming it turns "the given
+    /// key was not present in the dictionary" into something a reader can act
+    /// on.
+    let private prop (name: string) (e: JsonElement) =
+        match e.TryGetProperty name with
+        | true, value -> value
+        | _ -> failwithf "no '%s'" name
 
     let private getString (name: string) (e: JsonElement) = (prop name e).GetString()
 
@@ -706,12 +714,27 @@ module Artifact =
 
     /// The whole artifact as JSON.
     ///
-    /// `Deployed` reference rows are rendered along with the declared ones even
-    /// though they came from a database. They are not desired state and
-    /// `deploy` re-reads them against its own target; they are here because
-    /// leaving the field out would mean the round trip does not round-trip, and
-    /// a format that loses a field silently is the one thing this file exists to
-    /// prevent. `WI-0084` decides what `deploy` does with them.
+    /// ## Resolved reference rows are NOT in here, and that is the point
+    ///
+    /// `ResolvedDesiredState.Data` holds declared rows and DEPLOYED rows side by
+    /// side, rendered by the server through the real column types. The deployed
+    /// half is read from a live table, so it describes a TARGET rather than a
+    /// project — and an artifact that carried it would be carrying one database's
+    /// contents to another.
+    ///
+    /// It did, briefly, and the failure was silent in the worst way. An artifact
+    /// compiled against a database that already held the reference rows recorded
+    /// "declared and deployed agree". Deploying it to an EMPTY database created
+    /// the table and inserted nothing: four statements instead of six, exit 0,
+    /// and a lookup table with no rows in it. Nothing in the output was wrong,
+    /// because nothing in the artifact was wrong — it was an answer to a
+    /// question about a different server.
+    ///
+    /// So the artifact carries the DECLARED rows only, inside `declared.data`,
+    /// as the literal tokens the author wrote. `deploy` resolves them against
+    /// its own target, which is the same thing `plan` does and the only thing
+    /// that can be right for more than one target. `Data` and `DataFailures`
+    /// therefore read back EMPTY, and the caller is expected to fill them.
     let render (r: ResolvedDesiredState) =
         JObject [ "formatVersion", JInt FormatVersion
                   "declared", renderLoaded r.Declared
@@ -723,9 +746,8 @@ module Artifact =
                   "rowSecurity",
                   JArray(r.RowSecurity |> List.map (fun (t, s) ->
                       JObject [ "table", renderQualifiedName t; "setting", renderRowSecuritySetting s ]))
-                  "data", JArray(r.Data |> List.map renderResolvedData)
-                  "dataFailures", JArray(r.DataFailures |> List.map renderDataFailure)
-                  "warnings", renderStrings r.Warnings ]
+                  "warnings", renderStrings r.Warnings
+                  "compiledWith", (match r.CompiledWith with Some v -> renderServerVersion v | None -> JNull) ]
 
     /// The artifact's text. Deterministic by construction (NFR-001): every key
     /// order is declared above, every collection keeps the order resolution gave
@@ -765,8 +787,11 @@ module Artifact =
                   RowSecurity =
                     items "rowSecurity" root
                     |> List.map (fun i -> readQualifiedName (prop "table" i), readRowSecuritySetting (prop "setting" i))
-                  Data = items "data" root |> List.map readResolvedData
-                  DataFailures = items "dataFailures" root |> List.map readDataFailure
-                  Warnings = getStrings "warnings" root }
+                  // Target-specific, so not carried. The caller resolves them
+                  // against the target it is deploying to.
+                  Data = []
+                  DataFailures = []
+                  Warnings = getStrings "warnings" root
+                  CompiledWith = optional "compiledWith" root |> Option.map readServerVersion }
         with ex ->
             Microsoft.FSharp.Core.Error(sprintf "the artifact could not be read (%s)" ex.Message)

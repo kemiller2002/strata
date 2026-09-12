@@ -73,4 +73,18 @@ type ResolvedDesiredState =
 
       /// What could not be rendered, and why. Carried rather than printed so a
       /// compiled artifact can record the conditions it was built under.
-      Warnings: string list }
+      Warnings: string list
+
+      /// The PostgreSQL that rendered everything above.
+      ///
+      /// Every normalised expression in this record is the COMPILING server's
+      /// rendering. `'open'` became `'open'::text` because that server's
+      /// deparser said so, and a different major version may say something
+      /// else — so deploying an artifact to a server of a different major
+      /// version would compare its renderings against renderings that server
+      /// would never produce, and propose changes to objects nobody touched.
+      ///
+      /// `None` when the version could not be read. That is disclosed, never
+      /// taken for a match: an unknown version is not a compatible one
+      /// (`ER-008`).
+      CompiledWith: ServerVersion option }

@@ -17,6 +17,8 @@
   <ItemGroup>
     <Compile Include="Resolution.fs" />
     <Compile Include="Compile.fs" />
+    <Compile Include="Deployment.fs" />
+    <Compile Include="Deploy.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
