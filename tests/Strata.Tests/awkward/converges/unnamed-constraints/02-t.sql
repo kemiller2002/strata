@@ -1,8 +1,9 @@
--- CONTRACT: Strata must read this the way the server does — the diff after
---           introspecting it back must be EMPTY. See AwkwardFormsTests.fs.
 -- The server names each of these; the file does not. A fabricated name made
 -- every such project churn forever.
-CREATE TABLE parent (id bigint PRIMARY KEY);
+--
+-- Split from parent so the declaring text is recorded: an unnamed check can
+-- only be attributed to a deployed one through the server's rendering of the
+-- declared DDL, and that rendering needs the file's verbatim text.
 CREATE TABLE t (
     id        bigint PRIMARY KEY,
     code      text   NOT NULL UNIQUE,

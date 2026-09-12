@@ -94,6 +94,7 @@
 | WI-0089 | Sign the compiled artifact | captured | strata | low |
 | WI-0090 | Record the compile/deploy design decisions | complete | strata, decisions | high |
 | WI-0091 | Correct the RLS disclosure that claims policies are not compared | complete |  | medium |
-| WI-0092 | A view whose AS is followed by a newline is silently never compared | active |  | high |
-| WI-0093 | The awkward-forms corpus cannot see a comparison that silently did not happen | captured |  | high |
+| WI-0092 | A view whose AS is followed by a newline is silently never compared | complete |  | high |
+| WI-0093 | The awkward-forms corpus cannot see a comparison that silently did not happen | active |  | high |
 | WI-0094 | normalisePolicies rewrites the table name by blind string replacement | captured |  | medium |
+| WI-0095 | A view with a column-alias list never converges | ready |  | high |

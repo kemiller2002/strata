@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 95,
+  "nextSeq": 96,
   "items": [
     {
       "id": "WI-0001",
@@ -1583,10 +1583,10 @@
       "description": "AwkwardFormsTests asserts only that result.Changes is EMPTY. WI-0092 produced an empty change list precisely BECAUSE the comparison was skipped, so the corpus is blind to the defect class it exists to catch: a false clean and a correct clean look identical to it. Add an assertion that no fixture in awkward/converges produces a not-compared disclosure for the objects it declares, and add fixtures for the formatting shapes that triggered WI-0092 (AS followed by a newline; a leading comment containing a parenthesis).",
       "tags": [],
       "priority": "high",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-12T22:23:35Z",
-      "updatedAt": "2026-09-12T22:23:35Z",
+      "updatedAt": "2026-09-12T22:24:38Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null
@@ -1601,6 +1601,20 @@
       "attachments": [],
       "createdAt": "2026-09-12T22:23:36Z",
       "updatedAt": "2026-09-12T22:23:36Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0095",
+      "title": "A view with a column-alias list never converges",
+      "description": "normaliseViews reconstructs the declaration as CREATE VIEW <shadow> AS <body>, discarding everything between the name and the AS keyword -- including the column-alias list. pg_get_viewdef FOLDS that list into the query it renders: CREATE VIEW v (a, b) AS SELECT id, weight comes back as SELECT id AS a, weight AS b. So the shadow renders without the aliases, the deployed view renders with them, and Strata proposes replace-view on every run forever. Same family as WI-0054, an unnamed constraint never converging. Found by the view-formatting corpus case added in WI-0093, which is the first time the corpus compared a view at all.",
+      "tags": [],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T22:34:23Z",
+      "updatedAt": "2026-09-12T22:34:49Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null

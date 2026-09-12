@@ -42,6 +42,7 @@
     <ProjectReference Include="../../src/Strata.Host.Postgres/Strata.Host.Postgres.fsproj" />
     <ProjectReference Include="../../src/Strata.Application/Strata.Application.fsproj" />
     <ProjectReference Include="../../src/Strata.Host.Files/Strata.Host.Files.fsproj" />
+    <ProjectReference Include="../../src/Strata.Cli/Strata.Cli.fsproj" />
   </ItemGroup>
 
   <ItemGroup>

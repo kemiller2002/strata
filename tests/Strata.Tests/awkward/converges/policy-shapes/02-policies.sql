@@ -1,0 +1,11 @@
+-- A policy with no FOR clause is FOR ALL, and the parse tree carries no
+-- cmd_name at all rather than "all". A policy with no TO clause is TO PUBLIC,
+-- which arrives as a ROLESPEC_PUBLIC entry rather than an empty list.
+--
+-- A SELECT policy has no WITH CHECK and an INSERT policy has no USING; both
+-- absences are real states and neither is an empty expression.
+--
+-- Split from the table so each policy's text is recorded. Without it the
+-- expressions cannot be rendered by the server and are disclosed as
+-- not-compared — which is what this case looked like for its whole life.
+CREATE POLICY p_default ON t USING (tenant = 'acme');

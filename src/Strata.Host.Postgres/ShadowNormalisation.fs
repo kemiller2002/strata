@@ -185,6 +185,91 @@ module ShadowNormalisation =
             && (i + 2 >= n || not (isWordChar ddl.[i + 2])))
         |> Option.map (fun i -> i + 2)
 
+    /// Where a view's NAME ends: the offset just past the object name that
+    /// follows the `VIEW` keyword.
+    ///
+    /// Authority for: which part of a view declaration is the name, so the rest
+    /// can be carried over verbatim.
+    ///
+    /// ## Why the rest has to be carried over
+    ///
+    /// `CREATE VIEW v (a, b) AS SELECT id, weight` was reconstructed for the
+    /// shadow as `CREATE VIEW <shadow> AS SELECT id, weight`, dropping the
+    /// column-alias list. That looks harmless and is not: `pg_get_viewdef`
+    /// FOLDS the list into the query it renders, so the deployed view comes back
+    /// as `SELECT id AS a, weight AS b` and the shadow as `SELECT id, weight`.
+    /// The two never match, so Strata proposes `replace-view` on every run
+    /// forever — the same shape as WI-0054, where an unnamed constraint could
+    /// never converge.
+    ///
+    /// The `WITH (...)` options sit in the same span and are carried for the
+    /// same reason: whatever the author wrote between the name and the keyword
+    /// belongs to the view, and guessing which parts matter is how the first
+    /// version got it wrong.
+    ///
+    /// `None` when there is no `VIEW` keyword or no name after it.
+    let viewNameEnd (ddl: string) : int option =
+        let n = ddl.Length
+
+        // The `VIEW` keyword itself, as a bare word at depth zero — so a view
+        // named `"view"` does not match its own name.
+        let keyword =
+            ddl
+            |> scanFor (fun i c depth ->
+                depth = 0
+                && (c = 'v' || c = 'V')
+                && i + 3 < n
+                && String.Equals(ddl.Substring(i, 4), "VIEW", StringComparison.OrdinalIgnoreCase)
+                && (i = 0 || not (isWordChar ddl.[i - 1]))
+                && (i + 4 >= n || not (isWordChar ddl.[i + 4])))
+
+        // A qualified name is one or more parts separated by dots, each either
+        // quoted or a bare word.
+        let rec skipSpace i =
+            if i < n && Char.IsWhiteSpace ddl.[i] then skipSpace (i + 1) else i
+
+        let rec endOfQuoted i =
+            if i >= n then None
+            elif ddl.[i] = '"' then
+                if i + 1 < n && ddl.[i + 1] = '"' then endOfQuoted (i + 2) else Some(i + 1)
+            else
+                endOfQuoted (i + 1)
+
+        let rec endOfWord i =
+            if i < n && isWordChar ddl.[i] then endOfWord (i + 1) else i
+
+        let rec namePart i =
+            let i = skipSpace i
+
+            let partEnd =
+                if i < n && ddl.[i] = '"' then endOfQuoted (i + 1)
+                elif i < n && isWordChar ddl.[i] then
+                    let e = endOfWord i
+                    if e = i then None else Some e
+                else
+                    None
+
+            match partEnd with
+            | None -> None
+            | Some e ->
+                // A dot continues the name; anything else ends it.
+                let afterDot = skipSpace e
+                if afterDot < n && ddl.[afterDot] = '.' then namePart (afterDot + 1) else Some e
+
+        keyword |> Option.bind (fun k -> namePart (k + 4))
+
+    /// What a view declaration says between its name and its `AS`: a column
+    /// alias list, view options, or nothing.
+    ///
+    /// Returned verbatim, whitespace and comments included, so the shadow
+    /// declaration is the author's text with only the name changed.
+    let viewNameSuffix (ddl: string) : string =
+        match viewNameEnd ddl, viewBodyStart ddl with
+        // `viewBodyStart` points just past the two characters of `AS`.
+        | Some nameEnd, Some bodyStart when bodyStart - 2 > nameEnd ->
+            ddl.Substring(nameEnd, bodyStart - 2 - nameEnd).Trim()
+        | _ -> ""
+
     /// Where a table's column list starts: the offset of the `(` that opens it.
     ///
     /// The same reasoning as `viewBodyStart`, and a more ordinary trigger — a
@@ -249,7 +334,12 @@ module ShadowNormalisation =
                             | None -> None
                             | Some bodyStart ->
                                 let body = ddl.Substring(bodyStart).TrimEnd().TrimEnd(';')
-                                exec (sprintf "CREATE VIEW %s AS %s" shadowName body)
+
+                                // The column-alias list and any options come
+                                // with the name, because `pg_get_viewdef` folds
+                                // the aliases into the query it renders.
+                                exec (
+                                    sprintf "CREATE VIEW %s %s AS %s" shadowName (viewNameSuffix ddl) body)
 
                                 use command =
                                     new NpgsqlCommand(

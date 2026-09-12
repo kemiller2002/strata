@@ -155,3 +155,52 @@ let ``a large declaration is scanned in linear time`` () =
     Assert.True(
         started.ElapsedMilliseconds < 2000L,
         sprintf "scanning %d characters took %dms, which is not linear" ddl.Length started.ElapsedMilliseconds)
+
+/// Carrying a view's column-alias list into the shadow.
+///
+/// `pg_get_viewdef` folds a view's alias list into the query it renders, so a
+/// shadow built without the list renders differently from the deployed view and
+/// Strata proposes `replace-view` forever. The fix is to keep everything the
+/// author wrote between the name and the keyword, so the shadow declaration is
+/// their text with only the name changed.
+
+let private suffix (ddl: string) = ShadowNormalisation.viewNameSuffix ddl
+
+[<Fact>]
+let ``a plain view has nothing between its name and AS`` () =
+    Assert.Equal("", suffix "CREATE VIEW v AS SELECT 1")
+
+[<Fact>]
+let ``a column alias list is carried`` () =
+    Assert.Equal("(a, b)", suffix "CREATE VIEW v (a, b) AS\nSELECT 1, 2")
+
+[<Fact>]
+let ``view options are carried`` () =
+    Assert.Equal(
+        "WITH (security_barrier)",
+        suffix "CREATE OR REPLACE VIEW v WITH (security_barrier) AS\nSELECT 1")
+
+[<Fact>]
+let ``a column list and options are both carried`` () =
+    Assert.Equal(
+        "(a) WITH (security_barrier)",
+        suffix "CREATE VIEW v (a) WITH (security_barrier) AS SELECT 1")
+
+[<Fact>]
+let ``a schema-qualified name is not mistaken for part of the suffix`` () =
+    Assert.Equal("(a, b)", suffix "CREATE VIEW shop.v (a, b) AS SELECT 1, 2")
+
+[<Fact>]
+let ``a quoted name containing a dot is one name`` () =
+    Assert.Equal("(a)", suffix "CREATE VIEW \"odd.name\" (a) AS SELECT 1")
+
+[<Fact>]
+let ``a view named view does not match its own keyword`` () =
+    // `VIEW` is found as a bare word at depth zero; the quoted name is hidden
+    // from the scanner, so the keyword is the keyword.
+    Assert.Equal("(a)", suffix "CREATE VIEW \"view\" (a) AS SELECT 1")
+
+[<Fact>]
+let ``the name end is past the whole qualified name`` () =
+    let ddl = "CREATE VIEW shop.v (a) AS SELECT 1"
+    Assert.Equal(Some(ddl.IndexOf " (a)"), ShadowNormalisation.viewNameEnd ddl)
