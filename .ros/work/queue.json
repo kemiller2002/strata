@@ -967,10 +967,10 @@
         "reference-data"
       ],
       "priority": "medium",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-12T00:22:49Z",
-      "updatedAt": "2026-09-12T00:22:49Z",
+      "updatedAt": "2026-09-12T00:41:22Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null

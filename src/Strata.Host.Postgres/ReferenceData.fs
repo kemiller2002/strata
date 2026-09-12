@@ -145,8 +145,6 @@ module ReferenceData =
                                 else
                                     [] } ]
 
-                exec (sprintf "CREATE SCHEMA %s" schema)
-
                 let resolutions = ResizeArray<Resolution>()
                 let failures = ResizeArray<Failure>()
 
@@ -167,24 +165,39 @@ module ReferenceData =
 
                         let tableExists = exists table
 
+                        // A schema of its own per table, so the shadow table
+                        // can carry the REAL table's name without two of them
+                        // colliding. That name is not cosmetic: PostgreSQL
+                        // names the constraints and indexes that LIKE copies
+                        // after the new table, so naming the shadow
+                        // `account_type` makes its unique constraint
+                        // `account_type_code_key` — the same name the real one
+                        // has. A conflict then reports the constraint the user
+                        // can actually go and look at, instead of a generated
+                        // name that means nothing outside this transaction.
+                        let tableSchema = sprintf "%s_%s" schema (Guid.NewGuid().ToString("N").Substring(0, 8))
+                        exec (sprintf "CREATE SCHEMA %s" tableSchema)
+
                         let shadowTable =
-                            sprintf "%s.%s" schema (quoteIdent ("d_" + Guid.NewGuid().ToString("N").Substring(0, 12)))
+                            let objectName =
+                                match table.Split('.') with
+                                | [| _; object' |] -> object'
+                                | _ -> table
+
+                            sprintf "%s.%s" tableSchema (quoteIdent objectName)
 
                         // The shadow copies the real table INCLUDING ALL, so
                         // declared rows meet the same primary key, unique
                         // constraints, checks and defaults the real table has.
                         //
-                        // What that catches at PLAN time, and what it does not:
-                        // the shadow holds the DECLARED rows and nothing else,
-                        // so two declared rows sharing a unique value, or one
-                        // failing a CHECK, fail here with the server's own
-                        // message. A declared row colliding with a DEPLOYED row
-                        // the project does not declare does not — the shadow
-                        // has never seen that row. It surfaces when the apply
-                        // rolls back, which is safe but late. Seeding the
-                        // shadow with the undeclared deployed rows would close
-                        // the gap; it is not done yet, and claiming otherwise
-                        // would be worse than the gap.
+                        // The declared rows go in first and the undeclared
+                        // deployed ones follow, so the shadow ends up holding
+                        // the state an apply would PRODUCE. Every constraint
+                        // fires against that: two declarations sharing a unique
+                        // value, one failing a CHECK, or a declaration
+                        // colliding with a row the project does not declare all
+                        // fail here, with the server's own message, instead of
+                        // halfway through an apply.
                         let built =
                             if tableExists then
                                 exec (sprintf "CREATE TABLE %s (LIKE %s INCLUDING ALL)" shadowTable table)
@@ -273,6 +286,57 @@ module ReferenceData =
                         // matters: every declared row is then an insert.
                         let deployedRows =
                             if tableExists then queryRows (renderSql table false) false else []
+
+                        // The shadow so far holds only the DECLARED rows, so
+                        // it catches two declarations colliding but not a
+                        // declaration colliding with a row already in the
+                        // table that the project does not declare. Copying the
+                        // undeclared deployed rows in makes the shadow hold the
+                        // state an apply would PRODUCE — declared rows where
+                        // the keys match, existing rows everywhere else — and
+                        // every constraint then fires against that.
+                        //
+                        // The row values never leave the server: this is an
+                        // INSERT ... SELECT, so there is nothing to re-render
+                        // and nothing to re-quote. The cost is one more pass
+                        // over a table whose rows were already being read.
+                        let conflict =
+                            if not tableExists then None
+                            else
+                                try
+                                    exec (
+                                        sprintf
+                                            "INSERT INTO %s (%s) SELECT %s FROM %s t \
+                                             WHERE NOT EXISTS (SELECT 1 FROM %s s WHERE ROW(%s) = ROW(%s))"
+                                            shadowTable
+                                            columnList
+                                            (quotedColumns |> List.map (fun c -> "t." + c) |> String.concat ", ")
+                                            table
+                                            shadowTable
+                                            (keyColumns |> List.map (fun k -> "s." + quoteIdent k) |> String.concat ", ")
+                                            (keyColumns |> List.map (fun k -> "t." + quoteIdent k) |> String.concat ", "))
+
+                                    None
+                                with ex ->
+                                    // The transaction is poisoned until the
+                                    // savepoint is released. Everything needed
+                                    // was already read into F# values, so
+                                    // discarding the shadow costs nothing.
+                                    try exec (sprintf "ROLLBACK TO SAVEPOINT %s" savepoint) with _ -> ()
+                                    Some ex.Message
+
+                        match conflict with
+                        | Some reason ->
+                            // Proposing the inserts anyway would produce a plan
+                            // that cannot run. Reporting the conflict and
+                            // proposing nothing is the honest outcome.
+                            failures.Add
+                                { Table = table
+                                  Reason =
+                                    sprintf
+                                        "declared rows conflict with rows already in the table that the project does not declare: %s"
+                                        reason }
+                        | None ->
 
                         resolutions.Add
                             { Table = table

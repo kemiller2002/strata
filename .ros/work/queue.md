@@ -59,5 +59,5 @@
 | WI-0054 | An unnamed constraint never converges | complete | strata, diff | high |
 | WI-0055 | apply has no way to accept a requires-approval finding | complete | strata, deployment | high |
 | WI-0056 | Reference data as desired state | complete | strata, desired-state | high |
-| WI-0057 | A declared row colliding with an undeclared deployed row is caught late | captured | strata, reference-data | medium |
-| WI-0058 | Constraint differences cannot be applied | ready | strata, diff | high |
+| WI-0057 | A declared row colliding with an undeclared deployed row is caught late | ready | strata, reference-data | medium |
+| WI-0058 | Constraint differences cannot be applied | complete | strata, diff | high |
