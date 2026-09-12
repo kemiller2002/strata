@@ -80,9 +80,9 @@
 | WI-0075 | Report row-level security instead of not looking at it | complete | postgres, security, er-008 | high |
 | WI-0076 | Row-level security policies as desired state | complete | postgres, security, er-008 | high |
 | WI-0077 | Extensions as desired state | complete | postgres, er-008 | medium |
-| WI-0078 | Destructive changes never receive an Allow verdict | ready | strata | high |
-| WI-0079 | Require an explicit include list in strata.json | captured | strata | high |
-| WI-0080 | Derive the managed schema set from directory names and remove managedSchemas | captured | strata | high |
+| WI-0078 | Destructive changes never receive an Allow verdict | complete | strata | high |
+| WI-0079 | Require an explicit include list in strata.json | ready | strata | high |
+| WI-0080 | Derive the managed schema set from directory names and remove managedSchemas | ready | strata | high |
 | WI-0081 | Project adoption and reconciliation commands | captured | strata | medium |
 | WI-0082 | Hoist shadow normalisation out of the CLI ahead of the compile split | captured | strata | high |
 | WI-0083 | strata compile emits a deployable artifact | captured | strata | high |

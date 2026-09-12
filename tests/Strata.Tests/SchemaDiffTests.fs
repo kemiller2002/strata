@@ -61,7 +61,11 @@ let private run allowDrops managedSchemas desired actual =
     Strata.Application.SchemaDiff.run
         { Strata.Application.SchemaDiff.Inputs.between desired actual with
             AllowDrops = allowDrops
-            ManagedSchemas = managedSchemas }
+            ManagedSchemas = managedSchemas
+            // The managed schemas already exist. Schema CREATION is
+            // `runWithSchemas`'s subject; here it would only add a disclosure
+            // that the database's schemas could not be read.
+            ExistingSchemas = Some managedSchemas }
 
 /// Existing guard tests pass allowDrops=true deliberately: a test that left
 /// drops globally disabled would pass even if the guard it names were deleted.
@@ -642,6 +646,10 @@ let private runWithViews normalised desired actual =
         { Strata.Application.SchemaDiff.Inputs.between desired actual with
             AllowDrops = true
             ManagedSchemas = managed
+            // The managed schemas are known to exist. Without this the diff
+            // correctly discloses that it could not check them — these helpers
+            // are about views, tables, renames and data, not about schemas.
+            ExistingSchemas = Some managed
             NormalisedViews = normalised }
 
 [<Fact>]
@@ -789,6 +797,10 @@ let private runWithTables normalisedTables desired actual =
         { Strata.Application.SchemaDiff.Inputs.between desired actual with
             AllowDrops = true
             ManagedSchemas = managed
+            // The managed schemas are known to exist. Without this the diff
+            // correctly discloses that it could not check them — these helpers
+            // are about views, tables, renames and data, not about schemas.
+            ExistingSchemas = Some managed
             NormalisedTables = normalisedTables }
 
 let private normalisedTable name defaults checks : Strata.Application.SchemaDiff.NormalisedTable =
@@ -878,6 +890,10 @@ let private runWithRenames renames desired actual =
         { Strata.Application.SchemaDiff.Inputs.between desired actual with
             AllowDrops = true
             ManagedSchemas = managed
+            // The managed schemas are known to exist. Without this the diff
+            // correctly discloses that it could not check them — these helpers
+            // are about views, tables, renames and data, not about schemas.
+            ExistingSchemas = Some managed
             Renames = renames }
 
 let private declaredRename object' renamedFrom columns : Strata.Application.SchemaDiff.DeclaredRename =
@@ -1492,6 +1508,10 @@ let private runWithData data failures desired actual =
         { Strata.Application.SchemaDiff.Inputs.between desired actual with
             AllowDrops = true
             ManagedSchemas = managed
+            // The managed schemas are known to exist. Without this the diff
+            // correctly discloses that it could not check them — these helpers
+            // are about views, tables, renames and data, not about schemas.
+            ExistingSchemas = Some managed
             Data = data
             DataFailures = failures }
 
@@ -1618,13 +1638,15 @@ let ``an update never assigns the key it matches on`` () =
 // invisible: the tool infers managed schemas from directory names, so it knew
 // every schema's name and created none of them.
 
+// `declaredIn` is now the SAME list as the managed set: both are derived from
+// the one directory tree, so a project cannot manage a schema it declared
+// nothing in (`DF-STRATA-2026-C3A2`).
 let private runWithSchemas existing declaredIn desired actual =
     Strata.Application.SchemaDiff.run
         { Strata.Application.SchemaDiff.Inputs.between desired actual with
             AllowDrops = true
-            ManagedSchemas = managed
-            ExistingSchemas = existing
-            DeclaredInSchemas = declaredIn }
+            ManagedSchemas = declaredIn
+            ExistingSchemas = existing }
 
 [<Fact>]
 let ``a declared schema the database does not have is created`` () =

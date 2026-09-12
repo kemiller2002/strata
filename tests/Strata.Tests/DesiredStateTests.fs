@@ -992,3 +992,40 @@ let ``a column keeps the modifier a routine argument drops`` () =
     let column = (tableNamed loaded "s.t").Value.Columns |> List.head
 
     Assert.Equal("numeric(12,2)", QualifiedName.display column.Type.TypeName)
+
+
+// ---- the file's directory and the declaration must agree ---------------------
+
+[<Fact>]
+let ``a declaration whose schema differs from its directory is a failure`` () =
+    // The fail-closed half of `DF-STRATA-2026-C3A2`. Without it a project could
+    // assert an object in a schema that has no directory — and a schema with no
+    // directory is one Strata does not manage, so the object would be declared
+    // and unmanageable at the same time.
+    let loaded =
+        DesiredState.loadWithLayout
+            parser
+            [ "schema/app/tables/c.sql", Some "app", "CREATE TABLE other.customer (id bigint);" ]
+
+    Assert.Empty loaded.Snapshot.Objects
+    Assert.Contains(loaded.Failures, fun f -> f.Reason.Contains "must match the directory")
+
+[<Fact>]
+let ``a declaration matching its directory loads`` () =
+    let loaded =
+        DesiredState.loadWithLayout
+            parser
+            [ "schema/app/tables/c.sql", Some "app", "CREATE TABLE app.customer (id bigint);" ]
+
+    Assert.Empty loaded.Failures
+    Assert.Single loaded.Snapshot.Objects |> ignore
+
+[<Fact>]
+let ``with no directory context, nothing is checked`` () =
+    // `load` is `loadWithLayout` with no layout — the shape tests and any
+    // caller holding text without a directory use. It must not invent a
+    // constraint it has no information about.
+    let loaded = load [ "c.sql", "CREATE TABLE other.customer (id bigint);" ]
+
+    Assert.Empty loaded.Failures
+    Assert.Single loaded.Snapshot.Objects |> ignore

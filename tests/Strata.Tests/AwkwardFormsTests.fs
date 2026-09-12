@@ -263,7 +263,6 @@ let ``Strata reads the declaration the way the server does`` (name: string) =
                     AllowDrops = true
                     ManagedSchemas = [ Fixture.schema ]
                     ExistingSchemas = Some [ Fixture.schema ]
-                    DeclaredInSchemas = [ Fixture.schema ]
                     DeclaredGrants = grants
                     ActualGrants = actualGrants
                     NormalisedTables = normalisedTables }

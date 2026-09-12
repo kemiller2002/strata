@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <Compile Include="ScopeResolutionTests.fs" />
+    <Compile Include="ProjectTests.fs" />
     <Compile Include="AnalysisScopeTests.fs" />
     <Compile Include="WireTests.fs" />
     <Compile Include="EffectsTests.fs" />
