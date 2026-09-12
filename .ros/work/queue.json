@@ -1396,10 +1396,10 @@
         "strata"
       ],
       "priority": "medium",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-12T19:16:35Z",
-      "updatedAt": "2026-09-12T19:16:35Z",
+      "updatedAt": "2026-09-12T23:38:16Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null

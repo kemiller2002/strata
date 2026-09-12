@@ -83,14 +83,14 @@
 | WI-0078 | Destructive changes never receive an Allow verdict | complete | strata | high |
 | WI-0079 | Require an explicit include list in strata.json | complete | strata | high |
 | WI-0080 | Derive the managed schema set from directory names and remove managedSchemas | complete | strata | high |
-| WI-0081 | Project adoption and reconciliation commands | captured | strata | medium |
+| WI-0081 | Project adoption and reconciliation commands | ready | strata | medium |
 | WI-0082 | Hoist shadow normalisation out of the CLI ahead of the compile split | complete | strata | high |
 | WI-0083 | strata compile emits a deployable artifact | complete | strata | high |
 | WI-0084 | strata deploy reads an artifact rather than the source tree | complete | strata | high |
 | WI-0085 | strata validate against an artifact, with no database | complete | strata | medium |
 | WI-0086 | strata drift reports whether a server still matches an artifact | complete | strata | low |
 | WI-0087 | Type-check queries with PREPARE | complete | strata | medium |
-| WI-0088 | Declared project invariants as compile-time checks | ready | strata | low |
+| WI-0088 | Declared project invariants as compile-time checks | complete | strata | low |
 | WI-0089 | Sign the compiled artifact | complete | strata | low |
 | WI-0090 | Record the compile/deploy design decisions | complete | strata, decisions | high |
 | WI-0091 | Correct the RLS disclosure that claims policies are not compared | complete |  | medium |

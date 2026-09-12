@@ -28,6 +28,25 @@ COMMANDS
                                    the database ALREADY MATCHES, whatever the
                                    verdict, because an empty plan from a diff
                                    is convergence rather than a problem.
+  init [--project <dir>]           Write strata.json from the .sql files under
+       [--from-tree] [--force]     the schema root, and print every one so a
+                                   human reads the list once. Refuses to
+                                   overwrite an existing manifest without
+                                   --force; `sync` is the command for a project
+                                   that already has one. Needs no database.
+  add <path>...                    Append paths to "include". Each must exist,
+                                   sit under the schema root, and end in .sql —
+                                   a manifest line for a file that is not there
+                                   is one of the two errors a load raises, so
+                                   writing one would be adding a known failure.
+                                   Needs no database.
+  sync [--project <dir>]           Reconcile strata.json with the tree. PRINTS
+       [--confirm]                 every path it would add or remove and writes
+                                   nothing without --confirm: a sync that
+                                   silently adopts whatever is on disk is the
+                                   directory walk again, and a file dropped into
+                                   the tree would join the project with nobody
+                                   deciding. Needs no database.
   compile [--project <dir>]        Read the project and ask a server what the
           --out <file>             DECLARED side means — view text, defaults,
                                    check and policy expressions, reference rows
@@ -333,7 +352,34 @@ let main argv =
             | null | "" -> None
             | value -> Some value
 
-    let positional = args |> List.filter (fun a -> not (a.StartsWith "--"))
+    /// The arguments that are not flags, and not a flag's VALUE.
+    ///
+    /// Filtering on `--` alone is not enough and was wrong: in
+    /// `add schema/x.sql --project ./db`, the directory does not start with `--`,
+    /// so it survived the filter and `add` tried to add it as an object file.
+    /// It went unnoticed because every earlier command reads at most one
+    /// positional and the stray value landed after it.
+    let positional =
+        // The flags that consume the argument after them. Listed rather than
+        // guessed, because guessing is the bug above.
+        let takesValue =
+            set [ "--connection"; "--corpus"; "--project"; "--out"; "--artifact"
+                  "--search-path"; "--key"; "--public-key" ]
+
+        let rec collect remaining acc =
+            match remaining with
+            | [] -> List.rev acc
+            | (flag: string) :: rest when takesValue.Contains flag ->
+                collect (match rest with _ :: tail -> tail | [] -> []) acc
+            | flag :: rest when flag.StartsWith "--" -> collect rest acc
+            | value :: rest -> collect rest (value :: acc)
+
+        collect args []
+
+    let projectRoot =
+        match valueOf "--project" args with
+        | Some dir -> dir
+        | None -> "."
 
     // `keygen`, `sign` and `validate --artifact` touch no database, so they are
     // dispatched BEFORE a connection is required. That is not a convenience: the
@@ -342,6 +388,22 @@ let main argv =
     // editor, a pre-commit hook, a fork's pull request — have neither
     // (`DF-STRATA-2026-2F6B`).
     match positional, valueOf "--artifact" args with
+    // The manifest commands need no database either. A manifest is a statement
+    // about FILES, and someone adding a table is in a checkout, not in front of
+    // a production connection string.
+    | "init" :: _, _ ->
+        ProjectCommands.init projectRoot (List.contains "--force" args)
+
+    | "add" :: paths, _ when not (List.isEmpty paths) ->
+        ProjectCommands.add projectRoot paths
+
+    | "add" :: _, _ ->
+        eprintfn "error: add needs at least one path, relative to the project root."
+        2
+
+    | "sync" :: _, _ ->
+        ProjectCommands.sync projectRoot (List.contains "--confirm" args)
+
     | "keygen" :: _, _ ->
         match valueOf "--key" args, valueOf "--public-key" args with
         | Some privatePath, Some publicPath ->
@@ -451,11 +513,6 @@ let main argv =
         | "validate" :: path :: _ -> Some path
         | _ -> None
 
-    let projectRoot =
-        match valueOf "--project" args with
-        | Some dir -> dir
-        | None -> "."
-
     let wantsPlan =
         match positional with
         | "plan" :: _
@@ -516,6 +573,8 @@ let main argv =
         | "plan" :: _ -> Error "plan takes no positional arguments; use --project"
         | "apply" :: _ -> Error "apply takes no positional arguments; use --project"
         | "compile" :: _ -> Error "compile takes no positional arguments; use --project and --out"
+        | "init" :: _ -> Error "init takes no positional arguments; use --project"
+        | "sync" :: _ -> Error "sync takes no positional arguments; use --project"
         | "deploy" :: _ -> Error "deploy takes no positional arguments; use --artifact"
         | "drift" :: _ -> Error "drift takes no positional arguments; use --artifact"
         | "keygen" :: _ -> Error "keygen takes no positional arguments; use --key and --public-key"
