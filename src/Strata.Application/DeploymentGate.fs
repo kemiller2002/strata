@@ -343,6 +343,40 @@ module DeploymentGate =
         // back, and none of them errors. A query that returned a thousand rows
         // returns four, or returns everything it was meant to hide, and the
         // caller cannot tell the difference from a quiet day.
+        | CreateExtension extension ->
+            { Change = change
+              Verdict = RequiresApproval
+              Detected = sprintf "installs extension %s" extension.Text
+              Rationale =
+                "Additive — nothing that works today stops working. But an extension brings its own types, "
+                + "functions and operators, and it is a lot of them: citext alone installs 88 catalog objects. "
+                + "None of them is managed by this project, and dropping the extension later would take all of "
+                + "them at once."
+              AffectedSources = []
+              NextSafeMove = "Confirm this extension is meant to be part of the database, then approve." }
+
+        | UpdateExtension (extension, version) ->
+            { Change = change
+              Verdict = RequiresApproval
+              Detected = sprintf "updates extension %s to %s" extension.Text version
+              Rationale =
+                "An extension's upgrade script can alter or drop the extension's own objects. Strata cannot "
+                + "read that script, so it cannot say what this changes — only that something in the database "
+                + "changes that this project does not describe."
+              AffectedSources = []
+              NextSafeMove = "Read the extension's upgrade notes for this version, then approve." }
+
+        | SetExtensionSchema (extension, schema) ->
+            { Change = change
+              Verdict = RequiresApproval
+              Detected = sprintf "moves extension %s to schema %s" extension.Text schema.Text
+              Rationale =
+                "Every unqualified reference to one of the extension's functions or types stops resolving "
+                + "unless the new schema is on the search path. Strata cannot find those references: they are "
+                + "in application SQL and in other objects' bodies."
+              AffectedSources = []
+              NextSafeMove = "Confirm the new schema is on the search path everywhere this extension is used, then approve." }
+
         | CreatePolicy (table, policy) ->
             { Change = change
               Verdict = RequiresApproval

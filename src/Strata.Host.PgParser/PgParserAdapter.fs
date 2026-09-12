@@ -1155,6 +1155,49 @@ module PgParserAdapter =
         else
             Some(Ok(settings |> List.choose id |> List.map (fun setting -> table, setting)))
 
+    /// An extension a file declares.
+    ///
+    /// `IF NOT EXISTS` is ignored deliberately: a desired-state file says the
+    /// extension should be present, and whether it already is is the diff's
+    /// question. Writing it or not writing it declares the same state.
+    let private extensionOf (stmt: CreateExtensionStmt) : Result<Extension, string> =
+        if String.IsNullOrEmpty stmt.Extname then
+            Microsoft.FSharp.Core.Error "CREATE EXTENSION with no resolvable name"
+        else
+
+        let option name =
+            if isNull (box stmt.Options) then
+                None
+            else
+                stmt.Options
+                |> Seq.choose (fun n -> if isNull (box n.DefElem) then None else Some n.DefElem)
+                |> Seq.tryPick (fun d ->
+                    if d.Defname = name && not (isNull (box d.Arg)) && not (isNull (box d.Arg.String)) then
+                        Some d.Arg.String.Sval
+                    else
+                        None)
+
+        // `CASCADE` installs whatever this extension requires, which is a
+        // decision about objects the file never named. Refused rather than
+        // executed quietly.
+        let cascade =
+            not (isNull (box stmt.Options))
+            && stmt.Options
+               |> Seq.exists (fun n ->
+                   not (isNull (box n.DefElem)) && n.DefElem.Defname = "cascade")
+
+        if cascade then
+            Microsoft.FSharp.Core.Error
+                "CREATE EXTENSION ... CASCADE is not read as declared state: it installs whatever the extension requires, which the file does not name"
+        else
+            Ok
+                { Name = identifierOf stmt.Extname
+                  Schema = option "schema" |> Option.map identifierOf
+                  Version = option "new_version"
+                  // Only the catalog knows. `false` here is never read: the
+                  // declared side is compared against the deployed side's flag.
+                  IsRelocatable = false }
+
     let private triggerOf (stmt: CreateTrigStmt) : Result<QualifiedName * Trigger, string> =
         if stmt.Isconstraint then
             // A CONSTRAINT TRIGGER carries deferrability and a FROM relation
@@ -1770,6 +1813,20 @@ module PgParserAdapter =
                             match triggerOf stmt.CreateTrigStmt with
                             | Ok (table, trigger) -> [ DeclaredTrigger(table, trigger) ]
                             | Microsoft.FSharp.Core.Error detail -> [ Unmodelled detail ]
+
+                        | Node.NodeOneofCase.CreateExtensionStmt ->
+                            match extensionOf stmt.CreateExtensionStmt with
+                            | Ok extension -> [ DeclaredExtension extension ]
+                            | Microsoft.FSharp.Core.Error detail -> [ Unmodelled detail ]
+
+                        // `ALTER EXTENSION ... UPDATE TO` describes an
+                        // OPERATION, not a state. The declarative form is
+                        // `CREATE EXTENSION ... VERSION`, and letting both in
+                        // would have two files disagree about the same fact.
+                        // Same reason REVOKE is refused.
+                        | Node.NodeOneofCase.AlterExtensionStmt ->
+                            [ Unmodelled
+                                "ALTER EXTENSION is not read as declared state: a file says which version should be installed, and getting there is the diff's decision — write CREATE EXTENSION ... VERSION instead" ]
 
                         | Node.NodeOneofCase.CreatePolicyStmt ->
                             match policyOf stmt.CreatePolicyStmt with

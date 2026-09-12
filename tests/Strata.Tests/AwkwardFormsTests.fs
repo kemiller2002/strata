@@ -241,9 +241,19 @@ let ``Strata reads the declaration the way the server does`` (name: string) =
                             | None -> false)))
             | Microsoft.FSharp.Core.Error message -> Some(Microsoft.FSharp.Core.Error message)
 
+        // Extensions are not scoped to a schema, so both sides pass through
+        // whole. A fixture declaring one it already has must converge; one
+        // declaring a version it does not have must not.
+        let actualExtensions =
+            match CatalogIntrospection.readExtensions connection with
+            | Ok installed -> Some(Ok installed)
+            | Microsoft.FSharp.Core.Error message -> Some(Microsoft.FSharp.Core.Error message)
+
         let result =
             SchemaDiff.run
                 { SchemaDiff.Inputs.between desired (inScratch actual) with
+                    DeclaredExtensions = declared.Extensions
+                    ActualExtensions = actualExtensions
                     DeclaredPolicies = declaredPolicies
                     DeclaredRowSecurity = declaredRowSecurity
                     ActualRowLevelSecurity = actualRowLevelSecurity

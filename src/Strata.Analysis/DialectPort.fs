@@ -105,6 +105,11 @@ module DialectPort =
         /// not tell those apart would have every project silently declaring
         /// that the table owner may bypass its policies.
         | DeclaredRowSecurity of table: QualifiedName * setting: RowSecuritySetting
+        /// An extension the project requires.
+        ///
+        /// Not an object in a schema — it is a thing the database either has or
+        /// does not — so it does not go through `SchemaObject`.
+        | DeclaredExtension of extension: Extension
         /// Rows a reference table must contain.
         ///
         /// A lookup table's rows — account types, status codes — are part of

@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 77,
+  "nextSeq": 78,
   "items": [
     {
       "id": "WI-0001",
@@ -1319,6 +1319,23 @@
       "attachments": [],
       "createdAt": "2026-09-12T10:49:40Z",
       "updatedAt": "2026-09-12T10:49:51Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0077",
+      "title": "Extensions as desired state",
+      "description": "Read CREATE EXTENSION as declared state: install a missing extension, update a pinned version, move a relocatable one. Never drop: citext alone owns 88 catalog objects and DROP EXTENSION takes every one. An unpinned version is not compared, and a non-relocatable extension in the wrong schema is disclosed rather than given a statement the server rejects.",
+      "tags": [
+        "postgres",
+        "er-008"
+      ],
+      "priority": "medium",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T11:01:40Z",
+      "updatedAt": "2026-09-12T11:01:56Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null

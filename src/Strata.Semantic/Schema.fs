@@ -354,6 +354,39 @@ module Schema =
           /// SELECT and can pass it on" are different states).
           Grantable: string list }
 
+    /// An extension, as a file declares it or the catalog reports it.
+    ///
+    /// Strata creates one and updates its version. It NEVER drops one, and the
+    /// reason is a number: `citext` alone owns 88 catalog objects on a stock
+    /// PostgreSQL 16, and `DROP EXTENSION` takes every one of them. Nothing
+    /// else in the vocabulary removes that much from a single statement, so
+    /// this gets the rule policies and reference rows get — an extension the
+    /// project does not declare is reported and left alone.
+    ///
+    /// The objects an extension owns are already excluded from Strata's
+    /// management, by `deptype = 'e'`. This is about the extension itself.
+    type Extension =
+        { Name: Identifier
+          /// The schema its objects live in.
+          ///
+          /// `None` on a DECLARED extension whose file did not name one, which
+          /// is not the same as naming `public`: PostgreSQL picks a default
+          /// that depends on the extension and the search path, and a file that
+          /// did not choose has not chosen.
+          Schema: Identifier option
+          /// `None` on a declared extension that pins no version. A file saying
+          /// `CREATE EXTENSION pgcrypto` asks for the extension, not for a
+          /// particular version of it, so a version it never named must not
+          /// read as a version it wants changed.
+          Version: string option
+          /// Whether the extension can be moved to another schema.
+          ///
+          /// Only ever known from the catalog. `plpgsql` is not relocatable and
+          /// is installed in every database, so a project declaring a schema
+          /// for it would otherwise get an `ALTER EXTENSION ... SET SCHEMA`
+          /// that the server rejects.
+          IsRelocatable: bool }
+
     /// Which statement a policy applies to.
     [<RequireQualifiedAccess>]
     type PolicyCommand =

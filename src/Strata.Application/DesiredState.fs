@@ -102,7 +102,11 @@ module DesiredState =
           /// A list of settings rather than a pair of booleans per table,
           /// because a file that never mentions forcing has said NOTHING about
           /// it rather than "do not force".
-          RowSecurity: (QualifiedName * RowSecuritySetting) list }
+          RowSecurity: (QualifiedName * RowSecuritySetting) list
+
+          /// Extensions the project requires. Created and version-updated,
+          /// never dropped.
+          Extensions: Extension list }
 
     /// Declared schema names, from the objects actually loaded.
     let private declaredSchemas (objects: SchemaObject list) =
@@ -128,6 +132,7 @@ module DesiredState =
         let policies = ResizeArray<QualifiedName * Policy>()
         let policyDeclarations = ResizeArray<(QualifiedName * Identifier) * string>()
         let rowSecurity = ResizeArray<QualifiedName * RowSecuritySetting>()
+        let extensions = ResizeArray<Extension>()
 
         for path, contents in files do
             let declarations = parser.ParseObjectDefinitions contents
@@ -146,6 +151,7 @@ module DesiredState =
                         | DeclaredTrigger _
                         | DeclaredPolicy _
                         | DeclaredRowSecurity _
+                        | DeclaredExtension _
                         | DeclaredRows _
                         | DeclaredGrant _
                         | Unmodelled _
@@ -158,6 +164,7 @@ module DesiredState =
                     | DeclaredTrigger (table, trigger) -> triggers.Add(table, trigger)
                     | DeclaredPolicy (table, policy) -> policies.Add(table, policy)
                     | DeclaredRowSecurity (table, setting) -> rowSecurity.Add(table, setting)
+                    | DeclaredExtension extension -> extensions.Add extension
                     // Collected below, where the whole file can be judged at
                     // once: a row declaration only means something alongside
                     // the other statements in its file.
@@ -449,6 +456,7 @@ module DesiredState =
           Policies = List.ofSeq policies
           PolicyDeclarations = List.ofSeq policyDeclarations
           RowSecurity = List.ofSeq rowSecurity
+          Extensions = List.ofSeq extensions
           Data = List.ofSeq data |> List.filter (fun d -> declaresTable d.Table)
           // Two declarations for the same object and grantee are merged rather
           // than treated as rivals: `GRANT SELECT` and `GRANT INSERT` written

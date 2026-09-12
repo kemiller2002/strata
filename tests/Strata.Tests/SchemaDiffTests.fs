@@ -2119,6 +2119,114 @@ let ``a caller that did not ask about row-level security is told nothing`` () =
 
     Assert.DoesNotContain(result.Suppressed, fun s -> s.Detail.Contains "row-level security")
 
+// ---- extensions --------------------------------------------------------------
+//
+// Created and version-updated, never dropped: citext alone owns 88 catalog
+// objects on a stock PostgreSQL 16 and DROP EXTENSION takes every one, which is
+// more than anything else in the vocabulary removes from a single statement.
+
+let private ext name schema version relocatable : Extension =
+    { Name = Identifier.unquoted name
+      Schema = schema |> Option.map Identifier.unquoted
+      Version = version
+      IsRelocatable = relocatable }
+
+let private runWithExtensions declared installed =
+    Strata.Application.SchemaDiff.run
+        { Strata.Application.SchemaDiff.Inputs.between (complete []) (complete []) with
+            AllowDrops = true
+            ManagedSchemas = managed
+            DeclaredExtensions = declared
+            ActualExtensions = installed }
+
+[<Fact>]
+let ``a declared extension the database does not have is installed`` () =
+    let result = runWithExtensions [ ext "pgcrypto" None None false ] (Some(Ok []))
+
+    Assert.Contains(result.Changes, fun c -> c = CreateExtension(Identifier.unquoted "pgcrypto"))
+
+[<Fact>]
+let ``a version the file does not pin is never compared`` () =
+    // `CREATE EXTENSION pgcrypto` asks for the extension, not for whichever
+    // version happens to be installed. Reading the absence as a demand would
+    // propose an update on every run, or a downgrade the server refuses.
+    let result =
+        runWithExtensions [ ext "pgcrypto" None None false ] (Some(Ok [ ext "pgcrypto" (Some "public") (Some "1.3") true ]))
+
+    Assert.Empty result.Changes
+
+[<Fact>]
+let ``a pinned version that differs is updated`` () =
+    let result =
+        runWithExtensions
+            [ ext "pgcrypto" None (Some "1.4") false ]
+            (Some(Ok [ ext "pgcrypto" (Some "public") (Some "1.3") true ]))
+
+    Assert.Contains(result.Changes, fun c -> c = UpdateExtension(Identifier.unquoted "pgcrypto", "1.4"))
+
+[<Fact>]
+let ``moving a non-relocatable extension is disclosed, never proposed`` () =
+    // plpgsql is not relocatable and is installed in every database, so a
+    // proposed ALTER EXTENSION ... SET SCHEMA would fail the whole plan.
+    let result =
+        runWithExtensions
+            [ ext "plpgsql" (Some "elsewhere") None false ]
+            (Some(Ok [ ext "plpgsql" (Some "pg_catalog") (Some "1.0") false ]))
+
+    Assert.Empty result.Changes
+    Assert.Contains(result.Suppressed, fun s -> s.Detail.Contains "not relocatable")
+
+[<Fact>]
+let ``a relocatable extension in the wrong schema is moved`` () =
+    let result =
+        runWithExtensions
+            [ ext "citext" (Some "ext") None false ]
+            (Some(Ok [ ext "citext" (Some "public") (Some "1.6") true ]))
+
+    Assert.Contains(
+        result.Changes,
+        fun c -> c = SetExtensionSchema(Identifier.unquoted "citext", Identifier.unquoted "ext"))
+
+[<Fact>]
+let ``an installed extension the project does not declare is never dropped`` () =
+    // Drops are ENABLED here.
+    let result = runWithExtensions [] (Some(Ok [ ext "citext" (Some "public") (Some "1.6") true ]))
+
+    Assert.Empty result.Changes
+    Assert.Contains(result.Suppressed, fun s -> s.Detail.Contains "takes every object it owns")
+
+[<Fact>]
+let ``an extension is installed before the tables that may use its types`` () =
+    let result =
+        Strata.Application.SchemaDiff.run
+            { Strata.Application.SchemaDiff.Inputs.between
+                  (complete [ tbl Managed "sales" "orders" orders ])
+                  (complete []) with
+                AllowDrops = true
+                ManagedSchemas = managed
+                ExistingSchemas = Some [ "sales" ]
+                DeclaredExtensions = [ ext "citext" None None false ]
+                ActualExtensions = Some(Ok []) }
+
+    let tags = result.Changes |> List.map Change.tag
+    let extension = tags |> List.findIndex (fun t -> t = "create-extension")
+    let table = tags |> List.findIndex (fun t -> t = "create-table")
+
+    Assert.True(
+        extension < table,
+        sprintf "an extension brings types a column may use, got %s" (String.concat ", " tags))
+
+[<Fact>]
+let ``unreadable extensions propose nothing and say so`` () =
+    let result =
+        runWithExtensions
+            [ ext "pgcrypto" None None false ]
+            (Some(Microsoft.FSharp.Core.Error "permission denied"))
+
+    Assert.Empty result.Changes
+    Assert.Contains(result.Suppressed, fun s -> s.Reason = NotCompared && s.Detail.Contains "could not be read")
+
+
 // ---- policies as desired state ----------------------------------------------
 
 let private declaredPolicy name command permissive roles using check =

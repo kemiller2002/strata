@@ -251,6 +251,82 @@ module SchemaDiff =
                   Reason = NotModelled
                   Detail = detail })
 
+    /// Extensions a project declares, against what is installed.
+    ///
+    /// Created and version-updated. NEVER dropped: `citext` alone owns 88
+    /// catalog objects and `DROP EXTENSION` takes every one, which is more than
+    /// anything else in the vocabulary removes from a single statement. An
+    /// extension the project does not declare is reported and left alone.
+    ///
+    /// A version the file did not pin is not compared. `CREATE EXTENSION
+    /// pgcrypto` asks for the extension, not for the version that happens to be
+    /// installed, so reading the absence as a demand would propose an update on
+    /// every run — or worse, a downgrade the server refuses.
+    let private extensionChanges
+        (declared: Extension list)
+        (actual: Result<Extension list, string> option) =
+
+        match actual with
+        | None -> [], []
+        | Some (Microsoft.FSharp.Core.Error message) ->
+            [],
+            (if List.isEmpty declared then
+                 []
+             else
+                 [ { Object = QualifiedName.unqualified (Identifier.unquoted "(extensions)")
+                     Reason = NotCompared
+                     Detail =
+                       sprintf
+                           "the database's installed extensions could not be read (%s), so declared extensions were NOT compared"
+                           message } ])
+        | Some (Ok installed) ->
+
+        let changes =
+            declared
+            |> List.collect (fun d ->
+                match installed |> List.tryFind (fun a -> Identifier.sameName a.Name d.Name) with
+                | None -> [ Ok(CreateExtension d.Name) ]
+                | Some a ->
+                    [ match d.Version, a.Version with
+                      | Some wanted, Some held when wanted <> held -> Ok(UpdateExtension(d.Name, wanted))
+                      | _ -> ()
+
+                      match d.Schema, a.Schema with
+                      | Some wanted, Some held when not (Identifier.sameName wanted held) ->
+                          if a.IsRelocatable then
+                              Ok(SetExtensionSchema(d.Name, wanted))
+                          else
+                              // `plpgsql` is the common case and it is installed
+                              // everywhere. Proposing a statement the server
+                              // rejects would fail the whole plan.
+                              Microsoft.FSharp.Core.Error
+                                  { Object = QualifiedName.unqualified d.Name
+                                    Reason = NotModelled
+                                    Detail =
+                                      sprintf
+                                          "the project declares extension %s in schema %s and it is installed in %s, but the extension is not relocatable, so nothing can move it"
+                                          d.Name.Text
+                                          wanted.Text
+                                          held.Text }
+                      | _ -> () ])
+
+        // Installed and undeclared. Reported, never dropped.
+        let undeclared =
+            installed
+            |> List.filter (fun a -> not (declared |> List.exists (fun d -> Identifier.sameName d.Name a.Name)))
+            |> List.map (fun a ->
+                { Object = QualifiedName.unqualified a.Name
+                  Reason = NotModelled
+                  Detail =
+                    sprintf
+                        "extension %s is installed and the project does not declare it; an extension is never dropped because DROP EXTENSION takes every object it owns%s"
+                        a.Name.Text
+                        (match a.Version with
+                         | Some v -> sprintf " (version %s)" v
+                         | None -> "") })
+
+        changes, undeclared
+
     /// Policies and row-level security a project declares, against what holds.
     ///
     /// ## An undeclared policy is never dropped
@@ -1207,6 +1283,15 @@ module SchemaDiff =
             |> Option.map (fun text ->
                 sprintf "DROP POLICY %s ON %s;\n%s" (quote policy) (quoteName table) text)
 
+        // No IF NOT EXISTS. The diff already established it is absent, and
+        // adding the guard would hide a disagreement between what Strata read
+        // and what the server holds rather than letting it fail loudly.
+        | CreateExtension extension -> Some(sprintf "CREATE EXTENSION %s" (quote extension))
+        | UpdateExtension (extension, version) ->
+            Some(sprintf "ALTER EXTENSION %s UPDATE TO '%s'" (quote extension) (version.Replace("'", "''")))
+        | SetExtensionSchema (extension, schema) ->
+            Some(sprintf "ALTER EXTENSION %s SET SCHEMA %s" (quote extension) (quote schema))
+
         | EnableRowLevelSecurity table ->
             Some(sprintf "ALTER TABLE %s ENABLE ROW LEVEL SECURITY" (quoteName table))
         | DisableRowLevelSecurity table ->
@@ -1361,37 +1446,43 @@ module SchemaDiff =
         // First, and alone at its rank: nothing else can run until the
         // namespace its objects live in exists.
         | CreateSchema _ -> 0
+        // After the schema an extension may be placed in, and before everything
+        // else: an extension brings TYPES, and a column may be declared with
+        // one. A table created before its extension fails outright.
+        | CreateExtension _ -> 1
+        | UpdateExtension _ -> 1
+        | SetExtensionSchema _ -> 1
         // After the schema that holds them, before any table whose column
         // DEFAULT draws from one.
-        | CreateSequence _ -> 1
-        | AlterSequence _ -> 1
-        | RenameColumn _ -> 2
-        | RenameTable _ -> 3
-        | CreateTable _ -> 3
-        | AddColumn _ -> 4
-        | AlterColumnType _ -> 5
+        | CreateSequence _ -> 2
+        | AlterSequence _ -> 2
+        | RenameColumn _ -> 3
+        | RenameTable _ -> 4
+        | CreateTable _ -> 4
+        | AddColumn _ -> 5
+        | AlterColumnType _ -> 6
         // After the columns they cover exist, before the drops.
-        | CreateIndex _ -> 5
-        | DropIndex _ -> 5
-        | AddConstraint _ -> 5
+        | CreateIndex _ -> 6
+        | DropIndex _ -> 6
+        | AddConstraint _ -> 6
         // One step ahead of the adds, because a constraint whose definition
         // changed is dropped and re-added under the SAME name: the add would
         // fail on a name that is still taken.
-        | DropConstraint _ -> 4
+        | DropConstraint _ -> 5
         // Views and routines reference tables and columns, so they come after
         // every table change that might create what they read.
-        | CreateView _ -> 6
-        | ReplaceView _ -> 6
-        | ReplaceRoutine _ -> 6
-        | CreateRoutine _ -> 6
+        | CreateView _ -> 7
+        | ReplaceView _ -> 7
+        | ReplaceRoutine _ -> 7
+        | CreateRoutine _ -> 7
         // After routines, and strictly after: a trigger names the function it
         // executes, and PostgreSQL rejects a CREATE TRIGGER whose function does
         // not exist yet. Sharing key 4 with CreateRoutine would not be enough —
         // the sort is stable, and trigger changes are assembled before routine
         // ones, so they would run first.
-        | CreateTrigger _ -> 7
-        | ReplaceTrigger _ -> 7
-        | DropTrigger _ -> 7
+        | CreateTrigger _ -> 8
+        | ReplaceTrigger _ -> 8
+        | DropTrigger _ -> 8
         // After the table, its columns and its constraints exist, and after
         // triggers: a trigger on a reference table should see the rows arrive
         // the same way it would see any other write.
@@ -1413,12 +1504,12 @@ module SchemaDiff =
         // grants were assembled first and ran first.
         // After the table and its columns exist, and after routines: a policy
         // expression may call one.
-        | CreatePolicy _ -> 8
-        | ReplacePolicy _ -> 8
-        | RevokePrivileges _ -> 9
-        | GrantPrivileges _ -> 10
-        | InsertRow _ -> 11
-        | UpdateRow _ -> 11
+        | CreatePolicy _ -> 9
+        | ReplacePolicy _ -> 9
+        | RevokePrivileges _ -> 10
+        | GrantPrivileges _ -> 11
+        | InsertRow _ -> 12
+        | UpdateRow _ -> 12
         // LAST of everything additive, and after the reference rows in
         // particular.
         //
@@ -1431,15 +1522,15 @@ module SchemaDiff =
         // Switching it OFF sits here too. It is not additive, but it belongs
         // with its opposite: a plan that disables row-level security and inserts
         // rows means those rows to land whatever the policies said.
-        | EnableRowLevelSecurity _ -> 12
-        | ForceRowLevelSecurity _ -> 12
-        | DisableRowLevelSecurity _ -> 12
-        | NoForceRowLevelSecurity _ -> 12
-        | TruncateTable _ -> 13
-        | DropColumn _ -> 14
-        | DropSequence _ -> 15
-        | DropTable _ -> 15
-        | UnclassifiedChange _ -> 16
+        | EnableRowLevelSecurity _ -> 13
+        | ForceRowLevelSecurity _ -> 13
+        | DisableRowLevelSecurity _ -> 13
+        | NoForceRowLevelSecurity _ -> 13
+        | TruncateTable _ -> 14
+        | DropColumn _ -> 15
+        | DropSequence _ -> 16
+        | DropTable _ -> 16
+        | UnclassifiedChange _ -> 17
 
     /// Constraint and default differences for a table present on both sides.
     ///
@@ -2350,6 +2441,11 @@ module SchemaDiff =
           DeclaredPolicies: (QualifiedName * Policy) list
           /// Row-level security settings the project declares.
           DeclaredRowSecurity: (QualifiedName * RowSecuritySetting) list
+          /// Extensions the project declares.
+          DeclaredExtensions: Extension list
+          /// Extensions installed in the database. `None` means the caller did
+          /// not ask; `Some (Error _)` that it asked and could not read them.
+          ActualExtensions: Result<Extension list, string> option
           /// Schemas that exist in the database, or `None` when the list could
           /// not be read. `None` is not an empty list.
           ExistingSchemas: string list option
@@ -2400,6 +2496,8 @@ module SchemaDiff =
               PolicyDeclarations = []
               DeclaredPolicies = []
               DeclaredRowSecurity = []
+              DeclaredExtensions = []
+              ActualExtensions = None
               ExistingSchemas = None
               DeclaredInSchemas = []
               DeclaredGrants = []
@@ -2654,6 +2752,9 @@ module SchemaDiff =
         let rlsSuppressions =
             rowLevelSecurityDisclosures managedSchemas inputs.ActualRowLevelSecurity
 
+        let extensionResults, extensionSuppressions =
+            extensionChanges inputs.DeclaredExtensions inputs.ActualExtensions
+
         let policyResults, policySuppressions =
             policyChanges
                 managedSchemas
@@ -2681,6 +2782,7 @@ module SchemaDiff =
             @ sequenceResults
             @ grantResults
             @ policyResults
+            @ extensionResults
             @ creations
             @ tableRenames
             @ indexesForNewTables
@@ -2729,6 +2831,7 @@ module SchemaDiff =
             @ grantSuppressions
             @ rlsSuppressions
             @ policySuppressions
+            @ extensionSuppressions
           DesiredStateComplete = desiredComplete }
 
     // ---- output -------------------------------------------------------------
@@ -2772,6 +2875,11 @@ module SchemaDiff =
         | DropTable table -> sprintf "drop-table         %s" (QualifiedName.display table)
         | CreateSchema schema -> sprintf "create-schema      %s" schema.Text
         | CreateSequence n -> sprintf "create-sequence    %s" (QualifiedName.display n)
+        | CreateExtension extension -> sprintf "create-extension   %s" extension.Text
+        | UpdateExtension (extension, version) ->
+            sprintf "update-extension   %s -> %s" extension.Text version
+        | SetExtensionSchema (extension, schema) ->
+            sprintf "set-ext-schema     %s -> %s" extension.Text schema.Text
         | CreatePolicy (table, policy) ->
             sprintf "create-policy      %s on %s" policy.Text (QualifiedName.display table)
         | ReplacePolicy (table, policy) ->

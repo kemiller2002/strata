@@ -78,4 +78,5 @@
 | WI-0073 | Column-level privileges as desired state | complete | postgres, privileges, er-008 | high |
 | WI-0074 | SchemaDiff.run took sixteen positional arguments, two of them transposable | complete | refactor, safety | high |
 | WI-0075 | Report row-level security instead of not looking at it | complete | postgres, security, er-008 | high |
-| WI-0076 | Row-level security policies as desired state | ready | postgres, security, er-008 | high |
+| WI-0076 | Row-level security policies as desired state | complete | postgres, security, er-008 | high |
+| WI-0077 | Extensions as desired state | ready | postgres, er-008 | medium |

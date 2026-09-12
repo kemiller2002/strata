@@ -502,6 +502,23 @@ module CatalogQueries =
         ORDER BY n.nspname, c.relname, p.polname
         """
 
+    /// Extensions installed in the database.
+    ///
+    /// `extrelocatable` comes along because `ALTER EXTENSION ... SET SCHEMA`
+    /// only works on a relocatable one — `plpgsql` is not, and is installed in
+    /// every database, so a project naming a schema for it would otherwise get
+    /// a statement the server rejects.
+    let extensions =
+        """
+        SELECT e.extname     AS name,
+               n.nspname     AS schema_name,
+               e.extversion  AS version,
+               e.extrelocatable AS relocatable
+        FROM pg_catalog.pg_extension e
+        JOIN pg_catalog.pg_namespace n ON n.oid = e.extnamespace
+        ORDER BY e.extname
+        """
+
     let serverVersion = "SELECT current_setting('server_version')"
 
     let searchPath = "SELECT current_setting('search_path')"

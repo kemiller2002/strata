@@ -606,6 +606,28 @@ module CatalogIntrospection =
         with ex ->
             Error ex.Message
 
+    /// Extensions installed in the database.
+    ///
+    /// A `Result` for the usual reason: a caller that could not read this must
+    /// not conclude an extension is absent and propose creating one, which on a
+    /// database that already has it fails the whole plan.
+    let readExtensions (connectionString: string) : Result<Extension list, string> =
+        try
+            use connection = new NpgsqlConnection(connectionString)
+            connection.Open()
+            use command = new NpgsqlCommand(CatalogQueries.extensions, connection)
+            use reader = command.ExecuteReader() :?> NpgsqlDataReader
+
+            Ok
+                [ while reader.Read() do
+                    yield
+                        { Name = Identifier.unquoted (str reader "name")
+                          Schema = Some(Identifier.unquoted (str reader "schema_name"))
+                          Version = Some(str reader "version")
+                          IsRelocatable = reader.GetBoolean(reader.GetOrdinal "relocatable") } ]
+        with ex ->
+            Error ex.Message
+
     /// Schema names that exist in the database.
     ///
     /// Returned as a `Result` rather than folded into the snapshot, and the

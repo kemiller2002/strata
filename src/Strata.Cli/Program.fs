@@ -94,6 +94,19 @@ PROJECT LAYOUT
   table-wide SELECT is proposed for revoking — otherwise "only these columns"
   would add access and narrow none. Another grantee is still untouched.
 
+  extensions/<name>.sql holds a CREATE EXTENSION:
+
+      CREATE EXTENSION pgcrypto;
+      CREATE EXTENSION citext VERSION '1.6';
+
+  A version the file does not pin is not compared: asking for the extension is
+  not asking for whichever version happens to be installed. An extension is
+  installed and version-updated, and NEVER dropped — citext alone owns 88
+  catalog objects and DROP EXTENSION takes every one, which is more than
+  anything else here removes from a single statement. An extension the project
+  does not declare is reported and left alone, and so are the objects any
+  extension owns.
+
   policies/<name>.sql holds a CREATE POLICY, and the ALTER TABLE that switches
   row-level security on:
 
@@ -367,6 +380,14 @@ let main argv =
                         // caller that never asked.
                         Some(Microsoft.FSharp.Core.Error message)
 
+                let actualExtensions =
+                    match CatalogIntrospection.readExtensions connectionString with
+                    | Ok installed -> Some(Ok installed)
+                    | Microsoft.FSharp.Core.Error message ->
+                        eprintfn "warning: could not read the database's extensions (%s)." message
+                        eprintfn "         Declared extensions will be reported as not-compared."
+                        Some(Microsoft.FSharp.Core.Error message)
+
                 let searchPath =
                     match CatalogIntrospection.readSearchPath connectionString with
                     | Ok p -> p
@@ -634,6 +655,8 @@ let main argv =
                             PolicyDeclarations = declared.PolicyDeclarations
                             DeclaredPolicies = declaredPolicies
                             DeclaredRowSecurity = declared.RowSecurity
+                            DeclaredExtensions = declared.Extensions
+                            ActualExtensions = actualExtensions
                             Data = resolvedData
                             DataFailures = dataFailures
                             NormalisedViews = normalisedViews

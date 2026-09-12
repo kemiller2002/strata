@@ -12,6 +12,16 @@
 -- distinction EV-STRATA-2026-E7A9 corrected the notebook on, and the only way
 -- to test it is to have such an object.
 
+-- An extension, because "extension-owned" is a state Strata has to see and
+-- never act on, and a fixture cannot fake it: `deptype = 'e'` is written by
+-- PostgreSQL when the extension is installed. `citext` is TRUSTED, so the
+-- non-superuser test role can install it, and it brings 88 catalog objects —
+-- which is exactly why an extension is never dropped.
+--
+-- Here rather than in a test, so every live run exercises the exclusion and the
+-- database is the same on every machine.
+CREATE EXTENSION IF NOT EXISTS citext;
+
 -- ---- the readable half, owned by the test role ----------------------------
 
 SET ROLE strata;

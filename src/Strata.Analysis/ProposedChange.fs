@@ -91,6 +91,24 @@ module ProposedChange =
         | RevokePrivileges of target: GrantTarget * grantee: string * privileges: string list
         /// Creates a sequence. Additive: nothing can already draw from one that
         /// does not exist.
+        /// Installs an extension.
+        ///
+        /// Additive, and not small: an extension brings its own types,
+        /// functions and operators, and `citext` alone installs 88 catalog
+        /// objects. Nothing that works today stops working, but the database
+        /// gains a lot of surface Strata does not manage.
+        | CreateExtension of extension: Identifier
+        /// Updates an installed extension to a new version.
+        ///
+        /// What changes is the extension's own objects, not the project's — and
+        /// an extension's upgrade script can alter or drop them. Strata cannot
+        /// read that script, so it cannot say what a version change does.
+        | UpdateExtension of extension: Identifier * version: string
+        /// Moves a relocatable extension's objects to another schema.
+        ///
+        /// Every unqualified reference to one of them stops resolving unless the
+        /// new schema is on the search path.
+        | SetExtensionSchema of extension: Identifier * schema: Identifier
         /// Creates a row-level security policy.
         ///
         /// Additive in the narrow sense that nothing that works today stops
@@ -239,6 +257,9 @@ module ProposedChange =
             | CreateSchema _ -> "create-schema"
             | GrantPrivileges _ -> "grant"
             | RevokePrivileges _ -> "revoke"
+            | CreateExtension _ -> "create-extension"
+            | UpdateExtension _ -> "update-extension"
+            | SetExtensionSchema _ -> "set-extension-schema"
             | CreatePolicy _ -> "create-policy"
             | ReplacePolicy _ -> "replace-policy"
             | EnableRowLevelSecurity _ -> "enable-row-level-security"
@@ -309,6 +330,12 @@ module ProposedChange =
             // A schema is not an object IN a schema, so there is no qualified
             // target to report. Saying None beats inventing one.
             | CreateSchema _
+            // An extension is not an object in a schema either. Its NAME is not
+            // a qualified name, and inventing one would put it in a schema the
+            // project may not manage.
+            | CreateExtension _
+            | UpdateExtension _
+            | SetExtensionSchema _
             | UnclassifiedChange _ -> None
 
         /// Does this change remove or overwrite something that already exists?
@@ -353,6 +380,11 @@ module ProposedChange =
             // this predicate is for.
             | DisableRowLevelSecurity _
             | NoForceRowLevelSecurity _
+            // An upgrade script can alter or drop the extension's own objects,
+            // and Strata cannot read it. Moving one breaks every unqualified
+            // reference to its functions and types.
+            | UpdateExtension _
+            | SetExtensionSchema _
             // Every query joining the reference table sees the new value at
             // once, and none of them errors.
             | UpdateRow _
@@ -363,6 +395,7 @@ module ProposedChange =
             | AddColumn _
             | CreateSchema _
             | CreateSequence _
+            | CreateExtension _
             | CreatePolicy _
             | GrantPrivileges _
             | CreateTable _
