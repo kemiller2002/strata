@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 63,
+  "nextSeq": 64,
   "items": [
     {
       "id": "WI-0001",
@@ -1035,13 +1035,14 @@
         "tooling"
       ],
       "priority": "low",
-      "status": "captured",
+      "status": "blocked",
       "attachments": [],
       "createdAt": "2026-09-12T00:54:31Z",
-      "updatedAt": "2026-09-12T00:54:31Z",
+      "updatedAt": "2026-09-12T00:59:08Z",
       "createdBy": "claude",
       "source": "manual",
-      "sourceReference": null
+      "sourceReference": null,
+      "blockedReason": "The ros CLI is an upstream self-contained binary fetched by ./ros, and queue.md is generated. Reported, not fixed here."
     },
     {
       "id": "WI-0062",
@@ -1056,6 +1057,23 @@
       "attachments": [],
       "createdAt": "2026-09-12T00:57:53Z",
       "updatedAt": "2026-09-12T00:57:53Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0063",
+      "title": "Record metrics for the validation and deployment increment",
+      "description": "WI-0015 and WI-0016 recorded metrics per increment. A 31-commit increment has landed with no such record.",
+      "tags": [
+        "strata",
+        "metrics"
+      ],
+      "priority": "medium",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T00:59:34Z",
+      "updatedAt": "2026-09-12T00:59:34Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
