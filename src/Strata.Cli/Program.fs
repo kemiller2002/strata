@@ -24,12 +24,18 @@ USAGE
 COMMANDS
   plan [--project <dir>]           Dry run: diff the project's desired state
                                    against the live database. Exit 0 allow,
-                                   1 block, 2 requires approval.
+                                   1 block, 2 requires approval — and 0 when
+                                   the database ALREADY MATCHES, whatever the
+                                   verdict, because an empty plan from a diff
+                                   is convergence rather than a problem.
   apply [--project <dir>]          Execute the plan. Requires --confirm, and
-                                   refuses unless the gate allows every change.
+                                   refuses unless the gate allows every change
+                                   or --approve accepts its requires-approval
+                                   findings. A block is never overridden.
   validate <file.sql>              Check every relation and column in a SQL file
                                    against the live schema. Exit 0 valid,
-                                   1 a reference provably does not exist,
+                                   1 provably wrong — a reference that does not
+                                   exist, or SQL that does not parse —
                                    2 something could not be verified.
   check <proposed.sql>             Gate a proposed migration. Exit 0 allow,
                                    1 block, 2 requires approval.

@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 62,
+  "nextSeq": 63,
   "items": [
     {
       "id": "WI-0001",
@@ -1039,6 +1039,23 @@
       "attachments": [],
       "createdAt": "2026-09-12T00:54:31Z",
       "updatedAt": "2026-09-12T00:54:31Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0062",
+      "title": "CLI help claims narrower behaviour than the code has",
+      "description": "Found by exercising every documented command and its error paths. validate exit 1 is documented as 'a reference provably does not exist' but is also returned for SQL that does not parse; apply is documented as refusing unless the gate allows every change, which --approve changed; plan returns 0 on convergence whatever the verdict, which anything gating on the exit code needs to know.",
+      "tags": [
+        "strata",
+        "docs"
+      ],
+      "priority": "low",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T00:57:53Z",
+      "updatedAt": "2026-09-12T00:57:53Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
