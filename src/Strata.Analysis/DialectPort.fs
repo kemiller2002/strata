@@ -56,6 +56,18 @@ module DialectPort =
           DialectVersion: string
           DialectMajor: int }
 
+    /// One row-level security setting an `ALTER TABLE` declares.
+    ///
+    /// Four statements, four settings. `Force` without `Enable` does nothing at
+    /// all — PostgreSQL accepts it and it has no effect — so the two are not
+    /// merged into one flag.
+    [<RequireQualifiedAccess>]
+    type RowSecuritySetting =
+        | Enable
+        | Disable
+        | Force
+        | NoForce
+
     /// What a desired-state object file turned out to declare.
     ///
     /// A file that declares nothing Strata models is NOT an empty file — it is
@@ -74,6 +86,25 @@ module DialectPort =
         /// behaviour it changes is the table, and the loader joins them once
         /// every file is read.
         | DeclaredTrigger of table: QualifiedName * trigger: Trigger
+        /// A row-level security policy, which belongs to a table for the same
+        /// reason a trigger does.
+        ///
+        /// The expressions inside it are NOT comparable as written — a file's
+        /// `USING (owner_id = 1)` and the catalog's `(owner_id = 1)` differ by
+        /// the parentheses alone, and worse by every implicit cast the server
+        /// adds — so the declaring text is kept and the server renders it,
+        /// exactly as a check constraint is handled.
+        | DeclaredPolicy of table: QualifiedName * policy: Policy
+        /// Whether row-level security is switched on for a table, and whether it
+        /// applies to the table's owner.
+        ///
+        /// `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` is its own statement and
+        /// each one says ONE thing, so a declaration carries one setting rather
+        /// than a pair of booleans. A file that never mentions forcing has not
+        /// said "do not force" — it has said nothing — and a shape that could
+        /// not tell those apart would have every project silently declaring
+        /// that the table owner may bypass its policies.
+        | DeclaredRowSecurity of table: QualifiedName * setting: RowSecuritySetting
         /// Rows a reference table must contain.
         ///
         /// A lookup table's rows — account types, status codes — are part of

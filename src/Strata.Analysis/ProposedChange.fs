@@ -91,6 +91,37 @@ module ProposedChange =
         | RevokePrivileges of target: GrantTarget * grantee: string * privileges: string list
         /// Creates a sequence. Additive: nothing can already draw from one that
         /// does not exist.
+        /// Creates a row-level security policy.
+        ///
+        /// Additive in the narrow sense that nothing that works today stops
+        /// working — but a PERMISSIVE policy on a table where row-level
+        /// security is off changes nothing, and the same policy once it is on
+        /// may hide rows from everyone. What a policy does depends on state
+        /// outside itself, so the gate never treats one as routine.
+        | CreatePolicy of table: QualifiedName * policy: Identifier
+        /// Replaces a policy whose definition differs, as a drop and a create.
+        ///
+        /// Not `ALTER POLICY`: that can change the expressions and the roles
+        /// but NOT the command it applies to or whether it is permissive, so a
+        /// policy that changed either would be altered into something that
+        /// still does not match the file.
+        | ReplacePolicy of table: QualifiedName * policy: Identifier
+        /// Switches row-level security on for a table.
+        ///
+        /// The single most consequential change in the vocabulary. With no
+        /// policies it hides every row from every role; with them it hides
+        /// whatever they do not admit. Either way, queries that worked start
+        /// returning fewer rows and NOTHING errors.
+        | EnableRowLevelSecurity of table: QualifiedName
+        /// Switches row-level security off.
+        ///
+        /// Exposes every row the policies were hiding. Nothing errors here
+        /// either, which is what makes it dangerous.
+        | DisableRowLevelSecurity of table: QualifiedName
+        /// Makes row-level security apply to the table's owner too.
+        | ForceRowLevelSecurity of table: QualifiedName
+        /// Stops row-level security applying to the table's owner.
+        | NoForceRowLevelSecurity of table: QualifiedName
         | CreateSequence of sequence: QualifiedName
         /// Removes a sequence.
         ///
@@ -208,6 +239,12 @@ module ProposedChange =
             | CreateSchema _ -> "create-schema"
             | GrantPrivileges _ -> "grant"
             | RevokePrivileges _ -> "revoke"
+            | CreatePolicy _ -> "create-policy"
+            | ReplacePolicy _ -> "replace-policy"
+            | EnableRowLevelSecurity _ -> "enable-row-level-security"
+            | DisableRowLevelSecurity _ -> "disable-row-level-security"
+            | ForceRowLevelSecurity _ -> "force-row-level-security"
+            | NoForceRowLevelSecurity _ -> "no-force-row-level-security"
             | CreateSequence _ -> "create-sequence"
             | DropSequence _ -> "drop-sequence"
             | AlterSequence _ -> "alter-sequence"
@@ -256,6 +293,12 @@ module ProposedChange =
             | ReplaceTrigger (table, _)
             | AddConstraint (table, _, _, _)
             | DropConstraint (table, _, _)
+            | CreatePolicy (table, _)
+            | ReplacePolicy (table, _)
+            | EnableRowLevelSecurity table
+            | DisableRowLevelSecurity table
+            | ForceRowLevelSecurity table
+            | NoForceRowLevelSecurity table
             | TruncateTable table -> Some table
             // Reported through `GrantTarget.name`, which is lossy: a routine's
             // arguments are dropped and a schema comes back unqualified. That
@@ -298,6 +341,18 @@ module ProposedChange =
             | AlterSequence _
             // Whatever ran as that role starts failing on its next statement.
             | RevokePrivileges _
+            // Rows stop being visible, and nothing errors. Replacing a policy
+            // is destructive for the window between the drop and the create,
+            // and destructive in the ordinary sense if the new one admits less.
+            | EnableRowLevelSecurity _
+            | ForceRowLevelSecurity _
+            | ReplacePolicy _
+            // And the other direction: rows the policies were hiding become
+            // visible to everyone. Not "destructive" in the sense of losing
+            // data, but it overwrites a decision someone made, which is what
+            // this predicate is for.
+            | DisableRowLevelSecurity _
+            | NoForceRowLevelSecurity _
             // Every query joining the reference table sees the new value at
             // once, and none of them errors.
             | UpdateRow _
@@ -308,6 +363,7 @@ module ProposedChange =
             | AddColumn _
             | CreateSchema _
             | CreateSequence _
+            | CreatePolicy _
             | GrantPrivileges _
             | CreateTable _
             | InsertRow _

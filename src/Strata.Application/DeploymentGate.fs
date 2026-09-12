@@ -338,6 +338,65 @@ module DeploymentGate =
               AffectedSources = []
               NextSafeMove = "Proceed." }
 
+        // Policies and row-level security. Nothing here breaks a query in the
+        // way a dropped column does — every one of these changes WHICH ROWS come
+        // back, and none of them errors. A query that returned a thousand rows
+        // returns four, or returns everything it was meant to hide, and the
+        // caller cannot tell the difference from a quiet day.
+        | CreatePolicy (table, policy) ->
+            { Change = change
+              Verdict = RequiresApproval
+              Detected = sprintf "creates policy %s on %s" policy.Text (QualifiedName.display table)
+              Rationale =
+                "What a policy does depends on state outside itself. On a table where row-level security is off it changes nothing; once it is on, a restrictive policy can hide rows from every role. Strata cannot tell which rows it admits — that is the expression's business, at query time."
+              AffectedSources = []
+              NextSafeMove = "Confirm which rows this admits, and for which roles, then approve." }
+
+        | ReplacePolicy (table, policy) ->
+            { Change = change
+              Verdict = RequiresApproval
+              Detected = sprintf "replaces policy %s on %s" policy.Text (QualifiedName.display table)
+              Rationale =
+                "The old policy is dropped and the new one created. If the new one admits fewer rows, queries start returning less and nothing errors; if more, rows the old one hid become visible."
+              AffectedSources = []
+              NextSafeMove = "Compare what the two admit, then approve." }
+
+        | EnableRowLevelSecurity table ->
+            { Change = change
+              Verdict = RequiresApproval
+              Detected = sprintf "enables row-level security on %s" (QualifiedName.display table)
+              Rationale =
+                "Every query against this table starts being filtered. With no policy admitting them, rows are hidden from every role except the owner — the table reads as empty and nothing errors. Strata cannot say which queries depend on seeing every row."
+              AffectedSources = []
+              NextSafeMove = "Confirm a policy admits the rows each role needs, then approve." }
+
+        | DisableRowLevelSecurity table ->
+            { Change = change
+              Verdict = RequiresApproval
+              Detected = sprintf "disables row-level security on %s" (QualifiedName.display table)
+              Rationale =
+                "Every row this table's policies were hiding becomes visible to every role that can read the table. Nothing errors, and nothing in the database records that it used to be hidden."
+              AffectedSources = []
+              NextSafeMove = "Confirm the rows here are meant to be readable by every role with access, then approve." }
+
+        | ForceRowLevelSecurity table ->
+            { Change = change
+              Verdict = RequiresApproval
+              Detected = sprintf "forces row-level security on %s" (QualifiedName.display table)
+              Rationale =
+                "Policies start applying to the table's OWNER as well — usually the role that runs migrations and batch jobs. Those stop seeing rows the policies do not admit, and a write that violates a policy is rejected outright."
+              AffectedSources = []
+              NextSafeMove = "Confirm the owner's own queries and writes satisfy the policies, then approve." }
+
+        | NoForceRowLevelSecurity table ->
+            { Change = change
+              Verdict = RequiresApproval
+              Detected = sprintf "stops forcing row-level security on %s" (QualifiedName.display table)
+              Rationale =
+                "The table's owner starts bypassing every policy on it, so anything running as the owner sees every row again."
+              AffectedSources = []
+              NextSafeMove = "Confirm the owner is meant to bypass these policies, then approve." }
+
         | GrantPrivileges (target, grantee, privileges) ->
             // Nothing breaks, so nothing here is looking for breakage. What it
             // weighs is who can now reach the data — and PUBLIC is a different
@@ -690,17 +749,17 @@ module DeploymentGate =
 
         for f in result.Findings do
             lines.Add(sprintf "  [%s] %s" ((Verdict.tag f.Verdict).ToUpperInvariant()) f.Detected)
-            lines.Add(sprintf "         why:  %s" f.Rationale)
+            lines.Add(sprintf " why:  %s" f.Rationale)
 
             if not (List.isEmpty f.AffectedSources) then
                 for s in List.sort f.AffectedSources do
-                    lines.Add(sprintf "         - %s" s)
+                    lines.Add(sprintf " - %s" s)
 
-            lines.Add(sprintf "         next: %s" f.NextSafeMove)
+            lines.Add(sprintf " next: %s" f.NextSafeMove)
             lines.Add ""
 
         if not (Scope.supportsAbsenceClaim result.Scope) then
             lines.Add "NOTE: the analysed scope does not support absence claims. A clean result here"
-            lines.Add "      is a bounded result, not clearance."
+            lines.Add " is a bounded result, not clearance."
 
         System.String.Join("\n", lines)

@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 76,
+  "nextSeq": 77,
   "items": [
     {
       "id": "WI-0001",
@@ -1301,6 +1301,24 @@
       "attachments": [],
       "createdAt": "2026-09-12T10:28:51Z",
       "updatedAt": "2026-09-12T10:29:02Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0076",
+      "title": "Row-level security policies as desired state",
+      "description": "Read CREATE POLICY and the row-security ALTER TABLE forms as declared state, normalise policy expressions through the server, and diff them. A declared policy is created or replaced; an undeclared one is reported and never dropped, because removing a policy exposes rows silently and nothing records that they used to be hidden.",
+      "tags": [
+        "postgres",
+        "security",
+        "er-008"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T10:49:40Z",
+      "updatedAt": "2026-09-12T10:49:51Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null

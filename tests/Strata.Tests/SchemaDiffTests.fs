@@ -4,6 +4,7 @@ open Xunit
 open Strata.Semantic.Identity
 open Strata.Semantic.Schema
 open Strata.Semantic.AnalysisScope
+open Strata.Analysis.DialectPort
 open Strata.Analysis.ProposedChange
 open Strata.Application.SchemaDiff
 
@@ -2117,6 +2118,164 @@ let ``a caller that did not ask about row-level security is told nothing`` () =
     let result = runWithRls None
 
     Assert.DoesNotContain(result.Suppressed, fun s -> s.Detail.Contains "row-level security")
+
+// ---- policies as desired state ----------------------------------------------
+
+let private declaredPolicy name command permissive roles using check =
+    qn "sales" "orders",
+    { Name = Identifier.unquoted name
+      Command = command
+      IsPermissive = permissive
+      Roles = roles
+      Using = using
+      WithCheck = check }
+
+let private runWithPolicies declared settings deployed =
+    Strata.Application.SchemaDiff.run
+        { Strata.Application.SchemaDiff.Inputs.between
+              (complete [ tbl Managed "sales" "orders" orders ])
+              (complete [ tbl Observed "sales" "orders" orders ]) with
+            AllowDrops = true
+            ManagedSchemas = managed
+            DeclaredPolicies = declared
+            DeclaredRowSecurity = settings
+            ActualRowLevelSecurity = Some(Ok deployed) }
+
+[<Fact>]
+let ``a declared policy the table does not have is created`` () =
+    let result =
+        runWithPolicies
+            [ declaredPolicy "p" PolicyCommand.Select true [ "PUBLIC" ] (Some "(a)") None ]
+            []
+            [ { Table = qn "sales" "orders"; Enabled = true; Forced = false; Policies = [] } ]
+
+    Assert.Contains(result.Changes, fun c -> c = CreatePolicy(qn "sales" "orders", Identifier.unquoted "p"))
+
+[<Fact>]
+let ``a policy whose expression differs is replaced`` () =
+    let result =
+        runWithPolicies
+            [ declaredPolicy "p" PolicyCommand.Select true [ "PUBLIC" ] (Some "(tenant = 'globex'::text)") None ]
+            []
+            [ { Table = qn "sales" "orders"
+                Enabled = true
+                Forced = false
+                Policies = [ policy "p" PolicyCommand.Select true [ "PUBLIC" ] (Some "(tenant = 'acme'::text)") None ] } ]
+
+    Assert.Contains(result.Changes, fun c -> c = ReplacePolicy(qn "sales" "orders", Identifier.unquoted "p"))
+
+[<Fact>]
+let ``an unrendered expression is disclosed, never treated as a match`` () =
+    // THE defect this pins. `Some ""` is the placeholder for a clause that was
+    // written and not rendered by the server, and a first version compared it
+    // equal to anything — so a failed normalisation was indistinguishable from
+    // a policy that matched. A live round-trip changed a policy's expression
+    // and Strata reported zero changes, leaving the deployed policy admitting
+    // rows the file no longer admitted.
+    let result =
+        runWithPolicies
+            [ declaredPolicy "p" PolicyCommand.Select true [ "PUBLIC" ] (Some "") None ]
+            []
+            [ { Table = qn "sales" "orders"
+                Enabled = true
+                Forced = false
+                Policies = [ policy "p" PolicyCommand.Select true [ "PUBLIC" ] (Some "(anything)") None ] } ]
+
+    Assert.Empty result.Changes
+
+    Assert.Contains(
+        result.Suppressed,
+        fun s -> s.Reason = NotCompared && s.Detail.Contains "could not be rendered")
+
+[<Fact>]
+let ``a policy differing in permissiveness is replaced without needing the server`` () =
+    // Command, roles and permissiveness are comparable with no rendering at
+    // all, so an unrendered expression must not stop them being compared.
+    let result =
+        runWithPolicies
+            [ declaredPolicy "p" PolicyCommand.Select false [ "PUBLIC" ] (Some "") None ]
+            []
+            [ { Table = qn "sales" "orders"
+                Enabled = true
+                Forced = false
+                Policies = [ policy "p" PolicyCommand.Select true [ "PUBLIC" ] (Some "(a)") None ] } ]
+
+    Assert.Contains(result.Changes, fun c -> c = ReplacePolicy(qn "sales" "orders", Identifier.unquoted "p"))
+
+[<Fact>]
+let ``an undeclared policy is reported and never dropped`` () =
+    // Drops are ENABLED here. Removing a policy does not break a query or lose
+    // a row — it makes rows that were hidden visible, silently, with nothing
+    // recording that they used to be hidden. So this is the one thing
+    // `--allow-drops` does not reach.
+    let result =
+        runWithPolicies
+            [ declaredPolicy "mine" PolicyCommand.Select true [ "PUBLIC" ] (Some "(a)") None ]
+            []
+            [ { Table = qn "sales" "orders"
+                Enabled = true
+                Forced = false
+                Policies =
+                  [ policy "mine" PolicyCommand.Select true [ "PUBLIC" ] (Some "(a)") None
+                    policy "theirs" PolicyCommand.Select true [ "PUBLIC" ] (Some "(b)") None ] } ]
+
+    Assert.Empty result.Changes
+    Assert.Contains(result.Suppressed, fun s -> s.Detail.Contains "never dropped" && s.Detail.Contains "theirs")
+
+[<Fact>]
+let ``row-level security is enabled only when the file says so and it is off`` () =
+    let off =
+        runWithPolicies
+            []
+            [ qn "sales" "orders", RowSecuritySetting.Enable ]
+            [ { Table = qn "sales" "orders"; Enabled = false; Forced = false; Policies = [] } ]
+
+    Assert.Contains(off.Changes, fun c -> c = EnableRowLevelSecurity(qn "sales" "orders"))
+
+    let alreadyOn =
+        runWithPolicies
+            []
+            [ qn "sales" "orders", RowSecuritySetting.Enable ]
+            [ { Table = qn "sales" "orders"; Enabled = true; Forced = false; Policies = [] } ]
+
+    Assert.Empty alreadyOn.Changes
+
+[<Fact>]
+let ``a file that says nothing about forcing proposes nothing about forcing`` () =
+    // Saying nothing is not saying "do not force". A shape that could not tell
+    // those apart would have every project silently declaring that the table
+    // owner may bypass its policies.
+    let result =
+        runWithPolicies
+            []
+            [ qn "sales" "orders", RowSecuritySetting.Enable ]
+            [ { Table = qn "sales" "orders"; Enabled = false; Forced = true; Policies = [] } ]
+
+    Assert.DoesNotContain(result.Changes, fun c -> c = NoForceRowLevelSecurity(qn "sales" "orders"))
+
+[<Fact>]
+let ``row-level security is switched on after the reference rows are written`` () =
+    // FORCE makes policies apply to the table's OWNER, which is the role running
+    // the plan. Enabling it before this plan's own INSERTs has the server reject
+    // them — "new row violates row-level security policy" — and take the whole
+    // transaction with them. Verified against a live server.
+    let result =
+        Strata.Application.SchemaDiff.run
+            { Strata.Application.SchemaDiff.Inputs.between
+                  (complete [ accountType ])
+                  (complete [ accountType ]) with
+                AllowDrops = true
+                ManagedSchemas = managed
+                Data = [ resolved [ row "1" "(1,new)" [ "1"; "'new'" ] ] [] ]
+                DeclaredRowSecurity = [ qn "sales" "account_type", RowSecuritySetting.Force ]
+                ActualRowLevelSecurity =
+                    Some(Ok [ { Table = qn "sales" "account_type"; Enabled = true; Forced = false; Policies = [] } ]) }
+
+    let tags = result.Changes |> List.map Change.tag
+    let insert = tags |> List.findIndex (fun t -> t = "insert-row")
+    let force = tags |> List.findIndex (fun t -> t = "force-row-level-security")
+
+    Assert.True(insert < force, sprintf "rows must be written before forcing, got %s" (String.concat ", " tags))
 
 [<Fact>]
 let ``unreadable privileges propose nothing and say so`` () =

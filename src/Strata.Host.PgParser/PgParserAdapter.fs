@@ -1050,6 +1050,111 @@ module PgParserAdapter =
     ///
     /// `None` for a shape Strata does not model, so the caller reports it as
     /// unmodelled rather than loading a trigger that means something else.
+    /// A policy a file declares.
+    ///
+    /// The expressions are NOT read from the parse tree. `qual` and `with_check`
+    /// are trees Strata does not deparse, and even if it did, the text would not
+    /// match the catalog: PostgreSQL adds parentheses and every implicit cast, so
+    /// a file's `tenant = 'x'` renders as `(tenant = 'x'::text)`. They are
+    /// carried as presence only here and filled in by the server, which is
+    /// exactly how a check constraint is handled.
+    ///
+    /// `polcmd` has no ROLESPEC equivalent for "no FOR clause": PostgreSQL
+    /// defaults it to ALL, and `cmd_name` is absent in that case rather than
+    /// holding "all".
+    let private policyOf (stmt: CreatePolicyStmt) : Result<QualifiedName * Policy, string> =
+        if isNull (box stmt.Table) then
+            Microsoft.FSharp.Core.Error "CREATE POLICY with no resolvable table"
+        else
+
+        let command =
+            match (if isNull stmt.CmdName then "" else stmt.CmdName.ToLowerInvariant()) with
+            // Absent, because PostgreSQL's default for a missing FOR clause is
+            // ALL and the field is simply not set.
+            | ""
+            | "all" -> Ok PolicyCommand.All
+            | "select" -> Ok PolicyCommand.Select
+            | "insert" -> Ok PolicyCommand.Insert
+            | "update" -> Ok PolicyCommand.Update
+            | "delete" -> Ok PolicyCommand.Delete
+            | other ->
+                Microsoft.FSharp.Core.Error(
+                    sprintf "CREATE POLICY ... FOR %s names a command Strata does not model" other)
+
+        let roles =
+            if isNull (box stmt.Roles) then []
+            else
+                stmt.Roles
+                |> Seq.choose (fun n ->
+                    if isNull (box n.RoleSpec) then None
+                    else
+                        match n.RoleSpec.Roletype with
+                        | RoleSpecType.RolespecPublic -> Some "PUBLIC"
+                        | RoleSpecType.RolespecCstring when not (String.IsNullOrEmpty n.RoleSpec.Rolename) ->
+                            Some n.RoleSpec.Rolename
+                        | _ -> None)
+                |> List.ofSeq
+
+        match command with
+        | Microsoft.FSharp.Core.Error e -> Microsoft.FSharp.Core.Error e
+        | Ok command ->
+            if List.isEmpty roles then
+                // No TO clause means PUBLIC, which the parser already renders as
+                // a ROLESPEC_PUBLIC entry — so an empty list here means every
+                // role it did name was CURRENT_USER or SESSION_USER, which a
+                // file cannot fix and a diff cannot compare.
+                Microsoft.FSharp.Core.Error
+                    "CREATE POLICY with no role a file can fix (CURRENT_USER and SESSION_USER are not declarable)"
+            else
+                Ok(
+                    qualifiedNameOf stmt.Table.Schemaname stmt.Table.Relname,
+                    { Name = identifierOf stmt.PolicyName
+                      Command = command
+                      IsPermissive = stmt.Permissive
+                      Roles = roles |> List.distinct |> List.sort
+                      // Presence only, from the parse tree. The server fills in
+                      // the rendered text; until it has, these say whether the
+                      // clause was written at all — which is the part that is
+                      // comparable without it.
+                      Using = if isNull (box stmt.Qual) then None else Some ""
+                      WithCheck = if isNull (box stmt.WithCheck) then None else Some "" })
+
+    /// Row-level security settings an `ALTER TABLE` declares.
+    ///
+    /// Only the four row-security subtypes are read. An `ALTER TABLE` mixing one
+    /// of them with anything else is REFUSED rather than partly read: acting on
+    /// half a statement is how a project ends up with row-level security
+    /// enabled and the column it also asked for missing.
+    let private rowSecurityOf (stmt: AlterTableStmt) : Result<(QualifiedName * RowSecuritySetting) list, string> option =
+        if isNull (box stmt.Relation) || isNull (box stmt.Cmds) then None
+        else
+
+        let table = qualifiedNameOf stmt.Relation.Schemaname stmt.Relation.Relname
+
+        let settings =
+            stmt.Cmds
+            |> Seq.map (fun n ->
+                if isNull (box n.AlterTableCmd) then None
+                else
+                    match n.AlterTableCmd.Subtype with
+                    | AlterTableType.AtEnableRowSecurity -> Some RowSecuritySetting.Enable
+                    | AlterTableType.AtDisableRowSecurity -> Some RowSecuritySetting.Disable
+                    | AlterTableType.AtForceRowSecurity -> Some RowSecuritySetting.Force
+                    | AlterTableType.AtNoForceRowSecurity -> Some RowSecuritySetting.NoForce
+                    | _ -> None)
+            |> List.ofSeq
+
+        if settings |> List.forall Option.isNone then
+            // Nothing to do with row security. Left for whatever handles other
+            // ALTER TABLE statements, which today is the unmodelled path.
+            None
+        elif settings |> List.exists Option.isNone then
+            Some(
+                Microsoft.FSharp.Core.Error
+                    "an ALTER TABLE mixing row-level security with other changes is not read as declared state: Strata would act on half the statement")
+        else
+            Some(Ok(settings |> List.choose id |> List.map (fun setting -> table, setting)))
+
     let private triggerOf (stmt: CreateTrigStmt) : Result<QualifiedName * Trigger, string> =
         if stmt.Isconstraint then
             // A CONSTRAINT TRIGGER carries deferrability and a FROM relation
@@ -1664,6 +1769,20 @@ module PgParserAdapter =
                         | Node.NodeOneofCase.CreateTrigStmt ->
                             match triggerOf stmt.CreateTrigStmt with
                             | Ok (table, trigger) -> [ DeclaredTrigger(table, trigger) ]
+                            | Microsoft.FSharp.Core.Error detail -> [ Unmodelled detail ]
+
+                        | Node.NodeOneofCase.CreatePolicyStmt ->
+                            match policyOf stmt.CreatePolicyStmt with
+                            | Ok (table, policy) -> [ DeclaredPolicy(table, policy) ]
+                            | Microsoft.FSharp.Core.Error detail -> [ Unmodelled detail ]
+
+                        // Only the row-security subtypes. `rowSecurityOf`
+                        // returns None for every other ALTER TABLE, which then
+                        // falls through to the unmodelled path below rather than
+                        // being read as an empty declaration.
+                        | Node.NodeOneofCase.AlterTableStmt when (rowSecurityOf stmt.AlterTableStmt).IsSome ->
+                            match (rowSecurityOf stmt.AlterTableStmt).Value with
+                            | Ok settings -> settings |> List.map DeclaredRowSecurity
                             | Microsoft.FSharp.Core.Error detail -> [ Unmodelled detail ]
                         // Recognised, modelled nowhere yet. Saying so keeps a
                         // view file from reading as an empty declaration, which

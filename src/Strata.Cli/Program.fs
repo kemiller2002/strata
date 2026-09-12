@@ -94,11 +94,29 @@ PROJECT LAYOUT
   table-wide SELECT is proposed for revoking — otherwise "only these columns"
   would add access and narrow none. Another grantee is still untouched.
 
-  Row-level security is REPORTED and never changed. Policies are not declarable
-  yet, and two states are worth knowing because both look like an ordinary
-  table: row-level security enabled with no policies hides every row from every
-  role, and policies on a table where it is disabled restrict nothing at all.
-  A plan says which, for every managed table where either holds.
+  policies/<name>.sql holds a CREATE POLICY, and the ALTER TABLE that switches
+  row-level security on:
+
+      CREATE POLICY doc_tenant ON app.doc FOR ALL TO app_user
+          USING (tenant = current_setting('app.tenant'));
+
+      ALTER TABLE app.doc ENABLE ROW LEVEL SECURITY;
+
+  A policy Strata declares, it creates and replaces. A policy it does NOT
+  declare is reported and never dropped, --allow-drops included: dropping one
+  breaks no query and loses no row, it makes rows that were hidden visible to
+  whoever can read the table, and nothing records that they used to be hidden.
+  That is the least recoverable mistake available, so it is the one thing drops
+  do not reach — the same rule reference rows get.
+
+  Two states are worth knowing because both look like an ordinary table, and a
+  plan says which holds for every managed table: row-level security enabled
+  with no policies hides every row from every role except the owner, and
+  policies on a table where it is disabled restrict nothing at all.
+
+  Switching row-level security on runs LAST in a plan, after any reference rows.
+  FORCE makes policies apply to the table's own owner, so enabling it first has
+  the server reject the plan's own inserts and roll the whole thing back.
 
   Two things about privileges are reported and never changed. Every function
   starts with EXECUTE granted to PUBLIC, so a project that does not declare
@@ -444,6 +462,65 @@ let main argv =
 
                         []
 
+                // Declared policies, with their expressions rendered by the
+                // server. A file's `tenant = 'x'` and the catalog's
+                // `(tenant = 'x'::text)` are the same policy, and nothing but
+                // PostgreSQL can say so — the same reason check constraints go
+                // through the shadow.
+                //
+                // The table's own declared DDL comes along because a policy's
+                // expression is over the table's columns: it cannot be created
+                // until the table exists.
+                let declaredPolicies =
+                    let tableText name =
+                        declared.Declarations
+                        |> List.tryPick (fun (declaredName, text) ->
+                            if QualifiedName.display declaredName = QualifiedName.display name then Some text else None)
+
+                    let byTable =
+                        declared.Policies
+                        |> List.groupBy (fun (table, _) -> QualifiedName.display table)
+                        |> List.choose (fun (name, entries) ->
+                            match tableText (fst (List.head entries)) with
+                            | None -> None
+                            | Some tableDdl ->
+                                let policies =
+                                    entries
+                                    |> List.choose (fun (table, policy) ->
+                                        declared.PolicyDeclarations
+                                        |> List.tryPick (fun ((t, n), text) ->
+                                            if QualifiedName.display t = QualifiedName.display table
+                                               && Identifier.folded n = Identifier.folded policy.Name then
+                                                Some(policy.Name.Text, text)
+                                            else
+                                                None))
+
+                                if List.isEmpty policies then None else Some(name, tableDdl, policies))
+
+                    let rendered =
+                        match ShadowNormalisation.normalisePolicies connectionString byTable with
+                        | Ok normalised -> normalised
+                        | Microsoft.FSharp.Core.Error message ->
+                            if not (List.isEmpty byTable) then
+                                eprintfn "warning: could not normalise declared policies (%s)." message
+                                eprintfn "         Policy expressions will be reported as not-compared."
+
+                            []
+
+                    // A policy the server did not render keeps its placeholder,
+                    // so the diff compares everything else about it and says
+                    // nothing about the expression — rather than claiming the
+                    // expression matches, or that it differs.
+                    declared.Policies
+                    |> List.map (fun (table, policy) ->
+                        match
+                            rendered
+                            |> List.tryFind (fun n ->
+                                n.Table = QualifiedName.display table && n.Policy = policy.Name.Text)
+                        with
+                        | Some n -> table, { policy with Using = n.Using; WithCheck = n.WithCheck }
+                        | None -> table, policy)
+
                 // Declared reference rows, resolved against the live tables.
                 //
                 // Both sides come back rendered by the SERVER, through the real
@@ -554,6 +631,9 @@ let main argv =
                             DeclaredGrants = declared.Grants
                             ActualGrants = actualGrants
                             ActualRowLevelSecurity = actualRowLevelSecurity
+                            PolicyDeclarations = declared.PolicyDeclarations
+                            DeclaredPolicies = declaredPolicies
+                            DeclaredRowSecurity = declared.RowSecurity
                             Data = resolvedData
                             DataFailures = dataFailures
                             NormalisedViews = normalisedViews

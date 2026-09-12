@@ -240,3 +240,158 @@ module ShadowNormalisation =
                 Error ex.Message
         with ex ->
             Error ex.Message
+
+    /// One declared policy, as the catalog would render it.
+    type PolicyNormalisation =
+        { Table: string
+          Policy: string
+          /// The `USING` expression as the catalog renders it, or `None` when
+          /// the policy has no such clause. An `INSERT` policy never does.
+          Using: string option
+          /// The `WITH CHECK` expression, or `None` when there is no clause.
+          WithCheck: string option }
+
+    /// Normalise declared policy DDL into the catalog's rendering.
+    ///
+    /// A policy's expression is over the table's columns, so the table has to
+    /// exist before the policy can be created — and it has to exist under its
+    /// REAL name, because `CREATE POLICY p ON orders` names it. So each table
+    /// gets a shadow SCHEMA of its own and the table keeps its name inside it,
+    /// the same trick reference-data resolution uses; `search_path` then makes
+    /// the declaring text run exactly as written.
+    ///
+    /// Takes one entry per table: the table's own declared DDL, and the
+    /// verbatim text of each policy on it. A policy whose DDL the server
+    /// rejects is absent from the result rather than guessed at, and the caller
+    /// then reports it as not-compared instead of claiming it matches.
+    let normalisePolicies
+        (connectionString: string)
+        (tables: (string * string * (string * string) list) list)
+        : Result<PolicyNormalisation list, string> =
+
+        if List.isEmpty tables then Ok []
+        else
+
+        try
+            use connection = new NpgsqlConnection(connectionString)
+            connection.Open()
+            use transaction = connection.BeginTransaction()
+
+            try
+                let exec (sql: string) =
+                    use command = new NpgsqlCommand(sql, connection, transaction)
+                    command.ExecuteNonQuery() |> ignore
+
+                let normalised =
+                    tables
+                    |> List.collect (fun (table, tableDdl, policies) ->
+                        let schema = shadowSchema ()
+                        let savepoint = "sp_" + Guid.NewGuid().ToString("N").Substring(0, 8)
+
+                        try
+                            exec (sprintf "SAVEPOINT %s" savepoint)
+                            exec (sprintf "CREATE SCHEMA %s" schema)
+
+                            // The table keeps its own name inside the shadow
+                            // schema, so the policy text that names it needs no
+                            // rewriting — and rewriting is exactly where a
+                            // normaliser stops normalising the thing the author
+                            // wrote.
+                            let bare =
+                                match table.LastIndexOf '.' with
+                                | -1 -> table
+                                | i -> table.Substring(i + 1)
+
+                            let bodyStart = tableDdl.IndexOf '('
+
+                            if bodyStart < 0 then
+                                try exec (sprintf "ROLLBACK TO SAVEPOINT %s" savepoint) with _ -> ()
+                                []
+                            else
+
+                            exec (sprintf "SET LOCAL search_path TO %s" schema)
+                            exec (sprintf "CREATE TABLE %s.\"%s\" %s" schema bare (tableDdl.Substring bodyStart))
+
+                            // A project's files qualify their table names, so
+                            // the policy text says `ON pol.doc` and
+                            // `search_path` alone never reaches the shadow. The
+                            // qualified name is rewritten to the shadow's;
+                            // nothing else in the text is touched.
+                            //
+                            // Every spelling of the same name has to go, because
+                            // a file may write any of them and missing one puts
+                            // us back where this started — silently rendering
+                            // nothing and reporting a match.
+                            let rewriteTable (text: string) =
+                                let schemaPart, tablePart =
+                                    match table.LastIndexOf '.' with
+                                    | -1 -> "", table
+                                    | i -> table.Substring(0, i), table.Substring(i + 1)
+
+                                let target = sprintf "%s.\"%s\"" schema bare
+
+                                if schemaPart = "" then
+                                    text
+                                else
+                                    [ sprintf "\"%s\".\"%s\"" schemaPart tablePart
+                                      sprintf "\"%s\".%s" schemaPart tablePart
+                                      sprintf "%s.\"%s\"" schemaPart tablePart
+                                      sprintf "%s.%s" schemaPart tablePart ]
+                                    |> List.fold
+                                        (fun (acc: string) spelling -> acc.Replace(spelling, target))
+                                        text
+
+                            let results =
+                                policies
+                                |> List.choose (fun (policyName, policyDdl) ->
+                                    let inner = "sp_" + Guid.NewGuid().ToString("N").Substring(0, 8)
+
+                                    try
+                                        exec (sprintf "SAVEPOINT %s" inner)
+                                        exec (rewriteTable policyDdl)
+
+                                        use command =
+                                            new NpgsqlCommand(
+                                                sprintf
+                                                    """
+                                                    SELECT pg_catalog.pg_get_expr(p.polqual, p.polrelid),
+                                                           pg_catalog.pg_get_expr(p.polwithcheck, p.polrelid)
+                                                    FROM pg_catalog.pg_policy p
+                                                    JOIN pg_catalog.pg_class c ON c.oid = p.polrelid
+                                                    JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                                                    WHERE n.nspname = '%s' AND p.polname = '%s'
+                                                    """
+                                                    (schema.Replace("'", "''"))
+                                                    (policyName.Replace("'", "''")),
+                                                connection,
+                                                transaction
+                                            )
+
+                                        use reader = command.ExecuteReader()
+
+                                        if reader.Read() then
+                                            Some
+                                                { Table = table
+                                                  Policy = policyName
+                                                  Using = (if reader.IsDBNull 0 then None else Some(reader.GetString 0))
+                                                  WithCheck =
+                                                    (if reader.IsDBNull 1 then None else Some(reader.GetString 1)) }
+                                        else
+                                            None
+                                    with _ ->
+                                        try exec (sprintf "ROLLBACK TO SAVEPOINT %s" inner) with _ -> ()
+                                        None)
+
+                            exec "RESET search_path"
+                            results
+                        with _ ->
+                            try exec (sprintf "ROLLBACK TO SAVEPOINT %s" savepoint) with _ -> ()
+                            [])
+
+                transaction.Rollback()
+                Ok normalised
+            with ex ->
+                try transaction.Rollback() with _ -> ()
+                Error ex.Message
+        with ex ->
+            Error ex.Message

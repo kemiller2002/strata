@@ -82,7 +82,27 @@ module DesiredState =
           Data: DeclaredData list
 
           /// Privileges the project declares, one per object/grantee pair.
-          Grants: Grant list }
+          Grants: Grant list
+
+          /// Policies the project declares, with the table each is on.
+          ///
+          /// Their `Using` and `WithCheck` carry PRESENCE only — `Some ""` means
+          /// the clause was written — because neither is comparable until the
+          /// server has rendered it. `PolicyDeclarations` holds the text that
+          /// does the rendering.
+          Policies: (QualifiedName * Policy) list
+
+          /// The verbatim text of each declared policy, keyed by table and
+          /// policy name. Kept apart from `Declarations` for the same reason a
+          /// trigger's is: a policy name is scoped to its table, not a schema.
+          PolicyDeclarations: ((QualifiedName * Identifier) * string) list
+
+          /// Row-level security settings the project declares.
+          ///
+          /// A list of settings rather than a pair of booleans per table,
+          /// because a file that never mentions forcing has said NOTHING about
+          /// it rather than "do not force".
+          RowSecurity: (QualifiedName * RowSecuritySetting) list }
 
     /// Declared schema names, from the objects actually loaded.
     let private declaredSchemas (objects: SchemaObject list) =
@@ -105,6 +125,9 @@ module DesiredState =
         let triggerDeclarations = ResizeArray<(QualifiedName * Identifier) * string>()
         let data = ResizeArray<DeclaredData>()
         let grants = ResizeArray<Grant>()
+        let policies = ResizeArray<QualifiedName * Policy>()
+        let policyDeclarations = ResizeArray<(QualifiedName * Identifier) * string>()
+        let rowSecurity = ResizeArray<QualifiedName * RowSecuritySetting>()
 
         for path, contents in files do
             let declarations = parser.ParseObjectDefinitions contents
@@ -121,6 +144,8 @@ module DesiredState =
                         | Declared o -> Some o
                         | DeclaredIndex _
                         | DeclaredTrigger _
+                        | DeclaredPolicy _
+                        | DeclaredRowSecurity _
                         | DeclaredRows _
                         | DeclaredGrant _
                         | Unmodelled _
@@ -131,6 +156,8 @@ module DesiredState =
                     | Declared object' -> objects.Add object'
                     | DeclaredIndex (table, index) -> indexes.Add(table, index)
                     | DeclaredTrigger (table, trigger) -> triggers.Add(table, trigger)
+                    | DeclaredPolicy (table, policy) -> policies.Add(table, policy)
+                    | DeclaredRowSecurity (table, setting) -> rowSecurity.Add(table, setting)
                     // Collected below, where the whole file can be judged at
                     // once: a row declaration only means something alongside
                     // the other statements in its file.
@@ -221,6 +248,20 @@ module DesiredState =
                 with
                 | [ (table, trigger) ] when List.isEmpty declaredHere ->
                     triggerDeclarations.Add((table, trigger.Name), contents)
+                | _ -> ()
+
+                // And again for a policy, for the third time and the same
+                // reason: the text is executed verbatim to create the object, so
+                // a file holding two CREATE POLICYs cannot have its text
+                // attributed to either without creating both.
+                match
+                    declarations
+                    |> List.choose (function
+                        | DeclaredPolicy (table, policy) -> Some(table, policy)
+                        | _ -> None)
+                with
+                | [ (table, policy) ] when List.isEmpty declaredHere ->
+                    policyDeclarations.Add((table, policy.Name), contents)
                 | _ -> ()
 
         // Indexes are declared in their own files but live on a table, so they
@@ -405,6 +446,9 @@ module DesiredState =
           Failures = allFailures
           Declarations = List.ofSeq declarations'
           TriggerDeclarations = List.ofSeq triggerDeclarations
+          Policies = List.ofSeq policies
+          PolicyDeclarations = List.ofSeq policyDeclarations
+          RowSecurity = List.ofSeq rowSecurity
           Data = List.ofSeq data |> List.filter (fun d -> declaresTable d.Table)
           // Two declarations for the same object and grantee are merged rather
           // than treated as rivals: `GRANT SELECT` and `GRANT INSERT` written

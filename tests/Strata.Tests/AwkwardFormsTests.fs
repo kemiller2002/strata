@@ -217,9 +217,36 @@ let ``Strata reads the declaration the way the server does`` (name: string) =
                         | None -> false))
             | Microsoft.FSharp.Core.Error _ -> None
 
+        // Policies, compared on everything that does NOT need the server to
+        // render it: the command, the roles, whether the policy is restrictive,
+        // and whether each clause was written at all. The expressions are
+        // disclosed as not-compared rather than guessed, because this harness
+        // does not run shadow normalisation — so a fixture here proves Strata
+        // READS a policy the way the server does, which is what it is for.
+        let declaredPolicies =
+            declared.Policies |> List.map (fun (table, policy) -> qualify table, policy)
+
+        let declaredRowSecurity =
+            declared.RowSecurity |> List.map (fun (table, setting) -> qualify table, setting)
+
+        let actualRowLevelSecurity =
+            match CatalogIntrospection.readRowLevelSecurity connection with
+            | Ok entries ->
+                Some(
+                    Ok(
+                        entries
+                        |> List.filter (fun e ->
+                            match e.Table.Schema with
+                            | Some s -> Identifier.folded s = Fixture.schema
+                            | None -> false)))
+            | Microsoft.FSharp.Core.Error message -> Some(Microsoft.FSharp.Core.Error message)
+
         let result =
             SchemaDiff.run
                 { SchemaDiff.Inputs.between desired (inScratch actual) with
+                    DeclaredPolicies = declaredPolicies
+                    DeclaredRowSecurity = declaredRowSecurity
+                    ActualRowLevelSecurity = actualRowLevelSecurity
                     // Drops ENABLED. A declaration Strata reads as something the
                     // server did not build shows up as a removal, and this must
                     // see it rather than have it suppressed.

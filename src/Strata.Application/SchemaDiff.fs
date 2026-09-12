@@ -5,6 +5,7 @@ open Strata.Semantic.Identity
 open Strata.Semantic.Schema
 open Strata.Semantic.AnalysisScope
 open Strata.Semantic.Wire
+open Strata.Analysis.DialectPort
 open Strata.Analysis.ProposedChange
 
 /// Comparing desired state against actual state (PR-022, PR-023).
@@ -249,6 +250,162 @@ module SchemaDiff =
                 { Object = e.Table
                   Reason = NotModelled
                   Detail = detail })
+
+    /// Policies and row-level security a project declares, against what holds.
+    ///
+    /// ## An undeclared policy is never dropped
+    ///
+    /// Declaring one index or trigger on a table takes ownership of all of
+    /// them, because the cost of removing one wrongly is a rebuild. Policies
+    /// get the opposite rule, the one reference-data rows get: a policy the
+    /// project does not declare is REPORTED and never dropped, `--allow-drops`
+    /// included.
+    ///
+    /// The blast radius decides it. Dropping a policy does not break a query or
+    /// lose a row — it makes rows that were hidden visible to whoever can read
+    /// the table, silently, with nothing in the database recording that they
+    /// used to be hidden. That is the least recoverable mistake in the
+    /// vocabulary, and the one least likely to be noticed. Leaving an
+    /// undeclared policy in place can also leave data exposed, but Strata says
+    /// so rather than doing it.
+    ///
+    /// A policy the project DOES declare is another matter: the file names it,
+    /// so a definition that differs is replaced.
+    ///
+    /// ## Expressions
+    ///
+    /// `Using` and `WithCheck` compare only where the server has rendered the
+    /// declared side. A policy whose normalisation failed is disclosed as
+    /// not-compared rather than assumed to match: a file's `tenant = 'x'` and
+    /// the catalog's `(tenant = 'x'::text)` are the same policy, and nothing
+    /// but PostgreSQL can say so.
+    let private policyChanges
+        (managedSchemas: string list)
+        (declaredPolicies: (QualifiedName * Policy) list)
+        (declaredSettings: (QualifiedName * RowSecuritySetting) list)
+        (actual: Result<RowLevelSecurity list, string> option) =
+
+        match actual with
+        | None
+        | Some (Microsoft.FSharp.Core.Error _) ->
+            // Nothing is known about what holds, so nothing is proposed. The
+            // disclosure for this case is written by
+            // `rowLevelSecurityDisclosures`, which sees the same value.
+            [], []
+        | Some (Ok deployed) ->
+
+        let deployedFor table =
+            deployed |> List.tryFind (fun e -> sameName e.Table table)
+
+        let declaredTables =
+            (declaredPolicies |> List.map fst) @ (declaredSettings |> List.map fst)
+            |> List.filter (isManaged managedSchemas)
+            |> List.distinctBy QualifiedName.display
+
+        let changes =
+            declaredTables
+            |> List.collect (fun table ->
+                let held = deployedFor table
+                let heldPolicies = held |> Option.map (fun e -> e.Policies) |> Option.defaultValue []
+                let declaredHere = declaredPolicies |> List.filter (fun (t, _) -> sameName t table) |> List.map snd
+
+                let policyChanges =
+                    declaredHere
+                    |> List.collect (fun d ->
+                        match heldPolicies |> List.tryFind (fun a -> Identifier.sameName a.Name d.Name) with
+                        | None -> [ Ok(CreatePolicy(table, d.Name)) ]
+                        | Some a ->
+                            // `Some ""` is the placeholder for a clause that was
+                            // written and NOT rendered by the server, and it is
+                            // the third state — not "matches" and not "differs".
+                            //
+                            // It compared equal in a first version, which made a
+                            // failed normalisation indistinguishable from a
+                            // policy that matched: a live round-trip changed a
+                            // policy's expression and Strata reported zero
+                            // changes. Silently reporting a match is the exact
+                            // failure this codebase keeps finding, and here it
+                            // would leave the deployed policy admitting rows the
+                            // file no longer admits.
+                            let unrendered =
+                                (d.Using = Some "") || (d.WithCheck = Some "")
+
+                            // Everything that does not need the server.
+                            let structureDiffers =
+                                a.Command <> d.Command
+                                || a.IsPermissive <> d.IsPermissive
+                                || (a.Roles |> List.map (fun r -> r.ToLowerInvariant()) |> List.sort)
+                                   <> (d.Roles |> List.map (fun r -> r.ToLowerInvariant()) |> List.sort)
+                                // Whether a clause exists at all is comparable
+                                // without rendering it: a policy that gained a
+                                // WITH CHECK differs whatever the text says.
+                                || Option.isSome d.Using <> Option.isSome a.Using
+                                || Option.isSome d.WithCheck <> Option.isSome a.WithCheck
+
+                            let expressionsDiffer =
+                                not unrendered && (d.Using <> a.Using || d.WithCheck <> a.WithCheck)
+
+                            if structureDiffers || expressionsDiffer then
+                                [ Ok(ReplacePolicy(table, d.Name)) ]
+                            elif unrendered then
+                                // Structure matches and the expressions could
+                                // not be compared. Disclosed, never assumed.
+                                [ Microsoft.FSharp.Core.Error
+                                      { Object = table
+                                        Reason = NotCompared
+                                        Detail =
+                                          sprintf
+                                              "policy %s matches on command, roles and permissiveness, but its USING/WITH CHECK expressions could not be rendered by the server, so they were NOT compared"
+                                              d.Name.Text } ]
+                            else
+                                [])
+
+                let settings = declaredSettings |> List.filter (fun (t, _) -> sameName t table) |> List.map snd
+
+                let enabled = held |> Option.map (fun e -> e.Enabled) |> Option.defaultValue false
+                let forced = held |> Option.map (fun e -> e.Forced) |> Option.defaultValue false
+
+                let settingChanges =
+                    [ if List.contains RowSecuritySetting.Enable settings && not enabled then
+                          Ok(EnableRowLevelSecurity table)
+                      if List.contains RowSecuritySetting.Disable settings && enabled then
+                          Ok(DisableRowLevelSecurity table)
+                      if List.contains RowSecuritySetting.Force settings && not forced then
+                          Ok(ForceRowLevelSecurity table)
+                      if List.contains RowSecuritySetting.NoForce settings && forced then
+                          Ok(NoForceRowLevelSecurity table) ]
+
+                policyChanges @ settingChanges)
+
+        // Policies on a declared table that the project does not name. Reported,
+        // never dropped — see the note above.
+        let undeclared =
+            declaredTables
+            |> List.choose (fun table ->
+                let heldPolicies =
+                    deployedFor table |> Option.map (fun e -> e.Policies) |> Option.defaultValue []
+
+                let extra =
+                    heldPolicies
+                    |> List.filter (fun a ->
+                        not (
+                            declaredPolicies
+                            |> List.exists (fun (t, d) -> sameName t table && Identifier.sameName d.Name a.Name)
+                        ))
+
+                if List.isEmpty extra then
+                    None
+                else
+                    Some
+                        { Object = table
+                          Reason = NotModelled
+                          Detail =
+                            sprintf
+                                "this table carries %d policy/policies the project does not declare, and a policy is never dropped because removing one exposes rows silently: %s"
+                                (List.length extra)
+                                (extra |> List.map (fun p -> p.Name.Text) |> List.sort |> String.concat ", ") })
+
+        changes, undeclared
 
     /// Objects present in the database and absent from desired state.
     ///
@@ -734,6 +891,7 @@ module SchemaDiff =
     let private emit
         (declarations: (QualifiedName * string) list)
         (triggerDeclarations: ((QualifiedName * Identifier) * string) list)
+        (policyDeclarations: ((QualifiedName * Identifier) * string) list)
         (data: ResolvedData list)
         (desiredSequences: Sequence list)
         /// Declared check expressions as the SERVER renders them. A check's
@@ -753,6 +911,11 @@ module SchemaDiff =
             triggerDeclarations
             |> List.tryPick (fun ((t, n), text) ->
                 if sameName t table && Identifier.sameName n trigger then Some text else None)
+
+        let declaredPolicyText table policy =
+            policyDeclarations
+            |> List.tryPick (fun ((t, n), text) ->
+                if sameName t table && Identifier.sameName n policy then Some text else None)
 
         // A reference row is written from the literals the SERVER produced for
         // the declared row, via quote_nullable. Strata does not re-render a
@@ -1027,6 +1190,32 @@ module SchemaDiff =
             |> Option.map (fun text ->
                 sprintf "DROP TRIGGER %s ON %s;\n%s" (quote trigger) (quoteName table) text)
 
+        // A policy is created by executing the file that declares it, for the
+        // same reason a trigger is: its `USING` and `WITH CHECK` expressions are
+        // not in the model — only whether each clause was written — so a
+        // reconstruction would create a policy that admits DIFFERENT ROWS from
+        // the one the file asked for, and report success.
+        | CreatePolicy (table, policy) -> declaredPolicyText table policy
+
+        // Drop and recreate. `ALTER POLICY` exists but can only change the
+        // expressions and the roles, not the command it applies to or whether
+        // it is permissive — so a policy that changed either would be altered
+        // into something that still does not match the file, and the next plan
+        // would propose the same change again forever.
+        | ReplacePolicy (table, policy) ->
+            declaredPolicyText table policy
+            |> Option.map (fun text ->
+                sprintf "DROP POLICY %s ON %s;\n%s" (quote policy) (quoteName table) text)
+
+        | EnableRowLevelSecurity table ->
+            Some(sprintf "ALTER TABLE %s ENABLE ROW LEVEL SECURITY" (quoteName table))
+        | DisableRowLevelSecurity table ->
+            Some(sprintf "ALTER TABLE %s DISABLE ROW LEVEL SECURITY" (quoteName table))
+        | ForceRowLevelSecurity table ->
+            Some(sprintf "ALTER TABLE %s FORCE ROW LEVEL SECURITY" (quoteName table))
+        | NoForceRowLevelSecurity table ->
+            Some(sprintf "ALTER TABLE %s NO FORCE ROW LEVEL SECURITY" (quoteName table))
+
         // A trigger is dropped by naming it AND its table: trigger names are
         // scoped to the table, not to the schema.
         | DropTrigger (table, trigger) ->
@@ -1222,15 +1411,35 @@ module SchemaDiff =
         // role unable to read the columns the file granted, and the re-plan did
         // not converge. Both ranks sat at 8 and the sort is stable, so the
         // grants were assembled first and ran first.
-        | RevokePrivileges _ -> 8
-        | GrantPrivileges _ -> 9
-        | InsertRow _ -> 10
-        | UpdateRow _ -> 10
-        | TruncateTable _ -> 11
-        | DropColumn _ -> 12
-        | DropSequence _ -> 13
-        | DropTable _ -> 13
-        | UnclassifiedChange _ -> 14
+        // After the table and its columns exist, and after routines: a policy
+        // expression may call one.
+        | CreatePolicy _ -> 8
+        | ReplacePolicy _ -> 8
+        | RevokePrivileges _ -> 9
+        | GrantPrivileges _ -> 10
+        | InsertRow _ -> 11
+        | UpdateRow _ -> 11
+        // LAST of everything additive, and after the reference rows in
+        // particular.
+        //
+        // `FORCE ROW LEVEL SECURITY` makes policies apply to the table's OWNER,
+        // which is the role running the plan. Enabling it before this plan's own
+        // INSERTs would have the server reject them — "new row violates
+        // row-level security policy" — and take the whole transaction with them.
+        // Verified against a live server.
+        //
+        // Switching it OFF sits here too. It is not additive, but it belongs
+        // with its opposite: a plan that disables row-level security and inserts
+        // rows means those rows to land whatever the policies said.
+        | EnableRowLevelSecurity _ -> 12
+        | ForceRowLevelSecurity _ -> 12
+        | DisableRowLevelSecurity _ -> 12
+        | NoForceRowLevelSecurity _ -> 12
+        | TruncateTable _ -> 13
+        | DropColumn _ -> 14
+        | DropSequence _ -> 15
+        | DropTable _ -> 15
+        | UnclassifiedChange _ -> 16
 
     /// Constraint and default differences for a table present on both sides.
     ///
@@ -2125,12 +2334,22 @@ module SchemaDiff =
     /// were both `string list`. Named fields make that transposition impossible
     /// to write, and a new input a field rather than a positional insertion
     /// that renumbers every call site.
+    [<NoComparison>]
     type Inputs =
         { AllowDrops: bool
           ManagedSchemas: string list
           /// The verbatim text that declared each object.
           Declarations: (QualifiedName * string) list
           TriggerDeclarations: ((QualifiedName * Identifier) * string) list
+          /// The verbatim text of each declared policy, keyed by table and
+          /// policy name. A policy is created by executing this, never by
+          /// reconstruction: its expressions are not in the model.
+          PolicyDeclarations: ((QualifiedName * Identifier) * string) list
+          /// Policies the project declares, with the server's rendering of
+          /// their expressions where normalisation succeeded.
+          DeclaredPolicies: (QualifiedName * Policy) list
+          /// Row-level security settings the project declares.
+          DeclaredRowSecurity: (QualifiedName * RowSecuritySetting) list
           /// Schemas that exist in the database, or `None` when the list could
           /// not be read. `None` is not an empty list.
           ExistingSchemas: string list option
@@ -2178,6 +2397,9 @@ module SchemaDiff =
               ManagedSchemas = []
               Declarations = []
               TriggerDeclarations = []
+              PolicyDeclarations = []
+              DeclaredPolicies = []
+              DeclaredRowSecurity = []
               ExistingSchemas = None
               DeclaredInSchemas = []
               DeclaredGrants = []
@@ -2209,6 +2431,7 @@ module SchemaDiff =
         let managedSchemas = inputs.ManagedSchemas
         let declarations = inputs.Declarations
         let triggerDeclarations = inputs.TriggerDeclarations
+        let policyDeclarations = inputs.PolicyDeclarations
         let existingSchemas = inputs.ExistingSchemas
         let declaredInSchemas = inputs.DeclaredInSchemas
         let declaredGrants = inputs.DeclaredGrants
@@ -2431,6 +2654,13 @@ module SchemaDiff =
         let rlsSuppressions =
             rowLevelSecurityDisclosures managedSchemas inputs.ActualRowLevelSecurity
 
+        let policyResults, policySuppressions =
+            policyChanges
+                managedSchemas
+                inputs.DeclaredPolicies
+                inputs.DeclaredRowSecurity
+                inputs.ActualRowLevelSecurity
+
         let sequenceResults =
             sequenceChanges allowDrops managedSchemas desiredComplete desired.Objects actual.Objects
         let rowChanges, rowSuppressions = dataChanges data dataFailures
@@ -2450,6 +2680,7 @@ module SchemaDiff =
             newSchemas
             @ sequenceResults
             @ grantResults
+            @ policyResults
             @ creations
             @ tableRenames
             @ indexesForNewTables
@@ -2482,6 +2713,7 @@ module SchemaDiff =
                     emit
                         declarations
                         triggerDeclarations
+                        policyDeclarations
                         data
                         (desired.Objects
                          |> List.choose (function SequenceObject sq -> Some sq | _ -> None))
@@ -2496,6 +2728,7 @@ module SchemaDiff =
             @ schemaSuppressions
             @ grantSuppressions
             @ rlsSuppressions
+            @ policySuppressions
           DesiredStateComplete = desiredComplete }
 
     // ---- output -------------------------------------------------------------
@@ -2539,6 +2772,18 @@ module SchemaDiff =
         | DropTable table -> sprintf "drop-table         %s" (QualifiedName.display table)
         | CreateSchema schema -> sprintf "create-schema      %s" schema.Text
         | CreateSequence n -> sprintf "create-sequence    %s" (QualifiedName.display n)
+        | CreatePolicy (table, policy) ->
+            sprintf "create-policy      %s on %s" policy.Text (QualifiedName.display table)
+        | ReplacePolicy (table, policy) ->
+            sprintf "replace-policy     %s on %s" policy.Text (QualifiedName.display table)
+        | EnableRowLevelSecurity table ->
+            sprintf "enable-rls         %s" (QualifiedName.display table)
+        | DisableRowLevelSecurity table ->
+            sprintf "disable-rls        %s" (QualifiedName.display table)
+        | ForceRowLevelSecurity table ->
+            sprintf "force-rls          %s" (QualifiedName.display table)
+        | NoForceRowLevelSecurity table ->
+            sprintf "no-force-rls       %s" (QualifiedName.display table)
         | GrantPrivileges (t, g, p) ->
             sprintf "grant              %s on %s to %s" (String.concat "," p) (describeGrantTarget t) g
         | RevokePrivileges (t, g, p) ->

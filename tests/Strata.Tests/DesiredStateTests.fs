@@ -4,6 +4,7 @@ open Xunit
 open Strata.Semantic.Identity
 open Strata.Semantic.Schema
 open Strata.Semantic.AnalysisScope
+open Strata.Analysis.DialectPort
 open Strata.Application
 open Strata.Host.PgParser
 
@@ -868,6 +869,62 @@ let ``a GRANT WITH GRANT OPTION is refused, never read as a plain grant`` () =
 
     Assert.Empty loaded.Grants
     Assert.Contains(loaded.Failures, fun f -> f.Reason.Contains "GRANT OPTION")
+
+[<Fact>]
+let ``a policy with no FOR clause is FOR ALL, and no TO clause is PUBLIC`` () =
+    // Both defaults arrive as ABSENCE in the parse tree: `cmd_name` is simply
+    // not set rather than holding "all". Read as anything else, a policy would
+    // apply to statements the file never named.
+    let loaded = load [ "p.sql", "CREATE POLICY p ON ref.a USING (tenant = 'acme');" ]
+
+    Assert.Empty loaded.Failures
+
+    let _, policy = List.head loaded.Policies
+    Assert.Equal(PolicyCommand.All, policy.Command)
+    Assert.Equal<string list>([ "PUBLIC" ], policy.Roles)
+    Assert.True policy.IsPermissive
+
+[<Fact>]
+let ``a RESTRICTIVE policy is not read as permissive`` () =
+    // Protobuf omits `permissive` when it is false, so AS RESTRICTIVE arrives as
+    // an absent field. A restrictive policy read as permissive would report
+    // access as wider than it is: permissive policies are OR-ed, restrictive
+    // ones AND-ed on top.
+    let loaded = load [ "p.sql", "CREATE POLICY p ON ref.a AS RESTRICTIVE FOR SELECT USING (a);" ]
+
+    Assert.Empty loaded.Failures
+    Assert.False (snd (List.head loaded.Policies)).IsPermissive
+
+[<Fact>]
+let ``a missing USING or WITH CHECK clause is absent, not empty`` () =
+    // An INSERT policy never has a USING clause and a SELECT policy never has a
+    // WITH CHECK. Both absences are real states, and a policy that GAINED a
+    // clause differs whatever its text turns out to say.
+    let selectOnly = load [ "p.sql", "CREATE POLICY p ON ref.a FOR SELECT USING (a);" ]
+    let insertOnly = load [ "p.sql", "CREATE POLICY p ON ref.a FOR INSERT WITH CHECK (a);" ]
+
+    Assert.True (snd (List.head selectOnly.Policies)).Using.IsSome
+    Assert.True (snd (List.head selectOnly.Policies)).WithCheck.IsNone
+    Assert.True (snd (List.head insertOnly.Policies)).Using.IsNone
+    Assert.True (snd (List.head insertOnly.Policies)).WithCheck.IsSome
+
+[<Fact>]
+let ``an ALTER TABLE mixing row security with other changes is refused`` () =
+    // Reading only the part Strata models would enable row-level security and
+    // silently drop the column the same statement asked for.
+    let loaded = load [ "a.sql", "ALTER TABLE ref.a ENABLE ROW LEVEL SECURITY, ADD COLUMN extra text;" ]
+
+    Assert.Empty loaded.RowSecurity
+    Assert.Contains(loaded.Failures, fun f -> f.Reason.Contains "half the statement")
+
+[<Fact>]
+let ``each row security statement declares one setting`` () =
+    // A file that never mentions forcing has said NOTHING about it rather than
+    // "do not force", so the settings are a list and not a pair of booleans.
+    let loaded = load [ "a.sql", "ALTER TABLE ref.a ENABLE ROW LEVEL SECURITY;" ]
+
+    Assert.Empty loaded.Failures
+    Assert.Equal<RowSecuritySetting list>([ RowSecuritySetting.Enable ], loaded.RowSecurity |> List.map snd)
 
 [<Fact>]
 let ``a GRANT on a kind Strata does not model names the kind`` () =
