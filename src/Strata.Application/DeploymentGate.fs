@@ -377,7 +377,28 @@ module DeploymentGate =
               AffectedSources = []
               NextSafeMove = "Proceed." }
 
-        | AddConstraint (table, constraintName) ->
+        | DropConstraint (table, constraintName, kind) ->
+            // Nothing to find in the corpus, and that is the point. Every query
+            // keeps working and keeps returning rows; what goes is the
+            // database's refusal to accept the data the constraint excluded,
+            // and the first anyone hears of it is a row that should not exist.
+            { Change = change
+              Verdict = RequiresApproval
+              Detected =
+                sprintf
+                    "drops the %s constraint %s from %s"
+                    (ConstraintKind.tag kind)
+                    constraintName.Display
+                    (QualifiedName.display table)
+              Rationale =
+                "No query breaks and none errors. The guarantee goes: the database stops refusing \
+                 the data this constraint excluded, and nothing reports the first row that slips through."
+              AffectedSources = []
+              NextSafeMove =
+                "Confirm nothing relies on this constraint holding — including code that omits a check \
+                 because the database made it — then approve explicitly." }
+
+        | AddConstraint (table, constraintName, _, _) ->
             { Change = change
               Verdict = RequiresApproval
               Detected =

@@ -13,6 +13,33 @@ open Strata.Analysis.StatementReferences
 /// reason to stop, not as permission to proceed (`ER-008`, `P-009`).
 module ProposedChange =
 
+    /// Which kind of constraint a change acts on.
+    ///
+    /// Carried on the change because the DDL for each is different, and the
+    /// diff knows which it is at the moment it decides: recovering it later by
+    /// searching a table for a matching name loses the answer for an unnamed
+    /// constraint, which has no name to search by.
+    ///
+    /// Qualified access: `Check` and `Unique` are ordinary words, and
+    /// `ForeignKey` already names an evidence source elsewhere.
+    [<RequireQualifiedAccess>]
+    type ConstraintKind =
+        | PrimaryKey
+        | Unique
+        | ForeignKey
+        | Check
+
+    [<RequireQualifiedAccess>]
+    module ConstraintKind =
+
+        /// Wire tag, hand-written per Boundary Preservation.
+        let tag (kind: ConstraintKind) =
+            match kind with
+            | ConstraintKind.PrimaryKey -> "primary-key"
+            | ConstraintKind.Unique -> "unique"
+            | ConstraintKind.ForeignKey -> "foreign-key"
+            | ConstraintKind.Check -> "check"
+
     /// A single change a migration proposes.
     type Change =
         /// Removes a column. The destructive case the notebook's §130 example
@@ -103,7 +130,23 @@ module ProposedChange =
         /// assigns the name, so there is none to report yet. It is not a
         /// constraint called nothing, and it must never be given a placeholder
         /// — see `Schema.ConstraintName`.
-        | AddConstraint of table: QualifiedName * constraintName: Identifier option
+        ///
+        /// The columns are carried because they are what identifies an UNNAMED
+        /// constraint, and because they are most of the DDL that adds one.
+        | AddConstraint of
+            table: QualifiedName *
+            constraintName: Identifier option *
+            kind: ConstraintKind *
+            columns: Identifier list
+        /// Removes a constraint.
+        ///
+        /// Destructive, though not in the way a dropped column is: every query
+        /// keeps working and keeps returning rows. What goes is the GUARANTEE —
+        /// the database stops refusing the data the constraint excluded, and
+        /// the first anyone hears of it is a row that should not exist.
+        ///
+        /// Always named: a constraint in the catalog always has one.
+        | DropConstraint of table: QualifiedName * constraintName: Identifier * kind: ConstraintKind
         /// Removes every row. No schema change, total data loss.
         | TruncateTable of table: QualifiedName
         /// Strata parsed the statement but does not model its consequences.
@@ -135,6 +178,7 @@ module ProposedChange =
             | ReplaceRoutine _ -> "replace-routine"
             | CreateRoutine _ -> "create-routine"
             | AddConstraint _ -> "add-constraint"
+            | DropConstraint _ -> "drop-constraint"
             | TruncateTable _ -> "truncate-table"
             | UnclassifiedChange _ -> "unclassified"
 
@@ -159,7 +203,8 @@ module ProposedChange =
             | CreateTrigger (table, _)
             | DropTrigger (table, _)
             | ReplaceTrigger (table, _)
-            | AddConstraint (table, _)
+            | AddConstraint (table, _, _, _)
+            | DropConstraint (table, _, _)
             | TruncateTable table -> Some table
             | UnclassifiedChange _ -> None
 
@@ -189,6 +234,9 @@ module ProposedChange =
             // Every query joining the reference table sees the new value at
             // once, and none of them errors.
             | UpdateRow _
+            // Nothing breaks and nothing errors. What is lost is the promise
+            // that the excluded data cannot arrive.
+            | DropConstraint _
             | UnclassifiedChange _ -> true
             | AddColumn _
             | CreateTable _
@@ -229,7 +277,12 @@ module ProposedChange =
                             | "add-column", Some column -> AddColumn(table, column)
                             | "drop-column", Some column -> DropColumn(table, column)
                             | "alter-column-type", Some column -> AlterColumnType(table, column, "changed")
-                            | "add-constraint", name -> AddConstraint(table, name)
+                            | "add-constraint", name ->
+                                // A parsed ALTER does not say which kind, and
+                                // the subcommand carries no column list. Both
+                                // are unknown rather than guessed; the DIFF
+                                // path, which does know, supplies them.
+                                AddConstraint(table, name, ConstraintKind.Check, [])
                             | kind, _ ->
                                 // A subcommand Strata does not model. Explicitly
                                 // unclassified, never silently ignored.

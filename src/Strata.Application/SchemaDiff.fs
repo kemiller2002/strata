@@ -119,6 +119,12 @@ module SchemaDiff =
     /// inserting every declared row into a table that already holds them.
     type DataFailure = { Table: string; Reason: string }
 
+    /// Declared defaults and checks as the SERVER renders them, for one table.
+    type NormalisedTable =
+        { Table: string
+          Defaults: (string * string) list
+          Checks: (string * string) list }
+
     let private tables (snapshot: SchemaSnapshot) =
         snapshot.Objects
         |> List.choose (fun o ->
@@ -307,6 +313,10 @@ module SchemaDiff =
         (declarations: (QualifiedName * string) list)
         (triggerDeclarations: ((QualifiedName * Identifier) * string) list)
         (data: ResolvedData list)
+        /// Declared check expressions as the SERVER renders them. A check's
+        /// expression is not recoverable from the parse tree, so this is the
+        /// only source for one.
+        (normalised: NormalisedTable list)
         (desired: Table list)
         (change: Change)
         : string option =
@@ -543,9 +553,64 @@ module SchemaDiff =
         | DropTrigger (table, trigger) ->
             Some(sprintf "DROP TRIGGER %s ON %s" (quote trigger) (quoteName table))
 
-        // The diff does not currently produce these, and emitting one would
-        // need a definition it does not carry.
-        | AddConstraint _ -> None
+        | AddConstraint (table, name, kind, columns) ->
+            let named =
+                match name with
+                | Some n -> sprintf "CONSTRAINT %s " (quote n)
+                // Written without a CONSTRAINT clause so the server assigns the
+                // name it would have assigned had the declaring file been run
+                // directly. Inventing one creates an object nobody asked for.
+                | None -> ""
+
+            let columnList = columns |> List.map quote |> String.concat ", "
+
+            let body =
+                match kind with
+                | ConstraintKind.PrimaryKey -> Some(sprintf "PRIMARY KEY (%s)" columnList)
+                | ConstraintKind.Unique -> Some(sprintf "UNIQUE (%s)" columnList)
+                | ConstraintKind.ForeignKey ->
+                    // The referenced table and columns are not on the change,
+                    // so they come from the declared table — matched on the
+                    // columns, which is what identifies an unnamed one.
+                    desiredTable table
+                    |> Option.bind (fun t ->
+                        t.ForeignKeys
+                        |> List.tryFind (fun f ->
+                            let folded (cs: Identifier list) = cs |> List.map Identifier.folded
+                            folded f.Columns = folded columns))
+                    |> Option.map (fun f ->
+                        sprintf
+                            "FOREIGN KEY (%s) REFERENCES %s (%s)"
+                            columnList
+                            (quoteName f.ReferencedTable)
+                            (f.ReferencedColumns |> List.map quote |> String.concat ", "))
+                | ConstraintKind.Check ->
+                    // A check's expression exists only as the server's
+                    // rendering of the declared DDL. Without that rendering
+                    // there is nothing to write, and writing the constraint
+                    // without its expression is not an option.
+                    match name with
+                    | None -> None
+                    | Some n ->
+                        normalised
+                        |> List.tryFind (fun x -> x.Table = QualifiedName.display table)
+                        |> Option.bind (fun x ->
+                            x.Checks
+                            |> List.tryPick (fun (checkName, definition) ->
+                                if Identifier.sameName (Identifier.unquoted checkName) n then Some definition
+                                else None))
+                        // pg_get_constraintdef already renders the full
+                        // `CHECK (...)`, so it is used as the body rather than
+                        // wrapped again.
+                        |> Option.map (fun definition -> definition.Trim())
+
+            body |> Option.map (fun b -> sprintf "ALTER TABLE %s ADD %s%s" (quoteName table) named b)
+
+        // Dropped by name, which is the only handle a constraint has. The
+        // matching index goes with a primary key or unique constraint
+        // automatically; PostgreSQL will not let one be dropped separately.
+        | DropConstraint (table, name, _) ->
+            Some(sprintf "ALTER TABLE %s DROP CONSTRAINT %s" (quoteName table) (quote name))
 
     /// How many other tables being created this one must wait for.
     ///
@@ -634,6 +699,10 @@ module SchemaDiff =
         | CreateIndex _ -> 3
         | DropIndex _ -> 3
         | AddConstraint _ -> 3
+        // One step ahead of the adds, because a constraint whose definition
+        // changed is dropped and re-added under the SAME name: the add would
+        // fail on a name that is still taken.
+        | DropConstraint _ -> 2
         // Views and routines reference tables and columns, so they come after
         // every table change that might create what they read.
         | CreateView _ -> 4
@@ -683,11 +752,6 @@ module SchemaDiff =
           /// Previous column name -> current column name.
           Columns: (string * string) list }
 
-    /// Declared defaults and checks as the SERVER renders them, for one table.
-    type NormalisedTable =
-        { Table: string
-          Defaults: (string * string) list
-          Checks: (string * string) list }
 
     let private constraintChanges
         (allowDrops: bool)
@@ -718,8 +782,8 @@ module SchemaDiff =
         /// `Name` is `None` for a constraint the declaring file did not name.
         /// `Definition` is what it does — its columns, or its target — which is
         /// the only handle an unnamed one has.
-        let entry (name: ConstraintName) (definition: string) =
-            (name |> Option.map named), definition
+        let entry (name: ConstraintName) (definition: string) (columns: Identifier list) =
+            (name |> Option.map named), definition, columns
 
         /// Compare two sets of constraints.
         ///
@@ -736,39 +800,40 @@ module SchemaDiff =
         /// definition match: a project that named a constraint gets that
         /// constraint, not whichever one happens to share its shape.
         let compareSet
-            kind
-            (desiredEntries: (string option * string) list)
-            (actualEntries: (string option * string) list)
+            (label: string)
+            (kind: ConstraintKind)
+            (desiredEntries: (string option * string * Identifier list) list)
+            (actualEntries: (string option * string * Identifier list) list)
             =
             let byName =
                 desiredEntries
-                |> List.choose (fun (n, d) -> n |> Option.map (fun n -> n, d))
+                |> List.choose (fun (n, d, c) -> n |> Option.map (fun n -> n, d, c))
 
             let claimedNames =
                 byName
-                |> List.filter (fun (n, _) -> actualEntries |> List.exists (fun (m, _) -> m = Some n))
-                |> List.map fst
+                |> List.filter (fun (n, _, _) -> actualEntries |> List.exists (fun (m, _, _) -> m = Some n))
+                |> List.map (fun (n, _, _) -> n)
 
             // Definitions still free after the name matches, matched one for
             // one so two identical unnamed constraints do not both match the
             // same deployed one.
             let unmatchedActual =
                 actualEntries
-                |> List.filter (fun (n, _) ->
+                |> List.filter (fun (n, _, _) ->
                     match n with
                     | Some n -> not (claimedNames |> List.contains n)
                     | None -> true)
 
-            let unnamedDesired = desiredEntries |> List.filter (fun (n, _) -> Option.isNone n)
+            let unnamedDesired = desiredEntries |> List.filter (fun (n, _, _) -> Option.isNone n)
 
             // Removes the FIRST structural match, not every equal one: two
             // declarations that do the same thing need two deployed
             // constraints, not one counted twice.
-            let removeFirst (definition: string) (from: (string option * string) list) =
+            let removeFirst (definition: string) (from: (string option * string * Identifier list) list) =
                 let rec go acc rest =
                     match rest with
                     | [] -> None
-                    | (n, d) :: tail when d = definition -> Some(List.rev acc @ tail, (n, d))
+                    | (n, d, c) :: tail when d = definition -> Some(List.rev acc @ tail, (n, d, c))
                     | head :: tail -> go (head :: acc) tail
 
                 go [] from
@@ -776,52 +841,84 @@ module SchemaDiff =
             let unnamedAdded, leftoverActual =
                 unnamedDesired
                 |> List.fold
-                    (fun (added, pool) (_, definition) ->
+                    (fun (added, pool) (_, definition, columns) ->
                         match removeFirst definition pool with
                         | Some (rest, _) -> added, rest
-                        | None -> added @ [ definition ], pool)
+                        | None -> added @ [ columns ], pool)
                     ([], unmatchedActual)
 
             let added =
                 (byName
-                 |> List.filter (fun (n, _) -> not (actualEntries |> List.exists (fun (m, _) -> m = Some n)))
-                 |> List.map (fun (n, _) -> Ok(AddConstraint(desired.Name, Some(Identifier.unquoted n)))))
-                @ (unnamedAdded |> List.map (fun _ -> Ok(AddConstraint(desired.Name, None))))
+                 |> List.filter (fun (n, _, _) -> not (actualEntries |> List.exists (fun (m, _, _) -> m = Some n)))
+                 |> List.map (fun (n, _, c) ->
+                     Ok(AddConstraint(desired.Name, Some(Identifier.unquoted n), kind, c))))
+                @ (unnamedAdded |> List.map (fun c -> Ok(AddConstraint(desired.Name, None, kind, c))))
 
             let removed =
                 leftoverActual
-                |> List.map (fun (n, _) ->
-                    // The change vocabulary has no DropConstraint case.
-                    // Unclassified is judged as potentially destructive, which
-                    // is the right default for removing a constraint.
-                    Ok(
-                        UnclassifiedChange(
-                            sprintf
-                                "%s: %s '%s' exists in the database and not in desired state"
-                                (QualifiedName.display desired.Name)
-                                kind
-                                (defaultArg n "(unnamed)"))))
+                |> List.map (fun (n, _, _) ->
+                    match n with
+                    | Some name when not desiredComplete ->
+                        Microsoft.FSharp.Core.Error
+                            { Object = desired.Name
+                              Reason = DesiredStateIncomplete
+                              Detail =
+                                sprintf
+                                    "%s '%s' is absent from desired state, but desired state did not load completely"
+                                    label
+                                    name }
+                    | Some name when not allowDrops ->
+                        Microsoft.FSharp.Core.Error
+                            { Object = desired.Name
+                              Reason = DropsNotEnabled
+                              Detail = sprintf "%s '%s' would be dropped; pass --allow-drops" label name }
+                    | Some name -> Ok(DropConstraint(desired.Name, Identifier.unquoted name, kind))
+                    // The catalog has no nameless constraints, so this cannot
+                    // happen. Saying so beats dropping it silently.
+                    | None ->
+                        Microsoft.FSharp.Core.Error
+                            { Object = desired.Name
+                              Reason = NotModelled
+                              Detail = sprintf "an unnamed %s was reported by the catalog, which should not occur" label })
 
             // Same name on both sides, different membership.
+            //
+            // PostgreSQL has no ALTER CONSTRAINT that changes what one covers,
+            // so the only way to get there is to drop it and add it back. Both
+            // halves are emitted, and `orderKey` ranks drops one step ahead of
+            // adds so the name is free when the add runs.
+            //
+            // That makes it a REMOVAL, and it is gated like every other one: a
+            // redefinition Strata cannot drop is a redefinition it cannot make,
+            // and emitting the add alone would fail on the name that is still
+            // taken. So when drops are not enabled — or desired state did not
+            // load completely — neither half is proposed and the difference is
+            // reported instead.
             let redefined =
                 byName
-                |> List.choose (fun (n, dcols) ->
+                |> List.collect (fun (n, dcols, dcolumns) ->
                     actualEntries
-                    |> List.tryFind (fun (m, _) -> m = Some n)
-                    |> Option.bind (fun (_, acols) ->
-                        if dcols <> acols then
-                            Some(
-                                Ok(
-                                    UnclassifiedChange(
-                                        sprintf
-                                            "%s: %s '%s' covers (%s) in desired state and (%s) in the database"
-                                            (QualifiedName.display desired.Name)
-                                            kind
-                                            n
-                                            dcols
-                                            acols)))
+                    |> List.tryFind (fun (m, _, _) -> m = Some n)
+                    |> Option.map (fun (_, acols, _) ->
+                        if dcols = acols then
+                            []
+                        elif not desiredComplete || not allowDrops then
+                            [ Microsoft.FSharp.Core.Error
+                                { Object = desired.Name
+                                  Reason = if desiredComplete then DropsNotEnabled else DesiredStateIncomplete
+                                  Detail =
+                                    sprintf
+                                        "%s '%s' covers (%s) in desired state and (%s) in the database. Changing it means dropping and re-adding it, so it needs %s."
+                                        label
+                                        n
+                                        dcols
+                                        acols
+                                        (if desiredComplete then "--allow-drops"
+                                         else "a desired state that loaded completely") } ]
                         else
-                            None))
+                            [ Ok(DropConstraint(desired.Name, Identifier.unquoted n, kind))
+                              Ok(AddConstraint(desired.Name, Some(Identifier.unquoted n), kind, dcolumns)) ])
+                    |> Option.defaultValue [])
 
             added @ removed @ redefined
 
@@ -835,7 +932,8 @@ module SchemaDiff =
                             (QualifiedName.display desired.Name)
                             (columnList d.Columns)
                             (columnList a.Columns))) ]
-            | Some d, None -> [ Ok(AddConstraint(desired.Name, d.ConstraintName)) ]
+            | Some d, None ->
+                [ Ok(AddConstraint(desired.Name, d.ConstraintName, ConstraintKind.PrimaryKey, d.Columns)) ]
             | None, Some a ->
                 [ Ok(
                     UnclassifiedChange(
@@ -849,8 +947,11 @@ module SchemaDiff =
         let uniques =
             compareSet
                 "unique constraint"
-                (desired.UniqueConstraints |> List.map (fun u -> entry u.ConstraintName (columnList u.Columns)))
-                (actual.UniqueConstraints |> List.map (fun u -> entry u.ConstraintName (columnList u.Columns)))
+                ConstraintKind.Unique
+                (desired.UniqueConstraints
+                 |> List.map (fun u -> entry u.ConstraintName (columnList u.Columns) u.Columns))
+                (actual.UniqueConstraints
+                 |> List.map (fun u -> entry u.ConstraintName (columnList u.Columns) u.Columns))
 
         let foreignKeys =
             let describe (f: ForeignKey) =
@@ -862,8 +963,9 @@ module SchemaDiff =
 
             compareSet
                 "foreign key"
-                (desired.ForeignKeys |> List.map (fun f -> entry f.ConstraintName (describe f)))
-                (actual.ForeignKeys |> List.map (fun f -> entry f.ConstraintName (describe f)))
+                ConstraintKind.ForeignKey
+                (desired.ForeignKeys |> List.map (fun f -> entry f.ConstraintName (describe f) f.Columns))
+                (actual.ForeignKeys |> List.map (fun f -> entry f.ConstraintName (describe f) f.Columns))
 
         // A check's PRESENCE is comparable by name. Its EXPRESSION is not: the
         // declared side does not carry one, and the catalog reports its own
@@ -928,10 +1030,11 @@ module SchemaDiff =
             else
                 compareSet
                     "check constraint"
-                    (namedChecks desired |> List.map (fun c -> entry c.ConstraintName ""))
-                    (deployedChecksToCompare |> List.map (fun c -> entry c.ConstraintName ""))
+                    ConstraintKind.Check
+                    (namedChecks desired |> List.map (fun c -> entry c.ConstraintName "" []))
+                    (deployedChecksToCompare |> List.map (fun c -> entry c.ConstraintName "" []))
                 @ (unmatchedUnnamedChecks
-                   |> List.map (fun _ -> Ok(AddConstraint(desired.Name, None))))
+                   |> List.map (fun _ -> Ok(AddConstraint(desired.Name, None, ConstraintKind.Check, []))))
 
         let defaults =
             desired.Columns
@@ -1769,7 +1872,7 @@ module SchemaDiff =
             changes
             |> List.map (fun c ->
                 { Change = c
-                  Sql = emit declarations triggerDeclarations data desiredTables c })
+                  Sql = emit declarations triggerDeclarations data normalisedTables desiredTables c })
           Suppressed =
             (all |> List.choose (function Microsoft.FSharp.Core.Error s -> Some s | Ok _ -> None))
             @ notCompared
@@ -1789,11 +1892,18 @@ module SchemaDiff =
             sprintf "alter-column-type  %s.%s -> %s" (QualifiedName.display table) column.Text newType
         | AddColumn (table, column) ->
             sprintf "add-column         %s.%s" (QualifiedName.display table) column.Text
-        | AddConstraint (table, name) ->
+        | AddConstraint (table, name, kind, _) ->
             sprintf
-                "add-constraint     %s %s"
+                "add-constraint     %s %s %s"
                 (QualifiedName.display table)
+                (ConstraintKind.tag kind)
                 (match name with Some n -> n.Text | None -> "(unnamed in the declaring file)")
+        | DropConstraint (table, name, kind) ->
+            sprintf
+                "drop-constraint    %s %s %s"
+                (QualifiedName.display table)
+                (ConstraintKind.tag kind)
+                name.Text
         | DropTable table -> sprintf "drop-table         %s" (QualifiedName.display table)
         | CreateTable table -> sprintf "create-table       %s" (QualifiedName.display table)
         | RenameTable (from, to') ->

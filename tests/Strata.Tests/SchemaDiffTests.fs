@@ -419,16 +419,14 @@ let ``a foreign key in the database and not in desired state is reported`` () =
     let result = run true managed (complete [ plain ]) (complete [ withFk ])
 
     Assert.Contains(result.Changes, fun c ->
-        match c with
-        | UnclassifiedChange d -> d.Contains "foreign key" && d.Contains "fk_o_c"
-        | _ -> false)
+        c = DropConstraint(qn "sales" "orders", id' "fk_o_c", ConstraintKind.ForeignKey))
 
 [<Fact>]
 let ``a foreign key in desired state and not in the database is added`` () =
     let withFk = tableWith "sales" "orders" orders None [] [] [ fk "fk_o_c" [ "id" ] "customers" [ "id" ] ]
     let result = run true managed (complete [ withFk ]) (complete [ plain ])
 
-    Assert.Contains(result.Changes, fun c -> c = AddConstraint(qn "sales" "orders", Some(id' "fk_o_c")))
+    Assert.Contains(result.Changes, fun c -> c = AddConstraint(qn "sales" "orders", Some(id' "fk_o_c"), ConstraintKind.ForeignKey, [ id' "id" ]))
 
 [<Fact>]
 let ``a check constraint present on one side only is reported`` () =
@@ -437,10 +435,10 @@ let ``a check constraint present on one side only is reported`` () =
 
     let result = run true managed (complete [ plain ]) (complete [ withCheck ])
 
+    // Named as the constraint it is, not as an unclassified string. The gate
+    // treats both as destructive, but only one can be written as DDL.
     Assert.Contains(result.Changes, fun c ->
-        match c with
-        | UnclassifiedChange d -> d.Contains "check constraint" && d.Contains "ck_x"
-        | _ -> false)
+        c = DropConstraint(qn "sales" "orders", id' "ck_x", ConstraintKind.Check))
 
 [<Fact>]
 let ``a primary key covering different columns is reported`` () =
@@ -466,10 +464,34 @@ let ``a foreign key redefined under the same name is reported`` () =
             (complete [ tableWith "sales" "orders" orders None [] [] [ fk "fk" [ "id" ] "customers" [ "id" ] ] ])
             (complete [ tableWith "sales" "orders" orders None [] [] [ fk "fk" [ "total" ] "customers" [ "id" ] ] ])
 
-    Assert.Contains(result.Changes, fun c ->
-        match c with
-        | UnclassifiedChange d -> d.Contains "foreign key 'fk' covers"
-        | _ -> false)
+    // PostgreSQL cannot alter what a constraint covers, so the only route is
+    // to drop it and add it back — and the drop must run first, because the
+    // name is still taken.
+    Assert.Contains(
+        result.Changes,
+        fun c -> c = DropConstraint(qn "sales" "orders", id' "fk", ConstraintKind.ForeignKey))
+
+    Assert.Contains(
+        result.Changes,
+        fun c -> c = AddConstraint(qn "sales" "orders", Some(id' "fk"), ConstraintKind.ForeignKey, [ id' "id" ]))
+
+    let tags = result.Changes |> List.map Change.tag
+    Assert.True(
+        List.findIndex ((=) "drop-constraint") tags < List.findIndex ((=) "add-constraint") tags,
+        "the old constraint must go before the new one takes its name")
+
+[<Fact>]
+let ``a redefined constraint proposes NEITHER half when drops are off`` () =
+    // Emitting the add alone would fail on a name that is still taken, so a
+    // redefinition Strata cannot drop is a redefinition it cannot make. It is
+    // reported rather than half-proposed.
+    let result =
+        run false managed
+            (complete [ tableWith "sales" "orders" orders None [] [] [ fk "fk" [ "id" ] "customers" [ "id" ] ] ])
+            (complete [ tableWith "sales" "orders" orders None [] [] [ fk "fk" [ "total" ] "customers" [ "id" ] ] ])
+
+    Assert.Empty result.Changes
+    Assert.Contains(result.Suppressed, fun s -> s.Reason = DropsNotEnabled && s.Detail.Contains "--allow-drops")
 
 [<Fact>]
 let ``a default appearing or disappearing is reported`` () =
@@ -1351,8 +1373,13 @@ let ``an unnamed declared foreign key pointing somewhere else is still a differe
 
     let result = run true managed (complete [ declared ]) (complete [ deployed ])
 
-    Assert.Contains(result.Changes, fun c -> c = AddConstraint(qn "sales" "orders", None))
-    Assert.Contains(result.Changes, fun c -> Change.tag c = "unclassified")
+    Assert.Contains(
+        result.Changes,
+        fun c -> c = AddConstraint(qn "sales" "orders", None, ConstraintKind.ForeignKey, [ id' "id" ]))
+
+    Assert.Contains(
+        result.Changes,
+        fun c -> c = DropConstraint(qn "sales" "orders", id' "orders_id_fkey", ConstraintKind.ForeignKey))
 
 [<Fact>]
 let ``a named declared constraint is still matched by its name`` () =
@@ -1366,7 +1393,7 @@ let ``a named declared constraint is still matched by its name`` () =
 
     let result = run true managed (complete [ declared ]) (complete [ deployed ])
 
-    Assert.Contains(result.Changes, fun c -> c = AddConstraint(qn "sales" "orders", Some(id' "fk_wanted")))
+    Assert.Contains(result.Changes, fun c -> c = AddConstraint(qn "sales" "orders", Some(id' "fk_wanted"), ConstraintKind.ForeignKey, [ id' "id" ]))
 
 [<Fact>]
 let ``a name match wins over a definition match`` () =
@@ -1401,7 +1428,7 @@ let ``two identical unnamed declarations claim two deployed constraints`` () =
 
     let result = run true managed (complete [ declared ]) (complete [ deployed ])
 
-    Assert.Contains(result.Changes, fun c -> c = AddConstraint(qn "sales" "orders", None))
+    Assert.Contains(result.Changes, fun c -> c = AddConstraint(qn "sales" "orders", None, ConstraintKind.ForeignKey, [ id' "id" ]))
 
 [<Fact>]
 let ``an unnamed check with no shadow rendering is not compared, in either direction`` () =
