@@ -159,13 +159,30 @@ module SchemaDiff =
             managedSchemas
             |> List.exists (fun m -> Identifier.sameName (Identifier.unquoted m) schema)
 
-    /// What row-level security is doing, for tables the project manages.
+    /// What row-level security is doing that the project cannot see from its
+    /// own files, for tables the project manages.
     ///
-    /// Reported and never changed. Strata does not model policies as desired
-    /// state yet, and the honest consequence is that it says so — the
-    /// alternative it replaced was reporting `NotRequested`, which reads as
-    /// "nothing here" and is how a table default-denying every row looks
-    /// exactly like a table with no row-level security at all.
+    /// Reported and never changed. This is the residue AFTER `policyChanges`
+    /// has done its work, and the two must not overlap or contradict: whatever
+    /// the project declares is compared there, and whatever it does not declare
+    /// is reported there for the tables it names. What is left here is the
+    /// state no policy controls, and the tables the project names nothing about.
+    ///
+    /// ## Why the declared side has to be passed in
+    ///
+    /// It did not used to be, and the message said "Strata does not manage
+    /// policies, so the N policies here were NOT compared" for every
+    /// RLS-enabled table — including a table whose policy the project had just
+    /// declared, whose expression had just been rendered by the server, and
+    /// which `policyChanges` had just compared on every field. The wording
+    /// predates policy management and outlived it.
+    ///
+    /// Telling a reader a comparison did not happen when it did is the same
+    /// class of defect as telling them one matched when it was never made
+    /// (`ER-008`): both replace what Strata knows with a claim it did not
+    /// earn. It is not the safer direction either — a reader who believes a
+    /// policy is unmanaged goes looking for the drift by hand, or stops
+    /// trusting the disclosures that are true.
     ///
     /// Only tables inside the managed schemas are reported. A project is not
     /// told about row-level security on schemas it does not manage, for the
@@ -175,6 +192,8 @@ module SchemaDiff =
     /// than taken for "row-level security is off".
     let private rowLevelSecurityDisclosures
         (managedSchemas: string list)
+        (declaredPolicies: (QualifiedName * Policy) list)
+        (declaredSettings: (QualifiedName * RowSecuritySetting) list)
         (rls: Result<RowLevelSecurity list, string> option) =
 
         match rls with
@@ -193,7 +212,7 @@ module SchemaDiff =
             entries
             |> List.filter (fun e -> isManaged managedSchemas e.Table)
             |> List.sortBy (fun e -> QualifiedName.display e.Table)
-            |> List.map (fun e ->
+            |> List.choose (fun e ->
                 let policies =
                     e.Policies
                     |> List.map (fun p ->
@@ -215,41 +234,68 @@ module SchemaDiff =
                 let restrict = if count = 1 then "restricts" else "restrict"
                 let wereCompared = if count = 1 then "was" else "were"
 
-                let detail =
-                    match e.Enabled, e.Policies with
-                    // The state that looks like nothing and denies everything.
-                    | true, [] ->
-                        "row-level security is ENABLED here and there are no policies, so every row is hidden"
-                        + " from every role except the table's owner. Strata does not manage policies, so it"
-                        + " proposes nothing."
-                    // The state that looks deliberate and does nothing.
-                    | false, _ :: _ ->
+                // What the project says about THIS table. A table it names in
+                // either a policy file or a setting is a table `policyChanges`
+                // already reasons about, start to finish.
+                let declaredHere =
+                    declaredPolicies |> List.filter (fun (t, _) -> sameName t e.Table) |> List.map snd
+
+                let namedByProject =
+                    not (List.isEmpty declaredHere)
+                    || declaredSettings |> List.exists (fun (t, _) -> sameName t e.Table)
+
+                let ownerNote =
+                    if e.Forced then
+                        "FORCED, so it applies to the table's owner too"
+                    else
+                        "not forced, so the table's owner bypasses every policy"
+
+                match e.Enabled, e.Policies with
+                // The state that looks like nothing and denies everything.
+                | true, [] when List.isEmpty declaredHere ->
+                    Some
+                        ("row-level security is ENABLED here and there are no policies, so every row is hidden"
+                         + " from every role except the table's owner. The project declares no policy for this"
+                         + " table, so nothing here will change that.")
+                // Same state, but the plan fixes it. A difference Strata WILL
+                // act on does not belong in the list of ones it will not.
+                | true, [] -> None
+                // The state that looks deliberate and does nothing.
+                | false, _ :: _ ->
+                    Some(
                         sprintf
                             "row-level security is DISABLED here, so the %d %s on this table %s NOTHING and every role sees every row: %s"
                             count
                             plural
                             restrict
                             policies
-                    | true, _ ->
+                    )
+                | true, _ when namedByProject ->
+                    // The project declares this table's row-level security, so
+                    // `policyChanges` compared what it declares and reported
+                    // what it does not. Claiming anything about comparison here
+                    // would contradict it. What is left is the one fact no
+                    // policy controls.
+                    Some(sprintf "row-level security is enabled and %s." ownerNote)
+                | true, _ ->
+                    Some(
                         sprintf
-                            "row-level security is enabled and %s. Strata does not manage policies, so the %d %s here %s NOT compared and nothing changes them: %s"
-                            (if e.Forced then
-                                 "FORCED, so it applies to the table's owner too"
-                             else
-                                 "not forced, so the table's owner bypasses every policy")
+                            "row-level security is enabled and %s. The project declares nothing about this table's row-level security, so the %d %s here %s NOT compared and nothing changes them: %s"
+                            ownerNote
                             count
                             plural
                             wereCompared
                             policies
-                    | false, [] ->
-                        // Only reachable when `relforcerowsecurity` is set
-                        // without `relrowsecurity`, which PostgreSQL allows and
-                        // which does nothing at all.
-                        "row-level security is FORCED here but not enabled, which has no effect."
-
-                { Object = e.Table
-                  Reason = NotModelled
-                  Detail = detail })
+                    )
+                | false, [] ->
+                    // Only reachable when `relforcerowsecurity` is set
+                    // without `relrowsecurity`, which PostgreSQL allows and
+                    // which does nothing at all.
+                    Some "row-level security is FORCED here but not enabled, which has no effect."
+                |> Option.map (fun detail ->
+                    { Object = e.Table
+                      Reason = NotModelled
+                      Detail = detail }))
 
     /// Extensions a project declares, against what is installed.
     ///
@@ -2759,7 +2805,11 @@ module SchemaDiff =
             grantChanges allowDrops managedSchemas desiredComplete declaredGrants actualGrants
 
         let rlsSuppressions =
-            rowLevelSecurityDisclosures managedSchemas inputs.ActualRowLevelSecurity
+            rowLevelSecurityDisclosures
+                managedSchemas
+                inputs.DeclaredPolicies
+                inputs.DeclaredRowSecurity
+                inputs.ActualRowLevelSecurity
 
         let extensionResults, extensionSuppressions =
             extensionChanges inputs.DeclaredExtensions inputs.ActualExtensions

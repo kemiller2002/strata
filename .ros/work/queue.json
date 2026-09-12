@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 92,
+  "nextSeq": 93,
   "items": [
     {
       "id": "WI-0001",
@@ -1555,10 +1555,24 @@
       "description": null,
       "tags": [],
       "priority": "medium",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-12T21:38:38Z",
-      "updatedAt": "2026-09-12T21:38:38Z",
+      "updatedAt": "2026-09-12T22:14:19Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0092",
+      "title": "A view whose AS is followed by a newline is silently never compared",
+      "description": "ShadowNormalisation.normaliseViews locates the view body with ddl.IndexOf(\" AS \"), which requires a SPACE on both sides of the keyword. The ordinary formatting CREATE VIEW x AS<newline>    SELECT ... does not match, so the view is dropped from the result by List.choose and never compared. Reproduced live: the deployed body was changed from status = 'open' to status = 'closed' and the plan proposed ZERO changes. The not-compared disclosure fires, so nothing is claimed falsely, but a declared view can drift with no proposed change. Fix by finding the first AS keyword at nesting depth zero and outside quotes, rather than by a literal substring.",
+      "tags": [],
+      "priority": "high",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-12T22:14:06Z",
+      "updatedAt": "2026-09-12T22:14:06Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null

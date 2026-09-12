@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "claude",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-09-12T21:39:40Z",
+  "updatedAt": "2026-09-12T22:14:43Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -1882,6 +1882,27 @@
         "EXE-20260912T212943610Z-d0d928b6"
       ],
       "completedAt": "2026-09-12T21:39:40Z"
+    },
+    {
+      "id": "WI-0091",
+      "type": "implementation",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Application/SchemaDiff.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/SchemaDiffTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T22:14:43Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T221420567Z-1ebb4fde"
+      ],
+      "completedAt": "2026-09-12T22:14:43Z"
     }
   ]
 }
