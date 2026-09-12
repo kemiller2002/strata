@@ -2428,6 +2428,16 @@ module SchemaDiff =
     [<NoComparison>]
     type Inputs =
         { AllowDrops: bool
+          /// The schemas this project manages, derived from the directory names
+          /// under the schema root (`DF-STRATA-2026-C3A2`).
+          ///
+          /// One field, where there were two. `ManagedSchemas` said what MAY be
+          /// changed and `DeclaredInSchemas` what WAS declared, and the gap
+          /// between them was the hazard: a schema managed with nothing declared
+          /// in it reads as "this schema should be empty". Deriving both from the
+          /// same directory tree closes the gap by construction — and the
+          /// project loader refuses an empty schema directory, which is what
+          /// keeps it closed.
           ManagedSchemas: string list
           /// The verbatim text that declared each object.
           Declarations: (QualifiedName * string) list
@@ -2449,8 +2459,6 @@ module SchemaDiff =
           /// Schemas that exist in the database, or `None` when the list could
           /// not be read. `None` is not an empty list.
           ExistingSchemas: string list option
-          /// Schemas the project actually declared objects in.
-          DeclaredInSchemas: string list
           /// Privileges the project declares.
           DeclaredGrants: Grant list
           /// Privileges the database holds, or `None` when they could not be
@@ -2499,7 +2507,6 @@ module SchemaDiff =
               DeclaredExtensions = []
               ActualExtensions = None
               ExistingSchemas = None
-              DeclaredInSchemas = []
               DeclaredGrants = []
               ActualGrants = None
               ActualRowLevelSecurity = None
@@ -2531,7 +2538,9 @@ module SchemaDiff =
         let triggerDeclarations = inputs.TriggerDeclarations
         let policyDeclarations = inputs.PolicyDeclarations
         let existingSchemas = inputs.ExistingSchemas
-        let declaredInSchemas = inputs.DeclaredInSchemas
+        // Same list: what the project manages and what it declared objects in
+        // are now one fact, derived from one directory tree.
+        let declaredInSchemas = inputs.ManagedSchemas
         let declaredGrants = inputs.DeclaredGrants
         let actualGrants = inputs.ActualGrants
         let data = inputs.Data

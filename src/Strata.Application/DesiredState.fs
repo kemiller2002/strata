@@ -120,7 +120,7 @@ module DesiredState =
     /// Takes `(path, contents)` rather than reading disk, so the whole
     /// assembly is testable without a filesystem — the same reason
     /// `CorpusPipeline.analyse` takes sources rather than a directory.
-    let load (parser: IDialectParser) (files: (string * string) list) : Loaded =
+    let loadWithLayout (parser: IDialectParser) (files: (string * string option * string) list) : Loaded =
         let objects = ResizeArray<SchemaObject>()
         let failures = ResizeArray<LoadFailure>()
         let declarations' = ResizeArray<QualifiedName * string>()
@@ -134,7 +134,7 @@ module DesiredState =
         let rowSecurity = ResizeArray<QualifiedName * RowSecuritySetting>()
         let extensions = ResizeArray<Extension>()
 
-        for path, contents in files do
+        for path, expectedSchema, contents in files do
             let declarations = parser.ParseObjectDefinitions contents
 
             match declarations with
@@ -159,7 +159,26 @@ module DesiredState =
 
                 for declaration in declarations do
                     match declaration with
-                    | Declared object' -> objects.Add object'
+                    | Declared object' ->
+                        // The file's DIRECTORY names a schema; the declaration
+                        // names one too, and they must agree. This is the
+                        // fail-closed half of `DF-STRATA-2026-C3A2`: without it
+                        // a project could assert an object in a schema that has
+                        // no directory, which is a schema Strata cannot manage.
+                        //
+                        // Only checked when the declaration is qualified. An
+                        // unqualified name says nothing about its schema, which
+                        // is a different problem from saying the wrong one.
+                        match expectedSchema, (SchemaObject.name object').Schema with
+                        | Some expected, Some declared when Identifier.folded declared <> expected ->
+                            failures.Add
+                                { Path = path
+                                  Reason =
+                                    sprintf
+                                        "declares %s, but the file sits under the %s schema directory. A declaration's schema must match the directory that holds it."
+                                        (QualifiedName.display (SchemaObject.name object'))
+                                        expected }
+                        | _ -> objects.Add object'
                     | DeclaredIndex (table, index) -> indexes.Add(table, index)
                     | DeclaredTrigger (table, trigger) -> triggers.Add(table, trigger)
                     | DeclaredPolicy (table, policy) -> policies.Add(table, policy)
@@ -467,6 +486,14 @@ module DesiredState =
             |> List.map (fun (_, gs) ->
                 { (List.head gs) with
                     Privileges = gs |> List.collect (fun g -> g.Privileges) |> List.distinct |> List.sort }) }
+
+    /// Assemble a snapshot from `(path, contents)` pairs, with no layout to
+    /// check against.
+    ///
+    /// The common shape for tests and for any caller that has text without a
+    /// directory. `loadWithLayout` is what a project uses.
+    let load (parser: IDialectParser) (files: (string * string) list) : Loaded =
+        loadWithLayout parser (files |> List.map (fun (path, contents) -> path, None, contents))
 
     /// Schemas the project actually declared objects in.
     ///

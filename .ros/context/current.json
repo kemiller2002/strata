@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "claude",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-09-12T20:05:01Z",
+  "updatedAt": "2026-09-12T20:21:29Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -1799,6 +1799,64 @@
         "EXE-20260912T195811585Z-adba25b5"
       ],
       "completedAt": "2026-09-12T20:05:01Z"
+    },
+    {
+      "id": "WI-0079",
+      "type": "implementation",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Host.Files/Project.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Application/DesiredState.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/ProjectTests.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/DesiredStateTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T20:21:29Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T201146841Z-b19d6922"
+      ],
+      "completedAt": "2026-09-12T20:21:29Z"
+    },
+    {
+      "id": "WI-0080",
+      "type": "implementation",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Host.Files/Project.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Application/DesiredState.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/ProjectTests.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/DesiredStateTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T20:21:29Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T201146997Z-a9fadc56"
+      ],
+      "completedAt": "2026-09-12T20:21:29Z"
     }
   ]
 }

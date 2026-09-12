@@ -69,7 +69,34 @@ OPTIONS
 PROJECT LAYOUT
   <project>/schema/<schema>/<kind>/<name>.sql, one object per file. `kind` is
   the directory name and is yours to choose; tables/, views/, routines/,
-  indexes/, triggers/, sequences/ and grants/ are the conventional ones.
+  indexes/, triggers/, sequences/, policies/, extensions/ and grants/ are the
+  conventional ones.
+
+  strata.json is REQUIRED and lists every object file explicitly:
+
+      {
+        "include": [
+          "schema/app/tables/customer.sql",
+          "schema/app/grants/customer.sql"
+        ]
+      }
+
+  Strata owns the directory it is given. A .sql file under the schema root that
+  `include` does not list FAILS the load, and so does a listed path that is not
+  there. Both are errors, not warnings — a build that ignores warnings is what a
+  warning is, and both have a cheap fix: list the file, or move it out. There is
+  no exclude list; moving a file out of the directory is how you exclude it.
+
+  No globs. "schema/**/*.sql" is a directory walk wearing a manifest's clothes:
+  drop a file in and the build takes it.
+
+  The managed schemas are the directory names under the schema root — there is
+  no managedSchemas setting. A directory name must equal the schema name exactly
+  and match [a-z_][a-z0-9_]*, so that one name works on Linux, macOS and Windows
+  alike. A schema in the database with no directory is left alone and reported.
+  An EMPTY schema directory is an error: a directory declaring nothing cannot be
+  told from one saying its schema should be empty, and the second is authority to
+  drop everything in it.
 
   grants/<object>.sql holds GRANT statements, on a table, view or sequence, on
   a SCHEMA, or on a function or procedure:
@@ -298,9 +325,9 @@ let main argv =
                 let parser = PgParserAdapter.PostgresParser() :> Strata.Analysis.DialectPort.IDialectParser
 
                 let declared =
-                    DesiredState.load
+                    DesiredState.loadWithLayout
                         parser
-                        (project.Files |> List.map (fun f -> f.Path, f.Contents))
+                        (project.Files |> List.map (fun f -> f.Path, Some f.Schema, f.Contents))
 
                 // A file that could not even be located or read never reached
                 // the loader, so its failure has to be folded in here or the
@@ -644,11 +671,10 @@ let main argv =
                     SchemaDiff.run
                         { SchemaDiff.Inputs.between desired actual with
                             AllowDrops = allowDrops
-                            ManagedSchemas = project.Manifest.ManagedSchemas
+                            ManagedSchemas = project.Schemas
                             Declarations = declared.Declarations
                             TriggerDeclarations = declared.TriggerDeclarations
                             ExistingSchemas = existingSchemas
-                            DeclaredInSchemas = DesiredState.schemasDeclaredIn declared
                             DeclaredGrants = declared.Grants
                             ActualGrants = actualGrants
                             ActualRowLevelSecurity = actualRowLevelSecurity
