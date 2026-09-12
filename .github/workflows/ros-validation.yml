@@ -1,11 +1,18 @@
 name: ROS validation
 
+# Same split as build-and-test: unqualified `push` alongside `pull_request`
+# ran this twice for every PR commit.
 on:
   pull_request:
   push:
+    branches: [main]
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   validate:

@@ -61,4 +61,6 @@
 | WI-0056 | Reference data as desired state | complete | strata, desired-state | high |
 | WI-0057 | A declared row colliding with an undeclared deployed row is caught late | complete | strata, reference-data | medium |
 | WI-0058 | Constraint differences cannot be applied | complete | strata, diff | high |
-| WI-0059 | CI builds nothing and runs no tests | ready | strata, ci | high |
+| WI-0059 | CI builds nothing and runs no tests | complete | strata, ci | high |
+| WI-0060 | Every PR commit ran CI twice | ready | strata, ci | medium |
+| WI-0061 | ros work complete does not update queue.md when an item is captured and completed in the same run | captured | ros, tooling | low |

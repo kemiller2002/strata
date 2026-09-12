@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 60,
+  "nextSeq": 62,
   "items": [
     {
       "id": "WI-0001",
@@ -1005,6 +1005,40 @@
       "attachments": [],
       "createdAt": "2026-09-12T00:46:36Z",
       "updatedAt": "2026-09-12T00:46:36Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0060",
+      "title": "Every PR commit ran CI twice",
+      "description": "on: [pull_request, push] with push unqualified fires both triggers for a commit on a PR branch, so each push ran two full build-and-test jobs including a PostgreSQL container. Restrict push to the default branch and add concurrency cancel-in-progress. Also pass -U postgres to pg_isready: without it the health probe logged FATAL role root does not exist on every attempt.",
+      "tags": [
+        "strata",
+        "ci"
+      ],
+      "priority": "medium",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T00:54:31Z",
+      "updatedAt": "2026-09-12T00:54:41Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0061",
+      "title": "ros work complete does not update queue.md when an item is captured and completed in the same run",
+      "description": "WI-0059 shows 'ready' in .ros/work/queue.md while .ros/context/current.json records state=complete with evidence. Items captured in an earlier commit update correctly, so the completion writes the mirror only for rows it did not itself add. Both ros work validate and backlog-validate report valid, so the tool does not see it. The ros CLI is an upstream self-contained binary fetched by ./ros, so this is reported rather than patched, and queue.md is generated so it is not hand-edited.",
+      "tags": [
+        "ros",
+        "tooling"
+      ],
+      "priority": "low",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-12T00:54:31Z",
+      "updatedAt": "2026-09-12T00:54:31Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null

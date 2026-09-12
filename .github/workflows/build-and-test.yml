@@ -9,12 +9,23 @@
 
 name: Build and test
 
+# `pull_request` covers every commit on a PR branch and `push` covers the
+# default branch. Listing both unqualified fires BOTH for a PR commit, which was
+# tolerable when the only job took seven seconds and is not now that each run
+# builds the solution and starts a database.
 on:
   pull_request:
   push:
+    branches: [main]
 
 permissions:
   contents: read
+
+# A run superseded by a newer push to the same branch is answering a question
+# nobody is asking any more.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-and-test:
@@ -28,8 +39,14 @@ jobs:
         image: postgres:16
         env:
           POSTGRES_PASSWORD: postgres
+        # `-U postgres` is not decoration: without it pg_isready connects as the
+        # runner's own user and the server logs `FATAL: role "root" does not
+        # exist` on every probe. The check still passed — the server was
+        # answering — but a health check that cannot authenticate is not
+        # checking health, and the noise hides a real failure if one ever
+        # appears.
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U postgres"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
