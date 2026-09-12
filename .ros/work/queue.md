@@ -74,4 +74,5 @@
 | WI-0069 | Schema and routine grants as desired state | complete | postgres, privileges, er-008 | high |
 | WI-0070 | Attribute the awkward-forms corpus fixtures to a work item | complete | ros, process | medium |
 | WI-0071 | State each awkward-forms fixture's contract in the file itself | complete | ros, process | medium |
-| WI-0072 | Make local ROS validation match CI's scope | ready | ros, ci | high |
+| WI-0072 | Make local ROS validation match CI's scope | complete | ros, ci | high |
+| WI-0073 | Column-level privileges as desired state | ready | postgres, privileges, er-008 | high |

@@ -1904,6 +1904,74 @@ let ``a routine grant that matches exactly proposes nothing`` () =
 
     Assert.Empty result.Changes
 
+let private columnGrant object' column grantee privileges : Grant =
+    { Target = GrantTarget.RelationColumn(qn "sales" object', Identifier.unquoted column)
+      Grantee = grantee
+      Privileges = privileges |> List.sort
+      Grantable = [] }
+
+[<Fact>]
+let ``a declared column grant claims the table-wide grant standing behind it`` () =
+    // The point of a column grant. Keyed grant-by-grant, the declared column
+    // privilege would be added and the table-wide SELECT left in place as
+    // something the project never mentioned — so the role would go on reading
+    // every column and the file's "only these columns" would mean nothing.
+    let result =
+        runWithGrants
+            true
+            [ columnGrant "orders" "id" "app_user" [ "SELECT" ] ]
+            (Some [ grant "orders" "app_user" [ "SELECT" ] ])
+
+    Assert.Contains(
+        result.Changes,
+        fun c ->
+            c = GrantPrivileges(
+                GrantTarget.RelationColumn(qn "sales" "orders", Identifier.unquoted "id"),
+                "app_user",
+                [ "SELECT" ]))
+
+    Assert.Contains(
+        result.Changes,
+        fun c -> c = RevokePrivileges(GrantTarget.Relation(qn "sales" "orders"), "app_user", [ "SELECT" ]))
+
+[<Fact>]
+let ``claiming a table's columns does not reach another grantee`` () =
+    // The ownership scope is coarser than the key but still per-grantee. A
+    // project narrowing app_user to one column must not revoke the replication
+    // role's table-wide access along with it.
+    let result =
+        runWithGrants
+            true
+            [ columnGrant "orders" "id" "app_user" [ "SELECT" ] ]
+            (Some [ grant "orders" "replication" [ "SELECT" ] ])
+
+    Assert.DoesNotContain(result.Changes, fun c -> Change.tag c = "revoke")
+    Assert.Contains(result.Suppressed, fun s -> s.Detail.Contains "replication")
+
+[<Fact>]
+let ``a revoke is ordered before every grant`` () =
+    // Not tidiness. `REVOKE SELECT ON t FROM r` removes r's COLUMN privileges
+    // on t as well as the table-wide one, so granting `SELECT (id)` and then
+    // revoking the standing table-wide SELECT leaves the role holding nothing —
+    // the revoke wipes the grant that just ran. That is the ordinary shape of
+    // narrowing a table grant to a column grant.
+    //
+    // Found by a live round-trip: the apply reported three statements ok and
+    // left the role unable to read the columns the file granted.
+    let result =
+        runWithGrants
+            true
+            [ columnGrant "orders" "id" "app_user" [ "SELECT" ] ]
+            (Some [ grant "orders" "app_user" [ "SELECT" ] ])
+
+    let tags = result.Changes |> List.map Change.tag
+    let firstGrant = tags |> List.findIndex (fun t -> t = "grant")
+    let lastRevoke = tags |> List.findIndexBack (fun t -> t = "revoke")
+
+    Assert.True(
+        lastRevoke < firstGrant,
+        sprintf "every revoke must precede every grant, got %s" (String.concat ", " tags))
+
 [<Fact>]
 let ``a privilege held WITH GRANT OPTION converges but is disclosed`` () =
     // Both halves matter. The privilege itself matches what the file declares,

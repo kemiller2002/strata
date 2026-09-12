@@ -236,6 +236,23 @@ module Schema =
         /// that spells its types differently from the routine it is on can
         /// never be matched to it.
         | Routine of QualifiedName * string list
+        /// One COLUMN of a relation. `pg_attribute.attacl`.
+        ///
+        /// One target per column, so `GRANT SELECT (id, total)` is two grants.
+        /// That matches how the column ACLs are actually stored — per column,
+        /// not as a list hanging off the table — and it means a project can
+        /// declare different privileges on different columns without the model
+        /// needing a shape for "these privileges, but only on those columns".
+        ///
+        /// A column privilege is NOT a narrower table privilege. They live in
+        /// separate ACLs and the effective access is the union: a role with
+        /// table-wide `SELECT` can read every column with no `attacl` entry
+        /// anywhere, and a role with only `SELECT (id)` can read that column
+        /// while `has_table_privilege(..., 'SELECT')` is false. Both verified on
+        /// a live server. Collapsing the two is what made an earlier version
+        /// read `GRANT SELECT (id) ON t` as a table-wide grant and hand out
+        /// access to columns the file withheld.
+        | RelationColumn of QualifiedName * Identifier
 
     [<RequireQualifiedAccess>]
     module GrantTarget =
@@ -251,6 +268,7 @@ module Schema =
             | GrantTarget.Relation n -> n
             | GrantTarget.Schema s -> QualifiedName.unqualified s
             | GrantTarget.Routine (n, _) -> n
+            | GrantTarget.RelationColumn (n, _) -> n
 
         /// The schema the grant's object lives in, where that is a question.
         ///
@@ -263,6 +281,7 @@ module Schema =
             | GrantTarget.Relation n -> n.Schema
             | GrantTarget.Schema s -> Some s
             | GrantTarget.Routine (n, _) -> n.Schema
+            | GrantTarget.RelationColumn (n, _) -> n.Schema
 
         /// A stable key for matching a declared grant to a deployed one.
         ///
@@ -271,6 +290,33 @@ module Schema =
         let key (t: GrantTarget) =
             match t with
             | GrantTarget.Relation n -> sprintf "relation:%s" (QualifiedName.display n)
+            | GrantTarget.Schema s -> sprintf "schema:%s" (Identifier.folded s)
+            | GrantTarget.Routine (n, args) ->
+                sprintf "routine:%s(%s)" (QualifiedName.display n) (String.concat "," args)
+            | GrantTarget.RelationColumn (n, column) ->
+                sprintf "column:%s.%s" (QualifiedName.display n) (Identifier.folded column)
+
+        /// The scope a declared grant takes OWNERSHIP of.
+        ///
+        /// Coarser than `key`, and deliberately: a column grant and a table
+        /// grant on the same relation share a scope. Declaring
+        /// `GRANT SELECT (id) ON t TO r` therefore claims r's table-wide
+        /// privileges on `t` as well, so the table-wide `SELECT` that would let
+        /// r read every other column becomes a proposed revoke.
+        ///
+        /// Without that, a file saying "r may read only id" could not achieve
+        /// it: the column grant would be added, the table-wide grant would be
+        /// left in place as something the project never mentioned, and r would
+        /// keep reading everything. Keyed grant-by-grant, the feature would not
+        /// do the one thing it exists for.
+        ///
+        /// The grantee is still part of the scope at the call site, so this does
+        /// NOT widen ownership across grantees: managing `app_user` on a table
+        /// still leaves the replication role's privileges alone.
+        let ownershipScope (t: GrantTarget) =
+            match t with
+            | GrantTarget.Relation n
+            | GrantTarget.RelationColumn (n, _) -> sprintf "relation:%s" (QualifiedName.display n)
             | GrantTarget.Schema s -> sprintf "schema:%s" (Identifier.folded s)
             | GrantTarget.Routine (n, args) ->
                 sprintf "routine:%s(%s)" (QualifiedName.display n) (String.concat "," args)

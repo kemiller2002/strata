@@ -422,19 +422,58 @@ module SchemaDiff =
         // not tell them apart would match a declared schema grant against a
         // deployed table grant and propose revoking privileges nobody declared.
         let key (g: Grant) = GrantTarget.key g.Target, g.Grantee.ToLowerInvariant()
+
+        // What a declaration takes ownership of. Coarser than the key: a column
+        // grant and a table grant on the same relation share a scope, so
+        // declaring `GRANT SELECT (id) ON t TO r` claims r's table-wide
+        // privileges on `t` too. Without that the table-wide SELECT would be
+        // left in place as something the project never mentioned, and r would
+        // go on reading every column — the column grant would add access and
+        // narrow none, which is the opposite of what the file asked for.
+        //
+        // The grantee is still part of the scope, so this does not widen
+        // ownership across grantees: the replication role is untouched.
+        let scope (g: Grant) = GrantTarget.ownershipScope g.Target, g.Grantee.ToLowerInvariant()
+
         let deployedByKey = deployed |> List.map (fun g -> key g, g) |> Map.ofList
-        let declaredKeys = declared |> List.map key |> Set.ofList
+        let declaredByKey = declared |> List.map (fun g -> key g, g) |> Map.ofList
+        let claimedScopes = declared |> List.map scope |> Set.ofList
+
+        // Every key the project declares, plus every deployed key inside a scope
+        // it claims. The second half is what catches a privilege held at a
+        // different key in the same scope — the table-wide grant standing behind
+        // a declared column grant — which iterating over `declared` alone never
+        // reaches.
+        let comparable =
+            (declared |> List.map (fun g -> key g, g.Target))
+            @ (deployed
+               |> List.filter (fun a -> Set.contains (scope a) claimedScopes)
+               |> List.map (fun g -> key g, g.Target))
+            |> List.distinctBy fst
 
         let changes =
-            declared
-            |> List.collect (fun d ->
-                let held =
-                    Map.tryFind (key d) deployedByKey
+            comparable
+            |> List.collect (fun (k, target) ->
+                let grantee =
+                    Map.tryFind k declaredByKey
+                    |> Option.orElse (Map.tryFind k deployedByKey)
+                    |> Option.map (fun g -> g.Grantee)
+                    |> Option.defaultValue ""
+
+                let wanted =
+                    Map.tryFind k declaredByKey
                     |> Option.map (fun g -> g.Privileges)
                     |> Option.defaultValue []
 
-                let missing = d.Privileges |> List.filter (fun p -> not (List.contains p held))
-                let extra = held |> List.filter (fun p -> not (List.contains p d.Privileges))
+                let held =
+                    Map.tryFind k deployedByKey
+                    |> Option.map (fun g -> g.Privileges)
+                    |> Option.defaultValue []
+
+                let d = {| Target = target; Grantee = grantee |}
+
+                let missing = wanted |> List.filter (fun p -> not (List.contains p held))
+                let extra = held |> List.filter (fun p -> not (List.contains p wanted))
 
                 [ if not (List.isEmpty missing) then
                       Ok(GrantPrivileges(d.Target, d.Grantee, missing))
@@ -470,7 +509,7 @@ module SchemaDiff =
         // output rather than left to the reader to infer from silence.
         let unclaimed =
             deployed
-            |> List.filter (fun a -> not (Set.contains (key a) declaredKeys))
+            |> List.filter (fun a -> not (Set.contains (scope a) claimedScopes))
             |> List.groupBy (fun a -> GrantTarget.key a.Target)
             |> List.map (fun (_, gs) ->
                 { Object = GrantTarget.name (List.head gs).Target
@@ -544,6 +583,24 @@ module SchemaDiff =
         | GrantTarget.Schema schema -> sprintf "SCHEMA %s" (quote schema)
         | GrantTarget.Routine (name, arguments) ->
             sprintf "ROUTINE %s(%s)" (quoteName name) (String.concat ", " arguments)
+        // The columns go on the PRIVILEGE, not the object: the SQL is
+        // `GRANT SELECT (id) ON t`, not `GRANT SELECT ON t (id)`. So a column
+        // target renders as the table here and the caller places the column
+        // list — the one target whose SQL is not a substitution of this string.
+        | GrantTarget.RelationColumn (name, _) -> quoteName name
+
+    /// The privilege list for a `GRANT` or `REVOKE`.
+    ///
+    /// A column restriction attaches to each PRIVILEGE, not to the object:
+    /// `GRANT SELECT (id), UPDATE (id) ON t`. Writing the column once after the
+    /// table is not valid SQL, and writing it after only the first privilege
+    /// would silently grant the rest table-wide — more access than asked for,
+    /// which is the defect this whole area exists to prevent.
+    let private privilegesSql (target: GrantTarget) (privileges: string list) =
+        match target with
+        | GrantTarget.RelationColumn (_, column) ->
+            privileges |> List.map (fun p -> sprintf "%s (%s)" p (quote column)) |> String.concat ", "
+        | _ -> String.concat ", " privileges
 
     /// A column as it appears in DDL.
     ///
@@ -698,7 +755,7 @@ module SchemaDiff =
             Some(
                 sprintf
                     "GRANT %s ON %s TO %s"
-                    (String.concat ", " privileges)
+                    (privilegesSql target privileges)
                     (grantTargetSql target)
                     (granteeSql grantee))
 
@@ -706,7 +763,7 @@ module SchemaDiff =
             Some(
                 sprintf
                     "REVOKE %s ON %s FROM %s"
-                    (String.concat ", " privileges)
+                    (privilegesSql target privileges)
                     (grantTargetSql target)
                     (granteeSql grantee))
 
@@ -1057,16 +1114,31 @@ module SchemaDiff =
         // After the table, its columns and its constraints exist, and after
         // triggers: a trigger on a reference table should see the rows arrive
         // the same way it would see any other write.
-        // After every object they name exists.
-        | GrantPrivileges _ -> 8
+        // After every object they name exists — and revokes STRICTLY before
+        // grants, which is not tidiness.
+        //
+        // `REVOKE SELECT ON t FROM r` removes r's column privileges on `t` as
+        // well as the table-wide one: PostgreSQL treats revoking a table
+        // privilege as revoking the equivalent column privileges. So a plan that
+        // grants `SELECT (id, email)` and then revokes the standing table-wide
+        // `SELECT` ends with the role holding NOTHING — the revoke wipes the
+        // grants that just ran.
+        //
+        // That is the ordinary shape of narrowing a table grant to a column
+        // grant, which is the main thing column privileges are for. Found by a
+        // live round-trip: the apply reported three statements ok and left the
+        // role unable to read the columns the file granted, and the re-plan did
+        // not converge. Both ranks sat at 8 and the sort is stable, so the
+        // grants were assembled first and ran first.
         | RevokePrivileges _ -> 8
-        | InsertRow _ -> 8
-        | UpdateRow _ -> 8
-        | TruncateTable _ -> 9
-        | DropColumn _ -> 10
-        | DropSequence _ -> 11
-        | DropTable _ -> 11
-        | UnclassifiedChange _ -> 12
+        | GrantPrivileges _ -> 9
+        | InsertRow _ -> 10
+        | UpdateRow _ -> 10
+        | TruncateTable _ -> 11
+        | DropColumn _ -> 12
+        | DropSequence _ -> 13
+        | DropTable _ -> 13
+        | UnclassifiedChange _ -> 14
 
     /// Constraint and default differences for a table present on both sides.
     ///
@@ -2274,6 +2346,8 @@ module SchemaDiff =
         | GrantTarget.Schema schema -> sprintf "schema %s" schema.Text
         | GrantTarget.Routine (name, arguments) ->
             sprintf "routine %s(%s)" (QualifiedName.display name) (String.concat ", " arguments)
+        | GrantTarget.RelationColumn (name, column) ->
+            sprintf "%s(%s)" (QualifiedName.display name) column.Text
 
     /// One line describing a change, for a human reading a plan.
     let private describe (change: Change) =

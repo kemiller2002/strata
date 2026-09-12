@@ -98,6 +98,11 @@ module DeploymentGate =
         | GrantTarget.Schema schema -> sprintf "schema %s" schema.Text
         | GrantTarget.Routine (name, arguments) ->
             sprintf "routine %s(%s)" (QualifiedName.display name) (String.concat ", " arguments)
+        // Written the way the GRANT is written, so an approver reading
+        // "revokes SELECT on app.customer(email)" can see it is one column and
+        // not the table.
+        | GrantTarget.RelationColumn (name, column) ->
+            sprintf "%s(%s)" (QualifiedName.display name) column.Text
 
     let private judge (graph: SemanticGraph) (scope: Scope) (change: Change) : Finding =
         // An absence claim is only trustworthy if the scope supports one.

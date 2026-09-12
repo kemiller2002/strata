@@ -1270,6 +1270,15 @@ module PgParserAdapter =
         | ObjectType.ObjectRoutine -> [ "EXECUTE" ]
         | _ -> [ "SELECT"; "INSERT"; "UPDATE"; "DELETE"; "TRUNCATE"; "REFERENCES"; "TRIGGER" ]
 
+    /// What `ALL` means on a COLUMN: four privileges, not the table's seven.
+    ///
+    /// `DELETE`, `TRUNCATE` and `TRIGGER` act on rows or on the table itself, so
+    /// there is nothing for them to mean on one column. Verified live:
+    /// `GRANT ALL (note) ON t` yields `arwx` — SELECT, INSERT, UPDATE,
+    /// REFERENCES. Using the table's list here would propose granting `DELETE`
+    /// on a column forever.
+    let private allColumnPrivileges = [ "INSERT"; "REFERENCES"; "SELECT"; "UPDATE" ]
+
     /// A grant's object kind, spelled as SQL spells it.
     ///
     /// The protobuf enum name (`ObjectTablespace`, `ObjectFdw`) is an internal
@@ -1357,34 +1366,55 @@ module PgParserAdapter =
             Microsoft.FSharp.Core.Error "only a grant on a named object is read as declared state"
         else
 
-        // A COLUMN-level grant is refused, and this is the one refusal here that
-        // exists to prevent an escalation rather than a churn.
+        // Privileges are read PER AccessPriv rather than flattened, because one
+        // statement can mix scopes: `GRANT SELECT (id), INSERT ON t` is a column
+        // grant and a table grant together, and a flat list would lose which
+        // was which. That loss is exactly how an earlier version read
+        // `GRANT SELECT (id, total) ON t` as a whole-table grant and handed out
+        // access to columns the file withheld.
         //
-        // `GRANT SELECT (id, total) ON t` parses with the same RangeVar as a
-        // table-wide grant; the columns live in `AccessPriv.cols`. Reading the
-        // privilege name and ignoring that list turns a two-column grant into a
-        // whole-table one — and because column ACLs live in
-        // `pg_attribute.attacl`, which is not read, the catalog side shows
-        // nothing, so the diff PROPOSES the table-wide grant and the gate
-        // allows it as additive. Strata would hand out more access than the
-        // file asked for, silently, and execute it.
-        let columnScoped =
-            not (isNull (box stmt.Privileges))
-            && stmt.Privileges
-               |> Seq.exists (fun n ->
-                   not (isNull (box n.AccessPriv))
-                   && not (isNull (box n.AccessPriv.Cols))
-                   && n.AccessPriv.Cols.Count > 0)
+        // An AccessPriv with NO privilege name is `ALL`, and what `ALL` covers
+        // differs by scope: four privileges on a column, seven on a table.
+        let columnsOf (a: AccessPriv) =
+            if isNull (box a.Cols) then []
+            else
+                a.Cols
+                |> Seq.choose (fun c ->
+                    if isNull (box c.String) || String.IsNullOrEmpty c.String.Sval then None
+                    else Some(identifierOf c.String.Sval))
+                |> List.ofSeq
 
-        let privileges =
+        /// Privilege names paired with the columns they are restricted to.
+        /// An empty column list means the whole object.
+        let privilegeGroups : (Identifier list * string list) list =
             if isNull (box stmt.Privileges) || stmt.Privileges.Count = 0 then
-                allPrivileges stmt.Objtype
+                // No privileges list at all is `GRANT ALL ON <object>`, which is
+                // never column-scoped: there are no columns to attach it to.
+                [ [], allPrivileges stmt.Objtype ]
             else
                 stmt.Privileges
-                |> Seq.choose (fun n ->
-                    if isNull (box n.AccessPriv) || String.IsNullOrEmpty n.AccessPriv.PrivName then None
-                    else Some(n.AccessPriv.PrivName.ToUpperInvariant()))
+                |> Seq.choose (fun n -> if isNull (box n.AccessPriv) then None else Some n.AccessPriv)
+                |> Seq.map (fun a ->
+                    let columns = columnsOf a
+
+                    let names =
+                        if String.IsNullOrEmpty a.PrivName then
+                            if List.isEmpty columns then allPrivileges stmt.Objtype
+                            else allColumnPrivileges
+                        else
+                            [ a.PrivName.ToUpperInvariant() ]
+
+                    columns, names)
+                // Two clauses naming the same columns are merged, so
+                // `GRANT SELECT (id), UPDATE (id)` is one grant with two
+                // privileges rather than two grants that overwrite each other.
+                |> Seq.groupBy (fun (columns, _) -> columns |> List.map Identifier.folded)
+                |> Seq.map (fun (_, group) ->
+                    let group = List.ofSeq group
+                    fst (List.head group), group |> List.collect snd |> List.distinct |> List.sort)
                 |> List.ofSeq
+
+        let privileges = privilegeGroups |> List.collect snd |> List.distinct |> List.sort
 
         let grantees =
             if isNull (box stmt.Grantees) then []
@@ -1447,9 +1477,20 @@ module PgParserAdapter =
         let objectErrors = objects |> List.choose (function Microsoft.FSharp.Core.Error e -> Some e | Ok _ -> None)
         let targets = objects |> List.choose (function Ok t -> Some t | Microsoft.FSharp.Core.Error _ -> None)
 
-        if columnScoped then
+        // A column list is only meaningful on a relation. `GRANT USAGE (x) ON
+        // SCHEMA s` does not parse, but `GRANT EXECUTE (x) ON FUNCTION f` does,
+        // and there is no such thing as a column of a function.
+        let columnsOnNonRelation =
+            privilegeGroups
+            |> List.exists (fun (columns, _) ->
+                not (List.isEmpty columns)
+                && (match stmt.Objtype with
+                    | ObjectType.ObjectTable -> false
+                    | _ -> true))
+
+        if columnsOnNonRelation then
             Microsoft.FSharp.Core.Error
-                "a column-level GRANT is not yet read as declared state: Strata does not model column privileges, and reading one as a table-wide grant would hand out more access than the file asked for"
+                "a GRANT naming columns on something that has no columns is not read as declared state"
         elif stmt.GrantOption then
             // The same shape as the column-level refusal, and it exists for the
             // same reason. `WITH GRANT OPTION` lets the grantee pass the
@@ -1473,13 +1514,28 @@ module PgParserAdapter =
             Ok
                 [ for target in targets do
                     for grantee in grantees do
-                        { Target = target
-                          Grantee = grantee
-                          Privileges = privileges |> List.distinct |> List.sort
-                          // A file that asked for `WITH GRANT OPTION` never
-                          // reaches here: it is refused above. So a declared
-                          // grant has nothing grantable, always.
-                          Grantable = [] } ]
+                        for (columns, names) in privilegeGroups do
+                            // One grant per COLUMN, matching how the ACLs are
+                            // stored: `GRANT SELECT (id, total)` writes an entry
+                            // into `id`'s attacl and another into `total`'s.
+                            let scoped =
+                                match columns, target with
+                                | [], _ -> [ target ]
+                                | cols, GrantTarget.Relation name ->
+                                    cols |> List.map (fun c -> GrantTarget.RelationColumn(name, c))
+                                // Unreachable: columns on a non-relation is
+                                // refused above. Listed rather than wildcarded
+                                // so adding a target kind has to come back here.
+                                | _, other -> [ other ]
+
+                            for t in scoped do
+                                { Target = t
+                                  Grantee = grantee
+                                  Privileges = names |> List.distinct |> List.sort
+                                  // A file that asked for `WITH GRANT OPTION`
+                                  // never reaches here: it is refused above. So
+                                  // a declared grant has nothing grantable.
+                                  Grantable = [] } ]
 
     let private errorOf (e: PgSqlParser.Error) =
         { Message = e.Message

@@ -77,6 +77,7 @@ PROJECT LAYOUT
       GRANT USAGE ON SCHEMA ref TO app_user;
       GRANT SELECT, INSERT ON ref.account TO app_user;
       GRANT EXECUTE ON FUNCTION ref.balance(bigint) TO app_user;
+      GRANT SELECT (id, email) ON ref.customer TO app_user;
 
   USAGE on the schema is what makes the names inside it reachable, so a project
   that grants on a table and nothing on its schema has granted nothing usable.
@@ -86,6 +87,12 @@ PROJECT LAYOUT
   Declaring a grant takes ownership of THAT GRANTEE's privileges on THAT
   object — a grantee the project never names keeps what it has and is reported,
   so managing app_user cannot silently revoke a replication or monitoring role.
+
+  Column privileges are a separate store from the table's, not a narrower view
+  of it: a role with table-wide SELECT reads every column. So declaring a
+  column grant claims that grantee's TABLE-wide privileges too, and a standing
+  table-wide SELECT is proposed for revoking — otherwise "only these columns"
+  would add access and narrow none. Another grantee is still untouched.
 
   Two things about privileges are reported and never changed. Every function
   starts with EXECUTE granted to PUBLIC, so a project that does not declare

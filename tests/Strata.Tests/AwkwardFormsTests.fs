@@ -203,6 +203,7 @@ let ``Strata reads the declaration the way the server does`` (name: string) =
                 match g.Target with
                 | GrantTarget.Relation n -> { g with Target = GrantTarget.Relation(qualify n) }
                 | GrantTarget.Routine (n, args) -> { g with Target = GrantTarget.Routine(qualify n, args) }
+                | GrantTarget.RelationColumn (n, c) -> { g with Target = GrantTarget.RelationColumn(qualify n, c) }
                 | GrantTarget.Schema _ -> g)
 
         let actualGrants =

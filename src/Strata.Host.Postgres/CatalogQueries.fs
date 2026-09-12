@@ -372,6 +372,40 @@ module CatalogQueries =
         ORDER BY n.nspname, grantee, a.privilege_type
         """
 
+    /// Privileges granted on individual COLUMNS. `pg_attribute.attacl`.
+    ///
+    /// Unlike the other three, this one does NOT read through `acldefault`, and
+    /// that is a real difference rather than an oversight: `acldefault('c', ...)`
+    /// is `{}` — a column has no default ACL and the owner never appears in one.
+    /// So a NULL `attacl` genuinely means "no column grants here", which is the
+    /// opposite of what a NULL `proacl` means. Verified on a live server.
+    ///
+    /// Column privileges are a SEPARATE store from the table's, not a narrower
+    /// view of it. Granting `SELECT` on the table writes `relacl` and leaves
+    /// every `attacl` NULL, and effective access is the union of the two: a role
+    /// with table-wide `SELECT` reads every column with no entry here at all.
+    /// Reading one as the other is how a column grant became a table-wide one.
+    let columnGrants =
+        """
+        SELECT n.nspname AS schema_name,
+               c.relname AS object_name,
+               at.attname AS column_name,
+               CASE WHEN a.grantee = 0 THEN 'PUBLIC'
+                    ELSE pg_catalog.pg_get_userbyid(a.grantee) END AS grantee,
+               a.privilege_type,
+               a.is_grantable
+        FROM pg_catalog.pg_attribute at
+        JOIN pg_catalog.pg_class c ON c.oid = at.attrelid
+        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+        CROSS JOIN LATERAL pg_catalog.aclexplode(at.attacl) a
+        WHERE c.relkind IN ('r', 'p', 'v', 'm')
+          AND at.attnum > 0
+          AND NOT at.attisdropped
+          AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+          AND a.grantee <> c.relowner
+        ORDER BY n.nspname, c.relname, at.attname, grantee, a.privilege_type
+        """
+
     /// Privileges granted on functions and procedures. `pg_proc.proacl`.
     ///
     /// `COALESCE(proacl, acldefault(...))` is the whole point of this query and

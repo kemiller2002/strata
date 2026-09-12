@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 73,
+  "nextSeq": 74,
   "items": [
     {
       "id": "WI-0001",
@@ -1248,6 +1248,24 @@
       "attachments": [],
       "createdAt": "2026-09-12T09:56:02Z",
       "updatedAt": "2026-09-12T09:56:02Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0073",
+      "title": "Column-level privileges as desired state",
+      "description": "GRANT SELECT (id) ON t was refused rather than modelled, because reading it as a table-wide grant would hand out access to columns the file withheld. Read column privileges properly from pg_attribute.attacl, one grant per column, with a declared column grant claiming that grantee's table-wide privileges so the file can actually narrow access rather than only widen it.",
+      "tags": [
+        "postgres",
+        "privileges",
+        "er-008"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T10:10:11Z",
+      "updatedAt": "2026-09-12T10:10:20Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null

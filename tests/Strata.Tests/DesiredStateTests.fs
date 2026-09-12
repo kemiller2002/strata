@@ -745,17 +745,56 @@ let ``CURRENT_USER is refused: a file cannot fix who is connected`` () =
     Assert.Contains(loaded.Failures, fun f -> f.Reason.Contains "not declarable")
 
 [<Fact>]
-let ``a column-level GRANT is refused, never widened to the whole table`` () =
+let ``a column-level GRANT is one grant per column, never one on the table`` () =
     // The escalation this prevents: `GRANT SELECT (id) ON t` parses with the
     // same RangeVar as a table-wide grant, and the columns live in a list that
-    // was not being read. Column ACLs live in pg_attribute.attacl, which is not
-    // read either — so the catalog side showed nothing, the diff proposed the
-    // TABLE-wide grant, and the gate allowed it as additive. Strata would have
-    // handed out more access than the file asked for, and executed it.
+    // was not being read — so the diff proposed the TABLE-wide grant and the
+    // gate allowed it as additive. Strata would have handed out access to
+    // columns the file withheld, and executed it.
+    //
+    // One target per column, because that is how the ACLs are stored: this
+    // writes an entry into id's attacl and another into total's.
     let loaded = load [ "g.sql", "GRANT SELECT (id, total) ON ref.a TO app_user;" ]
 
-    Assert.Empty loaded.Grants
-    Assert.Contains(loaded.Failures, fun f -> f.Reason.Contains "column-level GRANT")
+    Assert.Empty loaded.Failures
+
+    let targets = loaded.Grants |> List.map (fun g -> g.Target) |> List.sortBy GrantTarget.key
+
+    Assert.Equal<GrantTarget list>(
+        [ GrantTarget.RelationColumn(qn "ref" "a", Identifier.unquoted "id")
+          GrantTarget.RelationColumn(qn "ref" "a", Identifier.unquoted "total") ],
+        targets)
+
+[<Fact>]
+let ``one GRANT can mix column and table scope`` () =
+    // `GRANT SELECT (id), INSERT ON t` is a column grant AND a table grant.
+    // Flattening the privileges into one list loses which was which, and that
+    // loss is exactly how the column grant became a table-wide one.
+    let loaded = load [ "g.sql", "GRANT SELECT (id), INSERT ON ref.a TO app_user;" ]
+
+    Assert.Empty loaded.Failures
+
+    let privilegesOf target =
+        loaded.Grants |> List.find (fun g -> g.Target = target) |> fun g -> g.Privileges
+
+    Assert.Equal<string list>(
+        [ "SELECT" ],
+        privilegesOf (GrantTarget.RelationColumn(qn "ref" "a", Identifier.unquoted "id")))
+
+    Assert.Equal<string list>([ "INSERT" ], privilegesOf (GrantTarget.Relation(qn "ref" "a")))
+
+[<Fact>]
+let ``GRANT ALL on a column is four privileges, not a table's seven`` () =
+    // DELETE, TRUNCATE and TRIGGER act on rows or on the table, so there is
+    // nothing for them to mean on one column. Using the table's list would
+    // propose granting DELETE on a column forever. Verified live: `GRANT ALL
+    // (note)` yields `arwx`.
+    let loaded = load [ "g.sql", "GRANT ALL (note) ON ref.a TO app_user;" ]
+
+    Assert.Empty loaded.Failures
+    Assert.Equal<string list>(
+        [ "INSERT"; "REFERENCES"; "SELECT"; "UPDATE" ],
+        (List.head loaded.Grants).Privileges)
 
 [<Fact>]
 let ``a table-wide GRANT on the same object is still read`` () =

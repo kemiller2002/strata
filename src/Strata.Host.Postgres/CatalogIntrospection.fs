@@ -460,13 +460,13 @@ module CatalogIntrospection =
           ServerVersion = serverVersion
           Completeness = completeness }
 
-    /// Privileges granted on relations, schemas and routines.
+    /// Privileges granted on relations, schemas, routines and columns.
     ///
     /// Returned as a `Result` for the same reason `readSchemas` is: a caller
     /// that could not read the ACLs must not conclude a privilege is absent
     /// and propose granting it, nor conclude one is undeclared and revoke it.
     ///
-    /// All three catalogs are read in ONE connection and one `Result`. Reading
+    /// All four catalogs are read in ONE connection and one `Result`. Reading
     /// them separately would allow a partial answer — relations read, routines
     /// not — and a partial answer here is the dangerous kind: it looks like a
     /// complete one in which nobody holds anything.
@@ -522,7 +522,13 @@ module CatalogIntrospection =
 
                     GrantTarget.Routine(qualified (str r "schema_name") (str r "object_name"), arguments))
 
-            Ok(relations @ schemaLevel @ routineLevel)
+            let columnLevel =
+                read CatalogQueries.columnGrants (fun r ->
+                    GrantTarget.RelationColumn(
+                        qualified (str r "schema_name") (str r "object_name"),
+                        Identifier.unquoted (str r "column_name")))
+
+            Ok(relations @ schemaLevel @ routineLevel @ columnLevel)
         with ex ->
             Error ex.Message
 
