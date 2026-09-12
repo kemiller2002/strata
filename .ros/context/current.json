@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "claude",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-09-12T23:27:02Z",
+  "updatedAt": "2026-09-12T23:32:54Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -2100,6 +2100,31 @@
         "EXE-20260912T232042816Z-5535d8d3"
       ],
       "completedAt": "2026-09-12T23:27:02Z"
+    },
+    {
+      "id": "WI-0087",
+      "type": "implementation",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Host.Postgres/TypeCheck.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Cli/TypeChecking.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/TypeCheckTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T23:32:54Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T232911878Z-4275fc9c"
+      ],
+      "completedAt": "2026-09-12T23:32:54Z"
     }
   ]
 }

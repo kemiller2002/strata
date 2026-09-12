@@ -339,6 +339,29 @@ module ShadowNormalisation =
             ddl.Substring(nameEnd, bodyStart - 2 - nameEnd).Trim()
         | _ -> ""
 
+    /// The first bare word in a piece of SQL, skipping whatever hides text.
+    ///
+    /// Which statement kind this is, in other words — and a leading comment must
+    /// not answer that question. `-- create the orders view` above a `SELECT`
+    /// would make a naive reader call it a CREATE, which for `TypeCheck` is the
+    /// difference between "cannot be type-checked" and "type-checks clean".
+    ///
+    /// `None` for text that is entirely comment or whitespace.
+    let firstWord (sql: string) : string option =
+        let n = sql.Length
+
+        sql
+        |> scanFor (fun _ c _ -> not (Char.IsWhiteSpace c))
+        |> Option.bind (fun start ->
+            if not (isWordChar sql.[start]) then
+                None
+            else
+                let rec wordEnd i =
+                    if i < n && isWordChar sql.[i] then wordEnd (i + 1) else i
+
+                let e = wordEnd start
+                if e > start then Some(sql.Substring(start, e - start)) else None)
+
     /// Where a table's column list starts: the offset of the `(` that opens it.
     ///
     /// The same reasoning as `viewBodyStart`, and a more ordinary trigger — a

@@ -112,6 +112,13 @@ OPTIONS
                      enable removals, which need --allow-drops as well.
   --out <file>       Where `compile` writes the artifact
   --artifact <file>  The artifact `deploy` and `validate` read
+  --types            Have the server PLAN each statement, with PREPARE, inside a
+                     rolled-back transaction. Catches what a reference check
+                     cannot: `WHERE total = 'abc'` on a numeric column, a
+                     function that has no such signature, an ambiguous column in
+                     a join. Opt-in because PREPARE takes no DDL, so turning it
+                     on everywhere would report most files as unverifiable and
+                     teach everyone to ignore that.
   --search-path <s>  Comma-separated schemas for `validate --artifact`
   --key <file>       PEM private key, for `keygen` and `sign`
   --public-key <file>  PEM public key, for `keygen` and for verifying a
@@ -636,14 +643,42 @@ let main argv =
                 | Error _ -> []
 
             let parser = PgParserAdapter.PostgresParser() :> Strata.Analysis.DialectPort.IDialectParser
-            let report = Validation.validate parser snapshot searchPath (IO.File.ReadAllText path)
+            let text = IO.File.ReadAllText path
+            let report = Validation.validate parser snapshot searchPath text
 
             if List.contains "--json" args then
                 printfn "%s" (Validation.toJson path report)
             else
                 printfn "%s" (Validation.toText path report)
 
-            Validation.Report.exitCode report
+            let referenceCode = Validation.Report.exitCode report
+
+            // Tier 3. Opt-in, and the reason is in `TypeChecking`: running it
+            // automatically would turn every DDL file from a clean exit 0 into
+            // "unverifiable", and `unverifiable` only works as a signal while it
+            // is rare.
+            if List.contains "--types" args then
+                match TypeCheck.check connectionString (TypeChecking.statements parser text) with
+                | Microsoft.FSharp.Core.Error message ->
+                    eprintfn ""
+                    eprintfn "warning: types could not be checked (%s)." message
+                    eprintfn "         References were still checked; types were not." 
+                    max referenceCode 2
+                | Ok result ->
+                    // The stronger claim wins, so a file whose references are
+                    // fine and whose types are wrong is WRONG.
+                    max referenceCode (TypeChecking.report result)
+            else
+                // The record warns the two tiers must not disagree SILENTLY.
+                // They cannot disagree here — one of them did not run — so the
+                // gap is named instead.
+                if not (List.contains "--json" args) then
+                    printfn ""
+                    printfn "Types were NOT checked. Re-run with --types to have the server plan each"
+                    printfn "statement, which catches type mismatches, bad function signatures and"
+                    printfn "ambiguous columns that a reference check cannot see."
+
+                referenceCode
         with ex ->
             eprintfn "error: %s" ex.Message
             2
