@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 70,
+  "nextSeq": 72,
   "items": [
     {
       "id": "WI-0001",
@@ -1178,6 +1178,59 @@
       "attachments": [],
       "createdAt": "2026-09-12T09:49:02Z",
       "updatedAt": "2026-09-12T09:49:08Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0070",
+      "title": "Attribute the awkward-forms corpus fixtures to a work item",
+      "description": "WI-0068 completed with the harness and the two defect fixes as evidence, but not the 19 fixture .sql files that ARE its deliverable — so ros validate, run with ROS_BASE_REF as CI runs it, reported 17 files with no work-item attribution. A completed item's evidence cannot be amended through the ros CLI, and hand-editing .ros/context/current.json would make the record untrustworthy, so this item carries the corpus directory as evidence instead. Local runs missed it because ROS_BASE_REF is unset outside CI, which narrows validation to the working tree.",
+      "tags": [
+        "ros",
+        "process"
+      ],
+      "priority": "medium",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T09:51:31Z",
+      "updatedAt": "2026-09-12T09:51:36Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0071",
+      "title": "State each awkward-forms fixture's contract in the file itself",
+      "description": "The corpus directory name is the only thing saying what a fixture asserts: converges/ means 'this must produce a zero diff', refused/ means 'this must fail to load'. Everywhere else this project writes such a contract out rather than leaving it to a convention, and someone adding a case reads the file, not the harness. Each fixture gains a header naming its contract. This also attributes the 17 fixtures committed before WI-0068 completed: ros fills a work event's paths from the dirty tree at completion, so files already committed carry no attribution and neither evidence paths nor work attach (which copies files as artifacts) can supply it after the fact.",
+      "tags": [
+        "ros",
+        "process"
+      ],
+      "priority": "medium",
+      "status": "ready",
+      "attachments": [
+        {
+          "id": "ATT-1",
+          "seq": 1,
+          "name": "grant-shapes.sql",
+          "file": "1-grant-shapes.sql",
+          "size": 264,
+          "contentType": null,
+          "uploadedAt": "2026-09-12T09:53:14Z"
+        },
+        {
+          "id": "ATT-2",
+          "seq": 2,
+          "name": "identity-column.sql",
+          "file": "2-identity-column.sql",
+          "size": 259,
+          "contentType": null,
+          "uploadedAt": "2026-09-12T09:53:14Z"
+        }
+      ],
+      "createdAt": "2026-09-12T09:52:34Z",
+      "updatedAt": "2026-09-12T09:53:44Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null

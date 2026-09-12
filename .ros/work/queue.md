@@ -71,4 +71,6 @@
 | WI-0066 | Grants as desired state | complete | strata, desired-state | high |
 | WI-0067 | A column-level GRANT was widened to the whole table | complete | strata, security | high |
 | WI-0068 | Awkward-forms corpus: the server as oracle for declaration reading | complete | testing, postgres, er-008 | high |
-| WI-0069 | Schema and routine grants as desired state | ready | postgres, privileges, er-008 | high |
+| WI-0069 | Schema and routine grants as desired state | complete | postgres, privileges, er-008 | high |
+| WI-0070 | Attribute the awkward-forms corpus fixtures to a work item | complete | ros, process | medium |
+| WI-0071 | State each awkward-forms fixture's contract in the file itself | active | ros, process | medium |

@@ -1,3 +1,5 @@
+-- CONTRACT: Strata must read this the way the server does — the diff after
+--           introspecting it back must be EMPTY. See AwkwardFormsTests.fs.
 -- CREATE SEQUENCE carries no options, so every default is the tool's
 -- responsibility. Descending inverts min, max AND start.
 CREATE SEQUENCE bare;

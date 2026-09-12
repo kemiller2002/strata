@@ -1,5 +1,3 @@
--- CONTRACT: Strata must read this the way the server does — the diff after
---           introspecting it back must be EMPTY. See AwkwardFormsTests.fs.
 -- NOT NULL by rule, and no default: its value comes from attidentity, not
 -- pg_attrdef. Getting either half wrong made this table unconvergeable.
 CREATE TABLE t (

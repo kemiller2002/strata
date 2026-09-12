@@ -1,3 +1,5 @@
+-- CONTRACT: Strata must read this the way the server does — the diff after
+--           introspecting it back must be EMPTY. See AwkwardFormsTests.fs.
 -- A routine grant is keyed on the ARGUMENT TYPES, so the two overloads below
 -- are two different grants and one of them is granted to nobody. Getting the
 -- key wrong matches the declared grant against the wrong function, silently.

@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "claude",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-09-12T09:49:19Z",
+  "updatedAt": "2026-09-12T09:54:51Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -1536,6 +1536,44 @@
         "EXE-20260912T094909113Z-86c2a128"
       ],
       "completedAt": "2026-09-12T09:49:19Z"
+    },
+    {
+      "id": "WI-0070",
+      "type": "mechanical",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/awkward"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/AwkwardFormsTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T09:51:44Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T095137511Z-97b772f0"
+      ],
+      "completedAt": "2026-09-12T09:51:44Z"
+    },
+    {
+      "id": "WI-0071",
+      "type": "mechanical",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/AwkwardFormsTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T09:54:51Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T095242706Z-5ce822f3"
+      ],
+      "completedAt": "2026-09-12T09:54:51Z"
     }
   ]
 }

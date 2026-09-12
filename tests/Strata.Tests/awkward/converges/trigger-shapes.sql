@@ -1,3 +1,5 @@
+-- CONTRACT: Strata must read this the way the server does — the diff after
+--           introspecting it back must be EMPTY. See AwkwardFormsTests.fs.
 -- AFTER is the absence of a bit, not a bit. UPDATE OF narrows the events.
 -- Event order is a bitmask on both sides, so it cannot follow the author's.
 CREATE TABLE t (id bigint PRIMARY KEY, total numeric, status text);

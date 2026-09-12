@@ -272,6 +272,27 @@ let ``a form Strata does not model is refused, never reinterpreted`` (name: stri
             Assert.False(String.IsNullOrWhiteSpace f.Reason, "a refusal must carry a reason")
             Assert.True(f.Reason.Length > 20, sprintf "the reason is too vague to act on: %s" f.Reason))
 
+[<Fact>]
+let ``every fixture states its contract in the file`` () =
+    // The directory name is otherwise the only thing saying what a case
+    // asserts, and someone adding a case reads the file rather than the
+    // harness. Checked rather than documented so the header cannot rot: a new
+    // fixture without one fails here instead of quietly asserting whatever its
+    // directory happens to mean.
+    //
+    // Not a `RequiresPostgres` fact — this needs no database, and skipping it
+    // when there is none would leave the corpus unchecked in exactly the
+    // environment where nobody notices.
+    let missing =
+        [ for kind in [ "converges"; "refused" ] do
+            for case in Fixture.cases kind do
+                let name = string (Array.head case)
+
+                if not ((Fixture.read kind name).StartsWith "-- CONTRACT:") then
+                    yield sprintf "%s/%s" kind name ]
+
+    Assert.Empty missing
+
 [<RequiresPostgres>]
 let ``the corpus is not empty`` () =
     // A directory that failed to copy to the output would make every theory

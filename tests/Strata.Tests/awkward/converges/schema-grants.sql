@@ -1,3 +1,5 @@
+-- CONTRACT: Strata must read this the way the server does — the diff after
+--           introspecting it back must be EMPTY. See AwkwardFormsTests.fs.
 -- USAGE on the schema is what makes every qualified name inside it reachable,
 -- so a project that grants on a table and nothing on its schema has granted
 -- nothing usable. The grant is on the scratch schema itself, which is also the
