@@ -200,6 +200,44 @@ module DeploymentGate =
               AffectedSources = []
               NextSafeMove = "Confirm no query depends on this index for its plan, then approve explicitly." }
 
+        | InsertRow (table, key) ->
+            { Change = change
+              Verdict = Allow
+              Detected = sprintf "inserts row %s into %s" key (QualifiedName.display table)
+              Rationale =
+                // Genuinely additive, unlike a new trigger. Nothing can already
+                // reference a lookup row that does not exist; the rows that
+                // will reference it come later, and need it to be there first.
+                "Additive. No row can already reference a lookup row that does not exist."
+              AffectedSources = []
+              NextSafeMove = "Proceed." }
+
+        | UpdateRow (table, key) ->
+            // A reference row is read, not written, by the code that uses it:
+            // everything that joins to this table sees the new value at once.
+            // So the readers are the question here, where for a trigger it was
+            // the writers.
+            let readers = SemanticGraph.readersOf table graph
+
+            { Change = change
+              Verdict = if List.isEmpty readers && scopeSupportsAbsence then Allow else RequiresApproval
+              Detected =
+                sprintf
+                    "changes row %s of %s, which %d source(s) read"
+                    key
+                    (QualifiedName.display table)
+                    (List.length readers)
+              Rationale =
+                if List.isEmpty readers then cleanResultRationale
+                else
+                    "A reference row is read by everything that joins to it. The new value reaches \
+                     every listed source at once, and nothing errors — a label, a rate or a flag simply \
+                     starts meaning something else."
+              AffectedSources = readers
+              NextSafeMove =
+                if List.isEmpty readers then cleanResultNextMove
+                else "Confirm the listed sources are correct with the new value, then approve." }
+
         | CreateTrigger (table, trigger) ->
             // The writers, not the readers. A trigger changes what a write
             // does; a SELECT never fires one.

@@ -80,6 +80,22 @@ module ProposedChange =
         | DropTrigger of table: QualifiedName * trigger: Identifier
         /// Redefines a trigger. Both of the above at once.
         | ReplaceTrigger of table: QualifiedName * trigger: Identifier
+        /// Inserts a row a reference table must contain.
+        ///
+        /// Additive: nothing can already depend on a row that does not exist,
+        /// and a lookup row is a precondition for the rows that will reference
+        /// it, not a change to any of them.
+        ///
+        /// The row is named by its KEY, rendered as the server renders it, so
+        /// a plan reads `insert-row ref.account_type (3)` rather than repeating
+        /// the whole row.
+        | InsertRow of table: QualifiedName * key: string
+        /// Changes a row a reference table already contains.
+        ///
+        /// NOT additive. A reference row is read by everything that joins to
+        /// the table, so changing a label or a rate changes what every one of
+        /// those queries returns, immediately and with no error.
+        | UpdateRow of table: QualifiedName * key: string
         /// Adds a constraint. Can fail against existing data, but breaks no
         /// reader.
         ///
@@ -109,6 +125,8 @@ module ProposedChange =
             | RenameColumn _ -> "rename-column"
             | CreateIndex _ -> "create-index"
             | DropIndex _ -> "drop-index"
+            | InsertRow _ -> "insert-row"
+            | UpdateRow _ -> "update-row"
             | CreateTrigger _ -> "create-trigger"
             | DropTrigger _ -> "drop-trigger"
             | ReplaceTrigger _ -> "replace-trigger"
@@ -136,6 +154,8 @@ module ProposedChange =
             | CreateRoutine table
             | CreateIndex (table, _)
             | DropIndex (table, _)
+            | InsertRow (table, _)
+            | UpdateRow (table, _)
             | CreateTrigger (table, _)
             | DropTrigger (table, _)
             | ReplaceTrigger (table, _)
@@ -166,9 +186,13 @@ module ProposedChange =
             | RenameColumn _
             | AlterColumnType _
             | TruncateTable _
+            // Every query joining the reference table sees the new value at
+            // once, and none of them errors.
+            | UpdateRow _
             | UnclassifiedChange _ -> true
             | AddColumn _
             | CreateTable _
+            | InsertRow _
             | CreateIndex _
             | CreateView _
             | CreateRoutine _

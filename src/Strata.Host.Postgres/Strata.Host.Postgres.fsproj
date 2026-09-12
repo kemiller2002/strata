@@ -3,9 +3,25 @@
   <!--
     Tier 4 - Host / External Effects (DF-STRATA-2026-D3F8).
 
-    PostgreSQL catalog introspection. The ONLY project permitted to reference
-    Npgsql. Read-only by construction: every statement it issues is a SELECT
-    against pg_catalog / information_schema (NFR-006, least privilege).
+    PostgreSQL catalog access. The ONLY project permitted to reference Npgsql.
+
+    Reading is the default and the bulk of it: CatalogQueries holds nothing but
+    SELECTs against pg_catalog (NFR-006, least privilege), and CatalogIntrospection
+    issues nothing else.
+
+    Three modules write, and each says so in its own header:
+      * Execution          - applies an approved plan. The only durable writes
+                             Strata makes, in one transaction.
+      * ShadowNormalisation- creates declared DDL in a throwaway schema to learn
+                             the server's rendering of it. Always rolled back.
+      * ReferenceData      - the same trick for declared ROWS, and the only
+                             place Strata reads table data rather than metadata.
+                             Always rolled back.
+
+    An earlier version of this comment claimed every statement here is a SELECT.
+    That stopped being true when Execution arrived; it is corrected rather than
+    quietly left, because a false claim about what touches a customer database
+    is worse than no claim.
   -->
 
   <PropertyGroup>
@@ -19,6 +35,7 @@
     <Compile Include="CatalogIntrospection.fs" />
     <Compile Include="Execution.fs" />
     <Compile Include="ShadowNormalisation.fs" />
+    <Compile Include="ReferenceData.fs" />
   </ItemGroup>
 
   <ItemGroup>

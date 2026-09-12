@@ -469,3 +469,137 @@ let ``a single-trigger file records its verbatim text`` () =
             QualifiedName.display table = "sales.orders"
             && name.Text = "touch_orders"
             && text = triggerSql)
+
+
+// ---- reference data --------------------------------------------------------
+
+let private accountTypeSql =
+    """
+CREATE TABLE ref.account_type (
+    id    smallint PRIMARY KEY,
+    code  text     NOT NULL,
+    label text     NOT NULL
+);
+"""
+
+let private dataSql =
+    """
+INSERT INTO ref.account_type (id, code, label) VALUES
+    (1, 'checking', 'Checking'),
+    (2, 'savings',  'Savings');
+"""
+
+[<Fact>]
+let ``reference data is NotRequested rather than complete-and-empty`` () =
+    let loaded = load [ "t.sql", accountTypeSql ]
+
+    Assert.Equal(NotRequested, Completeness.stateOf "reference_data" loaded.Snapshot.Completeness)
+
+[<Fact>]
+let ``declared rows carry their literals as written`` () =
+    // Re-emitted TOKENS, not values Strata interpreted. `1` stays `1` and
+    // `'checking'` stays quoted, so the server decides what each means in the
+    // column it lands in.
+    let loaded = load [ "t.sql", accountTypeSql; "d.sql", dataSql ]
+    let data = Assert.Single loaded.Data
+
+    Assert.Equal("ref.account_type", QualifiedName.display data.Table)
+    Assert.Equal<string list>([ "id"; "code"; "label" ], data.Columns |> List.map (fun c -> c.Text))
+    Assert.Equal<string list list>(
+        [ [ "1"; "'checking'"; "'Checking'" ]; [ "2"; "'savings'"; "'Savings'" ] ],
+        data.Rows)
+
+[<Fact>]
+let ``a float keeps its exact spelling`` () =
+    // `1.250` and `1.25` are the same number and different texts. Rendering the
+    // token the author wrote leaves the decision with the server, which is the
+    // only thing that knows the column is numeric(6,2).
+    let loaded =
+        load
+            [ "t.sql", accountTypeSql
+              "d.sql", "INSERT INTO ref.account_type (id, code, label) VALUES (1.250, 'a', 'b');" ]
+
+    Assert.Equal<string list>([ "1.250"; "'a'"; "'b'" ], (Assert.Single loaded.Data).Rows |> List.head)
+
+[<Fact>]
+let ``a false is read as false, not as an absent value`` () =
+    // PostgreSQL encodes `false` as a Boolval message holding the protobuf
+    // default, so a null check on the message reads every `false` as "no value
+    // given" and would write `true` in its place.
+    let loaded =
+        load
+            [ "t.sql", accountTypeSql
+              "d.sql", "INSERT INTO ref.account_type (id, code, label) VALUES (true, false, NULL);" ]
+
+    Assert.Equal<string list>([ "true"; "false"; "NULL" ], (Assert.Single loaded.Data).Rows |> List.head)
+
+[<Fact>]
+let ``a quote inside a declared string survives re-emission`` () =
+    let loaded =
+        load
+            [ "t.sql", accountTypeSql
+              "d.sql", "INSERT INTO ref.account_type (id, code, label) VALUES (1, 'a', 'it''s');" ]
+
+    Assert.Equal<string list>([ "1"; "'a'"; "'it''s'" ], (Assert.Single loaded.Data).Rows |> List.head)
+
+[<Fact>]
+let ``a non-literal value is refused, not rendered`` () =
+    // The shadow pass would turn now() into a concrete timestamp, the real row
+    // would hold a different one, and the two would differ on every run
+    // forever.
+    let loaded =
+        load
+            [ "t.sql", accountTypeSql
+              "d.sql", "INSERT INTO ref.account_type (id, code, label) VALUES (1, 'a', upper('b'));" ]
+
+    Assert.Empty loaded.Data
+    Assert.Contains(loaded.Failures, fun f -> f.Reason.Contains "must be literals")
+
+[<Fact>]
+let ``ON CONFLICT is refused: reconciling is the diff's decision`` () =
+    let loaded =
+        load
+            [ "t.sql", accountTypeSql
+              "d.sql",
+              "INSERT INTO ref.account_type (id, code, label) VALUES (1, 'a', 'b') ON CONFLICT (id) DO NOTHING;" ]
+
+    Assert.Empty loaded.Data
+    Assert.Contains(loaded.Failures, fun f -> f.Reason.Contains "ON CONFLICT")
+
+[<Fact>]
+let ``an INSERT without a column list is refused`` () =
+    // It depends on the table's current column ORDER, which the file cannot
+    // see and a later ALTER can change underneath it.
+    let loaded =
+        load [ "t.sql", accountTypeSql; "d.sql", "INSERT INTO ref.account_type VALUES (1, 'a', 'b');" ]
+
+    Assert.Empty loaded.Data
+    Assert.Contains(loaded.Failures, fun f -> f.Reason.Contains "explicit column list")
+
+[<Fact>]
+let ``a file mixing an object and rows is refused`` () =
+    // The CREATE would carry the INSERTs with it and load the data as a side
+    // effect of creating the table, bypassing the diff entirely.
+    let loaded = load [ "both.sql", accountTypeSql + dataSql ]
+
+    Assert.Empty loaded.Data
+    Assert.Contains(loaded.Failures, fun f -> f.Reason.Contains "both an object and rows")
+
+[<Fact>]
+let ``a file declaring rows with differing column lists is refused`` () =
+    let loaded =
+        load
+            [ "t.sql", accountTypeSql
+              "d.sql",
+              "INSERT INTO ref.account_type (id, code, label) VALUES (1,'a','b');\n\
+               INSERT INTO ref.account_type (id, code) VALUES (2,'c');" ]
+
+    Assert.Empty loaded.Data
+    Assert.Contains(loaded.Failures, fun f -> f.Reason.Contains "differing column lists")
+
+[<Fact>]
+let ``rows declared for a table the project does not declare are a failure`` () =
+    let loaded = load [ "d.sql", dataSql ]
+
+    Assert.Empty loaded.Data
+    Assert.Contains(loaded.Failures, fun f -> f.Reason.Contains "does not declare as a table")

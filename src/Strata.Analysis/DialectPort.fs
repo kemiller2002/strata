@@ -74,6 +74,25 @@ module DialectPort =
         /// behaviour it changes is the table, and the loader joins them once
         /// every file is read.
         | DeclaredTrigger of table: QualifiedName * trigger: Trigger
+        /// Rows a reference table must contain.
+        ///
+        /// A lookup table's rows — account types, status codes — are part of
+        /// the schema rather than user data, so a project has to be able to
+        /// declare them.
+        ///
+        /// Each value is a LITERAL TOKEN, re-emitted from the parse tree, not a
+        /// value Strata interpreted. `1.25` stays the four characters `1.25`;
+        /// nothing here decides what they mean in a `numeric(12,2)` column.
+        /// That distinction is the whole safety of this path: interpreting a
+        /// literal means reimplementing PostgreSQL's type rules, and getting
+        /// one subtly wrong produces a row that compares unequal to itself on
+        /// every run forever. Re-emitting a token means the server does the
+        /// interpreting, both when the row is compared and when it is written.
+        ///
+        /// The token kinds are a closed set — integer, float, string, boolean,
+        /// bit-string, NULL — and anything outside it is refused rather than
+        /// rendered.
+        | DeclaredRows of table: QualifiedName * columns: Identifier list * rows: string list list
         | Unmodelled of detail: string
         | DeclarationFailed of ParseError
 

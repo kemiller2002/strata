@@ -90,6 +90,35 @@ module SchemaDiff =
           /// means something different when desired state is partial.
           DesiredStateComplete: bool }
 
+    /// One reference row, as the SERVER rendered it.
+    ///
+    /// Mirrors `ReferenceData.ResolvedRow`, which lives in the host tier. The
+    /// duplication is the architecture working: Tier 3 may not reference a
+    /// host project, so the host maps its result onto this on the way in —
+    /// exactly as it already does for `NormalisedTable`.
+    type ResolvedRow =
+        { Key: string
+          Rendered: string
+          /// Re-injectable SQL for each declared column, from the server's own
+          /// `quote_nullable`. Empty for a deployed row, which is never written
+          /// back.
+          Literals: string list }
+
+    /// Declared and deployed rows for one reference table.
+    type ResolvedData =
+        { Table: string
+          Columns: string list
+          KeyColumns: string list
+          Declared: ResolvedRow list
+          Deployed: ResolvedRow list }
+
+    /// A reference table whose rows could not be resolved, and why.
+    ///
+    /// Never folded into an empty resolution: a table Strata could not read is
+    /// not a table with no rows, and collapsing the two would propose
+    /// inserting every declared row into a table that already holds them.
+    type DataFailure = { Table: string; Reason: string }
+
     let private tables (snapshot: SchemaSnapshot) =
         snapshot.Objects
         |> List.choose (fun o ->
@@ -277,6 +306,7 @@ module SchemaDiff =
     let private emit
         (declarations: (QualifiedName * string) list)
         (triggerDeclarations: ((QualifiedName * Identifier) * string) list)
+        (data: ResolvedData list)
         (desired: Table list)
         (change: Change)
         : string option =
@@ -290,6 +320,23 @@ module SchemaDiff =
             triggerDeclarations
             |> List.tryPick (fun ((t, n), text) ->
                 if sameName t table && Identifier.sameName n trigger then Some text else None)
+
+        // A reference row is written from the literals the SERVER produced for
+        // the declared row, via quote_nullable. Strata does not re-render a
+        // value it never interpreted: what goes into the database is what came
+        // back out of the shadow table.
+        let declaredRow table key =
+            data
+            |> List.tryFind (fun d -> d.Table = QualifiedName.display table)
+            |> Option.bind (fun d ->
+                d.Declared
+                |> List.tryFind (fun r -> r.Key = key)
+                |> Option.map (fun r -> d, r))
+
+        let columnOf (d: ResolvedData) (row: ResolvedRow) (column: string) =
+            d.Columns
+            |> List.tryFindIndex (fun c -> c.ToLowerInvariant() = column.ToLowerInvariant())
+            |> Option.bind (fun i -> row.Literals |> List.tryItem i)
 
         match change with
         // Most unclassified changes cannot be written — they describe a
@@ -429,6 +476,50 @@ module SchemaDiff =
 
         | TruncateTable table -> Some(sprintf "TRUNCATE TABLE %s" (quoteName table))
 
+        | InsertRow (table, key) ->
+            declaredRow table key
+            |> Option.map (fun (d, row) ->
+                sprintf
+                    "INSERT INTO %s (%s) VALUES (%s)"
+                    (quoteName table)
+                    (d.Columns |> List.map (fun c -> quote (Identifier.unquoted c)) |> String.concat ", ")
+                    (row.Literals |> String.concat ", "))
+
+        | UpdateRow (table, key) ->
+            declaredRow table key
+            |> Option.bind (fun (d, row) ->
+                // The key identifies the row and is never assigned: an UPDATE
+                // that rewrote its own WHERE clause would be a different row.
+                let isKey (c: string) =
+                    d.KeyColumns |> List.exists (fun k -> k.ToLowerInvariant() = c.ToLowerInvariant())
+
+                let assignments =
+                    d.Columns
+                    |> List.filter (fun c -> not (isKey c))
+                    |> List.choose (fun c ->
+                        columnOf d row c
+                        |> Option.map (fun v -> sprintf "%s = %s" (quote (Identifier.unquoted c)) v))
+
+                let predicate =
+                    d.KeyColumns
+                    |> List.map (fun k ->
+                        columnOf d row k
+                        |> Option.map (fun v -> sprintf "%s = %s" (quote (Identifier.unquoted k)) v))
+
+                // Every declared column is a key column, so there is nothing to
+                // set. That is a row that either exists or does not; there is
+                // no update it could need, and emitting `SET` with no
+                // assignments would not parse.
+                if List.isEmpty assignments || predicate |> List.exists Option.isNone then
+                    None
+                else
+                    Some(
+                        sprintf
+                            "UPDATE %s SET %s WHERE %s"
+                            (quoteName table)
+                            (assignments |> String.concat ", ")
+                            (predicate |> List.choose id |> String.concat " AND ")))
+
         // A trigger is created by executing the file that declares it, for a
         // stronger reason than a view is. A `WHEN` clause and an `UPDATE OF`
         // column list are not in the model, so a reconstruction would create a
@@ -557,10 +648,15 @@ module SchemaDiff =
         | CreateTrigger _ -> 5
         | ReplaceTrigger _ -> 5
         | DropTrigger _ -> 5
-        | TruncateTable _ -> 6
-        | DropColumn _ -> 7
-        | DropTable _ -> 8
-        | UnclassifiedChange _ -> 9
+        // After the table, its columns and its constraints exist, and after
+        // triggers: a trigger on a reference table should see the rows arrive
+        // the same way it would see any other write.
+        | InsertRow _ -> 6
+        | UpdateRow _ -> 6
+        | TruncateTable _ -> 7
+        | DropColumn _ -> 8
+        | DropTable _ -> 9
+        | UnclassifiedChange _ -> 10
 
     /// Constraint and default differences for a table present on both sides.
     ///
@@ -1340,6 +1436,68 @@ module SchemaDiff =
 
         created @ removed @ redefinitions, notCompared
 
+    /// Differences between declared reference rows and deployed ones.
+    ///
+    /// Matching is by KEY, which is the table's primary key — the identity the
+    /// database itself asserts. Equality is by the server's rendering of the
+    /// declared columns, so a column the file does not name takes no part.
+    ///
+    /// ## A row nobody declared is not a row to delete
+    ///
+    /// This is `NG-006` again, and the stakes are higher than for an object. A
+    /// reference row that user data points at cannot be removed without either
+    /// failing on the foreign key or, worse, cascading into that data. So an
+    /// undeclared row is REPORTED and never proposed for removal — not even
+    /// under `--allow-drops`, which authorises dropping objects a project owns,
+    /// not deleting rows it never claimed.
+    let private dataChanges (data: ResolvedData list) (failures: DataFailure list) =
+        let nameOf (table: string) =
+            match table.Split('.') with
+            | [| schema; object' |] ->
+                QualifiedName.qualified (Identifier.unquoted schema) (Identifier.unquoted object')
+            | _ -> QualifiedName.unqualified (Identifier.unquoted table)
+
+        let changes =
+            data
+            |> List.collect (fun d ->
+                let table = nameOf d.Table
+                let deployedByKey = d.Deployed |> List.map (fun r -> r.Key, r) |> Map.ofList
+
+                d.Declared
+                |> List.choose (fun declared ->
+                    match Map.tryFind declared.Key deployedByKey with
+                    | None -> Some(Ok(InsertRow(table, declared.Key)))
+                    | Some deployed when deployed.Rendered <> declared.Rendered ->
+                        Some(Ok(UpdateRow(table, declared.Key)))
+                    | Some _ -> None))
+
+        let undeclared =
+            data
+            |> List.choose (fun d ->
+                let declaredKeys = d.Declared |> List.map (fun r -> r.Key) |> Set.ofList
+                let extra = d.Deployed |> List.filter (fun r -> not (Set.contains r.Key declaredKeys))
+
+                if List.isEmpty extra then
+                    None
+                else
+                    Some
+                        { Object = nameOf d.Table
+                          Reason = NotModelled
+                          Detail =
+                            sprintf
+                                "%d row(s) in this table are not declared by the project: %s. They are NOT proposed for deletion — user data may reference them."
+                                (List.length extra)
+                                (extra |> List.map (fun r -> r.Key) |> List.sort |> String.concat ", ") })
+
+        let unresolved =
+            failures
+            |> List.map (fun f ->
+                { Object = nameOf f.Table
+                  Reason = NotCompared
+                  Detail = sprintf "declared rows were NOT compared: %s" f.Reason })
+
+        changes, undeclared @ unresolved
+
     /// Compare desired state against actual state.
     ///
     /// `allowDrops` defaults OFF at every call site, and deliberately. Managed
@@ -1356,6 +1514,10 @@ module SchemaDiff =
         (managedSchemas: string list)
         (declarations: (QualifiedName * string) list)
         (triggerDeclarations: ((QualifiedName * Identifier) * string) list)
+        /// Declared and deployed reference rows, already rendered by the
+        /// server. Empty when the project declares no data files.
+        (data: ResolvedData list)
+        (dataFailures: DataFailure list)
         (normalisedViews: (string * string) list)
         (normalisedTables: NormalisedTable list)
         (renames: DeclaredRename list)
@@ -1565,6 +1727,8 @@ module SchemaDiff =
         let constraintChangeResults = constraintResults |> List.collect fst
         let notCompared = constraintResults |> List.collect snd
 
+        let rowChanges, rowSuppressions = dataChanges data dataFailures
+
         let otherChangeResults, otherNotCompared =
             otherObjectChanges
                 allowDrops
@@ -1590,6 +1754,7 @@ module SchemaDiff =
             @ columnResults
             @ constraintChangeResults
             @ otherChangeResults
+            @ rowChanges
 
         let changes =
             all
@@ -1604,11 +1769,12 @@ module SchemaDiff =
             changes
             |> List.map (fun c ->
                 { Change = c
-                  Sql = emit declarations triggerDeclarations desiredTables c })
+                  Sql = emit declarations triggerDeclarations data desiredTables c })
           Suppressed =
             (all |> List.choose (function Microsoft.FSharp.Core.Error s -> Some s | Ok _ -> None))
             @ notCompared
             @ unmodelled
+            @ rowSuppressions
           DesiredStateComplete = desiredComplete }
 
     // ---- output -------------------------------------------------------------
@@ -1638,6 +1804,10 @@ module SchemaDiff =
             sprintf "create-index       %s on %s" index.Text (QualifiedName.display table)
         | DropIndex (table, index) ->
             sprintf "drop-index         %s on %s" index.Text (QualifiedName.display table)
+        | InsertRow (table, key) ->
+            sprintf "insert-row         %s %s" (QualifiedName.display table) key
+        | UpdateRow (table, key) ->
+            sprintf "update-row         %s %s" (QualifiedName.display table) key
         | CreateTrigger (table, trigger) ->
             sprintf "create-trigger     %s on %s" trigger.Text (QualifiedName.display table)
         | DropTrigger (table, trigger) ->

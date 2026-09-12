@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 56,
+  "nextSeq": 58,
   "items": [
     {
       "id": "WI-0001",
@@ -937,6 +937,40 @@
       "attachments": [],
       "createdAt": "2026-09-12T00:05:16Z",
       "updatedAt": "2026-09-12T00:05:16Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0056",
+      "title": "Reference data as desired state",
+      "description": "A reference table (account_type, status codes) has rows that are part of the schema, not user data. Declare them as INSERT files under schema/<schema>/data/<table>.sql; diff them against the live table so a dry run says what will be inserted or updated. Literals are resolved through a shadow table so PostgreSQL does the type coercion. Declaring some rows does not mean owning all of them: undeclared rows are reported, never deleted.",
+      "tags": [
+        "strata",
+        "desired-state"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T00:09:47Z",
+      "updatedAt": "2026-09-12T00:09:47Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0057",
+      "title": "A declared row colliding with an undeclared deployed row is caught late",
+      "description": "The shadow table holds only declared rows, so a declared row that duplicates a unique value held by a deployed row the project does not declare is proposed, and fails when the apply rolls back. Seeding the shadow with the undeclared deployed rows first would move that to plan time. Reference tables are small by definition, so the copy is cheap.",
+      "tags": [
+        "strata",
+        "reference-data"
+      ],
+      "priority": "medium",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-12T00:22:49Z",
+      "updatedAt": "2026-09-12T00:22:49Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null

@@ -57,4 +57,6 @@
 | WI-0052 | Table creations are not ordered by foreign key | complete | strata, diff | high |
 | WI-0053 | The live test fixture is not reproducible | captured | strata, testing | medium |
 | WI-0054 | An unnamed constraint never converges | complete | strata, diff | high |
-| WI-0055 | apply has no way to accept a requires-approval finding | ready | strata, deployment | high |
+| WI-0055 | apply has no way to accept a requires-approval finding | complete | strata, deployment | high |
+| WI-0056 | Reference data as desired state | active | strata, desired-state | high |
+| WI-0057 | A declared row colliding with an undeclared deployed row is caught late | captured | strata, reference-data | medium |

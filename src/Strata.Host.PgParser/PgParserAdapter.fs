@@ -1044,6 +1044,110 @@ module PgParserAdapter =
                       Arguments = stringValues stmt.Args
                       HasCondition = not (isNull (box stmt.WhenClause)) })
 
+    /// Rows a reference-data file declares.
+    ///
+    /// Every value must be a LITERAL. A `now()` or any other expression is
+    /// refused rather than accepted, and the reason is not fussiness: the
+    /// shadow pass would render it to a concrete value, the real row would
+    /// then hold a different concrete value, and the two would differ on every
+    /// run forever. A column whose value the file cannot fix belongs in the
+    /// table's DEFAULT, not in its data file.
+    ///
+    /// `A_Const.ValCase` is the discriminator, NOT the presence of the
+    /// `Boolval` message: PostgreSQL encodes `false` as a Boolval whose field
+    /// holds the protobuf default, so a null check reads `false` as "no value
+    /// given". Verified against the parser.
+    /// One literal, re-emitted as the SQL token that produced it.
+    ///
+    /// Not interpreted: a float keeps its exact source spelling, so `1.250`
+    /// stays `1.250` and the server decides what that means in the column it
+    /// lands in. A string is re-quoted by PostgreSQL's own rule — double the
+    /// single quotes — because the parser hands back the UNescaped value.
+    ///
+    /// The `| _ ->` case is a refusal, not a fallback. A constant kind nobody
+    /// anticipated must stop the file from loading, because the alternative is
+    /// writing a row that does not say what the author wrote.
+    let private literalOf (c: A_Const) : Result<string, string> =
+        if c.Isnull then Ok "NULL"
+        else
+            match c.ValCase with
+            | A_Const.ValOneofCase.Ival -> Ok(string c.Ival.Ival)
+            | A_Const.ValOneofCase.Fval -> Ok c.Fval.Fval
+            | A_Const.ValOneofCase.Sval -> Ok("'" + c.Sval.Sval.Replace("'", "''") + "'")
+            // `false` is encoded as a Boolval message whose field holds the
+            // protobuf default, so the CASE is the only reliable signal that a
+            // boolean was written at all. Testing the message for null reads
+            // every `false` as "no value given".
+            | A_Const.ValOneofCase.Boolval -> Ok(if c.Boolval.Boolval then "true" else "false")
+            | A_Const.ValOneofCase.Bsval -> Ok("B'" + c.Bsval.Bsval.TrimStart('b', 'B') + "'")
+            | other -> Microsoft.FSharp.Core.Error(sprintf "constant of kind %s is not re-emittable" (string other))
+
+    let private rowsOf (stmt: InsertStmt) : Result<QualifiedName * Identifier list * string list list, string> =
+        if isNull (box stmt.Relation) then
+            Microsoft.FSharp.Core.Error "INSERT with no resolvable table"
+        elif isNull (box stmt.SelectStmt) || isNull (box stmt.SelectStmt.SelectStmt) then
+            Microsoft.FSharp.Core.Error "INSERT without a VALUES list is not read as declared data"
+        else
+
+        let select = stmt.SelectStmt.SelectStmt
+
+        let columns =
+            if isNull (box stmt.Cols) then []
+            else
+                stmt.Cols
+                |> Seq.choose (fun n ->
+                    if isNull (box n.ResTarget) || String.IsNullOrEmpty n.ResTarget.Name then None
+                    else Some(identifierOf n.ResTarget.Name))
+                |> List.ofSeq
+
+        if List.isEmpty columns then
+            // INSERT INTO t VALUES (...) with no column list depends on the
+            // table's current column ORDER, which a file cannot see and a later
+            // ALTER can change underneath it.
+            Microsoft.FSharp.Core.Error "INSERT without an explicit column list is not read as declared data"
+        elif isNull (box select.ValuesLists) || select.ValuesLists.Count = 0 then
+            Microsoft.FSharp.Core.Error "INSERT without a VALUES list is not read as declared data"
+        else
+
+        let rows = select.ValuesLists |> List.ofSeq
+
+        let nonLiteral =
+            rows
+            |> List.collect (fun row ->
+                if isNull (box row.List) then []
+                else
+                    row.List.Items
+                    |> Seq.filter (fun item -> isNull (box item.AConst))
+                    |> Seq.map (fun item -> string item.NodeCase)
+                    |> List.ofSeq)
+            |> List.distinct
+
+        let wrongWidth =
+            rows
+            |> List.exists (fun row ->
+                isNull (box row.List) || row.List.Items.Count <> List.length columns)
+
+        if not (List.isEmpty nonLiteral) then
+            Microsoft.FSharp.Core.Error(
+                sprintf
+                    "declared data must be literals; found %s. A value the file cannot fix belongs in the column's DEFAULT."
+                    (String.concat ", " nonLiteral))
+        elif wrongWidth then
+            Microsoft.FSharp.Core.Error "a VALUES row does not match the column list"
+        else
+
+        let rendered =
+            rows
+            |> List.map (fun row -> row.List.Items |> Seq.map (fun item -> literalOf item.AConst) |> List.ofSeq)
+
+        match rendered |> List.collect id |> List.tryPick (function Microsoft.FSharp.Core.Error e -> Some e | Ok _ -> None) with
+        | Some reason -> Microsoft.FSharp.Core.Error reason
+        | None ->
+            Ok(
+                qualifiedNameOf stmt.Relation.Schemaname stmt.Relation.Relname,
+                columns,
+                rendered |> List.map (List.map (function Ok v -> v | Microsoft.FSharp.Core.Error _ -> "NULL")))
+
     let private errorOf (e: PgSqlParser.Error) =
         { Message = e.Message
           CursorPosition = e.CursorPos
@@ -1143,6 +1247,19 @@ module PgParserAdapter =
 
                         // A trigger is always named, so there is no unnamed
                         // case to refuse as there is for an index.
+                        // A reference table's rows. `ON CONFLICT` is refused:
+                        // it describes how to RECONCILE, which is the diff's
+                        // job, and a file carrying its own reconciliation would
+                        // mean two answers to the same question.
+                        | Node.NodeOneofCase.InsertStmt when isNull (box stmt.InsertStmt.OnConflictClause) ->
+                            match rowsOf stmt.InsertStmt with
+                            | Ok (table, columns, rows) -> DeclaredRows(table, columns, rows)
+                            | Microsoft.FSharp.Core.Error detail -> Unmodelled detail
+
+                        | Node.NodeOneofCase.InsertStmt ->
+                            Unmodelled
+                                "INSERT ... ON CONFLICT is not read as declared data: reconciling declared rows against deployed ones is the diff's decision, not the file's"
+
                         | Node.NodeOneofCase.CreateTrigStmt ->
                             match triggerOf stmt.CreateTrigStmt with
                             | Ok (table, trigger) -> DeclaredTrigger(table, trigger)

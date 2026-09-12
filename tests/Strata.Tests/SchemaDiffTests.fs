@@ -53,7 +53,7 @@ let private managed = [ "sales" ]
 /// These tests build snapshots directly and have no files, so they pass none
 /// and exercise the reconstruction path deliberately.
 let private run allowDrops managedSchemas desired actual =
-    Strata.Application.SchemaDiff.run allowDrops managedSchemas [] [] [] [] [] desired actual
+    Strata.Application.SchemaDiff.run allowDrops managedSchemas [] [] [] [] [] [] [] desired actual
 
 /// Existing guard tests pass allowDrops=true deliberately: a test that left
 /// drops globally disabled would pass even if the guard it names were deleted.
@@ -608,7 +608,7 @@ let private viewDefined name definition =
           Scope = Managed }
 
 let private runWithViews normalised desired actual =
-    Strata.Application.SchemaDiff.run true managed [] [] normalised [] [] desired actual
+    Strata.Application.SchemaDiff.run true managed [] [] [] [] normalised [] [] desired actual
 
 [<Fact>]
 let ``a view whose normalised definition differs is redefined`` () =
@@ -751,7 +751,7 @@ let private tableWithDefault name column deployedDefault =
           Scope = Managed }
 
 let private runWithTables normalisedTables desired actual =
-    Strata.Application.SchemaDiff.run true managed [] [] [] normalisedTables [] desired actual
+    Strata.Application.SchemaDiff.run true managed [] [] [] [] [] normalisedTables [] desired actual
 
 let private normalisedTable name defaults checks : Strata.Application.SchemaDiff.NormalisedTable =
     { Table = name; Defaults = defaults; Checks = checks }
@@ -836,7 +836,7 @@ let ``a table that could not be normalised keeps its disclosure`` () =
 // ---- renames --------------------------------------------------------------
 
 let private runWithRenames renames desired actual =
-    Strata.Application.SchemaDiff.run true managed [] [] [] [] renames desired actual
+    Strata.Application.SchemaDiff.run true managed [] [] [] [] [] [] renames desired actual
 
 let private declaredRename object' renamedFrom columns : Strata.Application.SchemaDiff.DeclaredRename =
     { Object = object'; RenamedFrom = renamedFrom; Columns = columns }
@@ -1421,3 +1421,138 @@ let ``an unnamed check with no shadow rendering is not compared, in either direc
 
     Assert.DoesNotContain(result.Changes, fun c -> Change.tag c = "unclassified")
     Assert.Contains(result.Suppressed, fun s -> s.Detail.Contains "unnamed and the declared DDL could not be normalised")
+
+
+// ---- reference data --------------------------------------------------------
+//
+// A lookup table's rows are part of the schema: an account cannot name an
+// account type that does not exist. Rows are matched on the primary key, and
+// compared on the server's rendering of the declared columns — never on a
+// value Strata interpreted itself.
+
+let private row key rendered literals : ResolvedRow =
+    { Key = key; Rendered = rendered; Literals = literals }
+
+let private resolved declaredRows deployedRows : ResolvedData =
+    { Table = "sales.account_type"
+      Columns = [ "id"; "label" ]
+      KeyColumns = [ "id" ]
+      Declared = declaredRows
+      Deployed = deployedRows }
+
+let private runWithData data failures desired actual =
+    Strata.Application.SchemaDiff.run true managed [] [] data failures [] [] [] desired actual
+
+let private accountType = tbl Managed "sales" "account_type" [ "id", false; "label", false ]
+
+[<Fact>]
+let ``a declared row the table does not hold is inserted`` () =
+    let result =
+        runWithData
+            [ resolved [ row "(1)" "(1,Checking)" [ "'1'"; "'Checking'" ] ] [] ]
+            []
+            (complete [ accountType ])
+            (complete [ accountType ])
+
+    Assert.Contains(result.Changes, fun c -> c = InsertRow(qn "sales" "account_type", "(1)"))
+
+[<Fact>]
+let ``a row that matches on the server's rendering produces no change`` () =
+    // The convergence case, and the one that decides whether this feature is
+    // usable at all. `1000.50` in a file and `1000.50` in a numeric(6,2) column
+    // are the same value; if anything here compared the raw texts, every
+    // idempotent re-run would propose rewriting every row forever.
+    let result =
+        runWithData
+            [ resolved
+                [ row "(1)" "(1,Checking)" [ "'1'"; "'Checking'" ] ]
+                [ row "(1)" "(1,Checking)" [] ] ]
+            []
+            (complete [ accountType ])
+            (complete [ accountType ])
+
+    Assert.Empty result.Changes
+
+[<Fact>]
+let ``a row whose declared value differs is updated, not re-inserted`` () =
+    let result =
+        runWithData
+            [ resolved
+                [ row "(1)" "(1,Current)" [ "'1'"; "'Current'" ] ]
+                [ row "(1)" "(1,Checking)" [] ] ]
+            []
+            (complete [ accountType ])
+            (complete [ accountType ])
+
+    Assert.Contains(result.Changes, fun c -> c = UpdateRow(qn "sales" "account_type", "(1)"))
+    Assert.DoesNotContain(result.Changes, fun c -> c = InsertRow(qn "sales" "account_type", "(1)"))
+
+[<Fact>]
+let ``a row the project does not declare is reported and never deleted`` () =
+    // NG-006 with higher stakes than an object. A reference row that user data
+    // points at cannot be removed without failing the foreign key or cascading
+    // into that data — so this holds even with drops enabled, which `run` has
+    // set to true here.
+    let result =
+        runWithData
+            [ resolved
+                [ row "(1)" "(1,Checking)" [ "'1'"; "'Checking'" ] ]
+                [ row "(1)" "(1,Checking)" []
+                  row "(99)" "(99,Legacy)" [] ] ]
+            []
+            (complete [ accountType ])
+            (complete [ accountType ])
+
+    Assert.Empty result.Changes
+    Assert.Contains(result.Suppressed, fun s -> s.Detail.Contains "NOT proposed for deletion")
+
+[<Fact>]
+let ``a table whose rows could not be read is not a table with no rows`` () =
+    // The distinction that stops the worst outcome available here: treating an
+    // unreadable table as empty would propose inserting every declared row
+    // into a table that already holds them.
+    let result =
+        runWithData
+            []
+            [ ({ Table = "sales.account_type"
+                 Reason = "has no primary key" }: DataFailure) ]
+            (complete [ accountType ])
+            (complete [ accountType ])
+
+    Assert.Empty result.Changes
+    Assert.Contains(result.Suppressed, fun s -> s.Reason = NotCompared && s.Detail.Contains "no primary key")
+
+[<Fact>]
+let ``reference rows are written after the table that holds them`` () =
+    let result =
+        runWithData
+            [ resolved [ row "(1)" "(1,Checking)" [ "'1'"; "'Checking'" ] ] [] ]
+            []
+            (complete [ accountType ])
+            (complete [])
+
+    let tags = result.Changes |> List.map Change.tag
+    Assert.True(
+        List.findIndex ((=) "create-table") tags < List.findIndex ((=) "insert-row") tags,
+        sprintf "the table must exist before its rows, got %A" tags)
+
+[<Fact>]
+let ``an update never assigns the key it matches on`` () =
+    let result =
+        runWithData
+            [ resolved
+                [ row "(1)" "(1,Current)" [ "'1'"; "'Current'" ] ]
+                [ row "(1)" "(1,Checking)" [] ] ]
+            []
+            (complete [ accountType ])
+            (complete [ accountType ])
+
+    let sql =
+        result.Statements
+        |> List.tryPick (fun s -> if Change.tag s.Change = "update-row" then s.Sql else None)
+
+    match sql with
+    | None -> failwith "expected DDL for the update"
+    | Some text ->
+        Assert.Contains("WHERE \"id\" = '1'", text)
+        Assert.DoesNotContain("SET \"id\"", text)

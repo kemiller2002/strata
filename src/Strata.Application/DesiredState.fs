@@ -30,6 +30,22 @@ module DesiredState =
         { Path: string
           Reason: string }
 
+    /// Rows a reference table must contain, as one file declares them.
+    ///
+    /// A lookup table's rows are part of the schema: an `account` row cannot
+    /// name an account type that does not exist, so the types are as much a
+    /// precondition as the foreign key enforcing them.
+    type DeclaredData =
+        { Table: QualifiedName
+          /// The columns the file names. Columns it does not name are columns
+          /// it says nothing about, and nothing compares them.
+          Columns: Identifier list
+          /// Each row's values as re-emittable SQL literal TOKENS, in the same
+          /// order as `Columns`. Never values Strata interpreted — see
+          /// `DialectPort.DeclaredRows`.
+          Rows: string list list
+          Path: string }
+
     type Loaded =
         { Snapshot: SchemaSnapshot
           Failures: LoadFailure list
@@ -60,7 +76,10 @@ module DesiredState =
           /// `WHEN` clause and its `UPDATE OF` column list are not recoverable
           /// from the model, so a reconstruction would silently create a
           /// trigger that fires more often than the file asked for.
-          TriggerDeclarations: ((QualifiedName * Identifier) * string) list }
+          TriggerDeclarations: ((QualifiedName * Identifier) * string) list
+
+          /// Reference rows, one entry per declaring file.
+          Data: DeclaredData list }
 
     /// Declared schema names, from the objects actually loaded.
     let private declaredSchemas (objects: SchemaObject list) =
@@ -81,6 +100,7 @@ module DesiredState =
         let indexes = ResizeArray<QualifiedName * Index>()
         let triggers = ResizeArray<QualifiedName * Trigger>()
         let triggerDeclarations = ResizeArray<(QualifiedName * Identifier) * string>()
+        let data = ResizeArray<DeclaredData>()
 
         for path, contents in files do
             let declarations = parser.ParseObjectDefinitions contents
@@ -97,6 +117,7 @@ module DesiredState =
                         | Declared o -> Some o
                         | DeclaredIndex _
                         | DeclaredTrigger _
+                        | DeclaredRows _
                         | Unmodelled _
                         | DeclarationFailed _ -> None)
 
@@ -105,6 +126,10 @@ module DesiredState =
                     | Declared object' -> objects.Add object'
                     | DeclaredIndex (table, index) -> indexes.Add(table, index)
                     | DeclaredTrigger (table, trigger) -> triggers.Add(table, trigger)
+                    // Collected below, where the whole file can be judged at
+                    // once: a row declaration only means something alongside
+                    // the other statements in its file.
+                    | DeclaredRows _ -> ()
                     | Unmodelled detail -> failures.Add { Path = path; Reason = detail }
                     | DeclarationFailed error ->
                         failures.Add
@@ -117,6 +142,67 @@ module DesiredState =
                 // to either, so neither gets it and both fall back to
                 // reconstruction.
                 | _ -> ()
+
+                // ---- reference rows -------------------------------------
+                //
+                // The whole file is executed against a shadow table, so the
+                // file has to be about one table and one column list. Anything
+                // else is refused rather than guessed at:
+                //
+                //   * two tables    - the shadow pass has no single table to
+                //                     create, and executing the file would
+                //                     write rows into a table it was not asked
+                //                     about;
+                //   * two column lists - a column one statement names and
+                //                     another omits is compared for some rows
+                //                     and not others, and "this row's label is
+                //                     declared" would depend on which line it
+                //                     was written on;
+                //   * an object too - the CREATE would carry the INSERTs along
+                //                     with it and load the data as a side
+                //                     effect of creating the table, bypassing
+                //                     the diff entirely.
+                //
+                // Each is a file the author can fix by splitting it.
+                let rowDeclarations =
+                    declarations
+                    |> List.choose (function
+                        | DeclaredRows (table, columns, rows) -> Some(table, columns, rows)
+                        | _ -> None)
+
+                match rowDeclarations with
+                | [] -> ()
+                | _ when not (List.isEmpty declaredHere) ->
+                    failures.Add
+                        { Path = path
+                          Reason =
+                            "declares both an object and rows; split them, or creating the object would load the rows as a side effect" }
+                | (table, columns, _) :: _ ->
+                    let sameTable =
+                        rowDeclarations
+                        |> List.forall (fun (t, _, _) ->
+                            QualifiedName.display t = QualifiedName.display table)
+
+                    let sameColumns =
+                        rowDeclarations
+                        |> List.forall (fun (_, c, _) ->
+                            (c |> List.map Identifier.folded) = (columns |> List.map Identifier.folded))
+
+                    if not sameTable then
+                        failures.Add
+                            { Path = path
+                              Reason = "declares rows for more than one table; one file, one table" }
+                    elif not sameColumns then
+                        failures.Add
+                            { Path = path
+                              Reason =
+                                "declares rows with differing column lists; a column named by one statement and omitted by another would be compared for some rows and not others" }
+                    else
+                        data.Add
+                            { Table = table
+                              Columns = columns
+                              Rows = rowDeclarations |> List.collect (fun (_, _, r) -> r)
+                              Path = path }
 
                 // Same rule for a trigger file, and the same reason: a file
                 // holding two CREATE TRIGGERs cannot have its text attributed
@@ -169,6 +255,21 @@ module DesiredState =
         // trigger on a declared view lands here too. That is the right place
         // for it: a failure the project can see, rather than a declaration
         // that quietly disappears.
+        // Rows declared for a table the project does not declare. Same rule as
+        // an orphan index, and a sharper reason: Strata resolves declared rows
+        // by creating a shadow copy of the table from its declaring file, so
+        // without that file there is nothing to create the shadow from and
+        // nothing the rows could be compared against.
+        let orphanData =
+            List.ofSeq data
+            |> List.filter (fun d -> not (declaresTable d.Table))
+            |> List.map (fun d ->
+                { Path = d.Path
+                  Reason =
+                    sprintf
+                        "declares rows for '%s', which this project does not declare as a table"
+                        (QualifiedName.display d.Table) })
+
         let orphanTriggers =
             declaredTriggers
             |> List.filter (fun (table, _) -> not (declaresTable table))
@@ -223,7 +324,7 @@ module DesiredState =
                 { Path = name
                   Reason = sprintf "declared %d times across the project" count })
 
-        let allFailures = loadFailures @ duplicates @ orphanIndexes @ orphanTriggers
+        let allFailures = loadFailures @ duplicates @ orphanIndexes @ orphanTriggers @ orphanData
 
         let state reason =
             if List.isEmpty allFailures then Complete else Partial reason
@@ -258,11 +359,20 @@ module DesiredState =
                       "triggers",
                       (if List.isEmpty declaredTriggers then NotRequested
                        else state "trigger declarations are only as complete as the files that parsed")
+                      // A project with no data file is not saying its reference
+                      // tables should be empty. Same rule as indexes and
+                      // triggers, and the consequence of getting it wrong is
+                      // worse: a row nobody declared is a row user data may
+                      // point at.
+                      "reference_data",
+                      (if Seq.isEmpty data then NotRequested
+                       else state "declared rows are only as complete as the files that parsed")
                       "view_definitions", NotRequested
                       "routines", NotRequested ] }
           Failures = allFailures
           Declarations = List.ofSeq declarations'
-          TriggerDeclarations = List.ofSeq triggerDeclarations }
+          TriggerDeclarations = List.ofSeq triggerDeclarations
+          Data = List.ofSeq data |> List.filter (fun d -> declaresTable d.Table) }
 
     /// Schemas the project actually declared objects in.
     ///

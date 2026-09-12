@@ -60,6 +60,27 @@ OPTIONS
                      the full scope once via `strata scope`. Caveats that change
                      how a result must be read are ALWAYS kept inline.
 
+PROJECT LAYOUT
+  <project>/schema/<schema>/<kind>/<name>.sql, one object per file. `kind` is
+  the directory name and is yours to choose; tables/, views/, routines/,
+  indexes/ and triggers/ are the conventional ones.
+
+  data/<table>.sql holds a reference table's ROWS, as plain INSERT statements:
+
+      INSERT INTO ref.account_type (id, code, label) VALUES
+          (1, 'checking', 'Checking'),
+          (2, 'savings',  'Savings');
+
+  Those rows are diffed like any other declared state, so a dry run says which
+  will be inserted and which updated. Every value must be a literal; a value
+  the file cannot fix belongs in the column's DEFAULT. Rows are matched on the
+  table's primary key, and a column the file does not name is a column it says
+  nothing about.
+
+  Declaring rows does NOT claim the table's other rows. A row the project does
+  not declare is reported and never deleted, `--allow-drops` included: user
+  data may reference it.
+
 NOTES
   Every answer carries its analysis scope. A result is bounded by what was
   actually inspected; "no readers" is not the same claim as "nothing reads it".
@@ -334,6 +355,68 @@ let main argv =
 
                         []
 
+                // Declared reference rows, resolved against the live tables.
+                //
+                // Both sides come back rendered by the SERVER, through the real
+                // column types, so `1.250` in a file and `1.25` in a
+                // `numeric(12,2)` column are recognised as the same value
+                // rather than reported as a difference forever. Everything
+                // happens in a transaction that is rolled back.
+                let resolvedData, dataFailures =
+                    let declaredData =
+                        declared.Data
+                        |> List.map (fun d ->
+                            QualifiedName.display d.Table,
+                            d.Columns |> List.map (fun c -> c.Text),
+                            d.Rows,
+                            // Only needed when the table does not exist yet, so
+                            // the rows and the table that holds them can arrive
+                            // in one plan.
+                            declared.Declarations
+                            |> List.tryPick (fun (name, text) ->
+                                if QualifiedName.display name = QualifiedName.display d.Table then Some text
+                                else None))
+
+                    match ReferenceData.resolve connectionString declaredData with
+                    | Ok (resolutions, failures) ->
+                        resolutions
+                        |> List.map (fun r ->
+                            ({ Table = r.Table
+                               Columns = r.Columns
+                               KeyColumns = r.KeyColumns
+                               Declared =
+                                 r.Declared
+                                 |> List.map (fun row ->
+                                     ({ Key = row.Key
+                                        Rendered = row.Rendered
+                                        Literals = row.Literals }: SchemaDiff.ResolvedRow))
+                               Deployed =
+                                 r.Deployed
+                                 |> List.map (fun row ->
+                                     ({ Key = row.Key
+                                        Rendered = row.Rendered
+                                        Literals = row.Literals }: SchemaDiff.ResolvedRow)) }: SchemaDiff.ResolvedData)),
+                        failures
+                        |> List.map (fun f ->
+                            ({ Table = f.Table; Reason = f.Reason }: SchemaDiff.DataFailure))
+                    | Microsoft.FSharp.Core.Error message ->
+                        // Could not resolve ANY of them. Every declared table
+                        // becomes a failure rather than an empty result: a
+                        // table Strata could not read is not a table with no
+                        // rows, and treating it as one would propose inserting
+                        // every declared row into a table that already has them.
+                        if not (List.isEmpty declared.Data) then
+                            eprintfn "warning: could not resolve declared reference rows (%s)." message
+
+                        [],
+                        declared.Data
+                        |> List.map (fun d ->
+                            ({ Table = QualifiedName.display d.Table
+                               Reason = message }: SchemaDiff.DataFailure))
+
+                for failure in dataFailures do
+                    eprintfn "warning: %s: %s" failure.Table failure.Reason
+
                 // Rename intent, read from the raw file text: libpg_query
                 // discards comments, so there is nothing to read in the tree.
                 let renames =
@@ -376,6 +459,8 @@ let main argv =
                         project.Manifest.ManagedSchemas
                         declared.Declarations
                         declared.TriggerDeclarations
+                        resolvedData
+                        dataFailures
                         normalisedViews
                         normalisedTables
                         renames
