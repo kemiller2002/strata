@@ -125,7 +125,15 @@ let run
         if not (Directory.Exists directory) then
             Directory.CreateDirectory directory |> ignore
 
-        File.WriteAllText(outputPath, Artifact.toText resolved)
+        // Written with an integrity digest, always. It costs nothing and it
+        // catches the ordinary failure — a file edited by hand, truncated by a
+        // bad copy, merged badly. It proves nothing about WHO produced the
+        // artifact; that is what `strata sign` is for, and the two are reported
+        // separately because reporting them as one thing would be the more
+        // convenient lie.
+        File.WriteAllText(
+            outputPath,
+            Attestation.renderFile { Attestation.none with Digest = Some(Attestation.digestOf resolved) } resolved)
 
         printfn "Compiled %d object(s) from %s to %s."
             (List.length loaded.Declared.Snapshot.Objects)

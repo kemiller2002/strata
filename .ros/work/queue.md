@@ -91,7 +91,7 @@
 | WI-0086 | strata drift reports whether a server still matches an artifact | complete | strata | low |
 | WI-0087 | Type-check queries with PREPARE | captured | strata | medium |
 | WI-0088 | Declared project invariants as compile-time checks | captured | strata | low |
-| WI-0089 | Sign the compiled artifact | captured | strata | low |
+| WI-0089 | Sign the compiled artifact | ready | strata | low |
 | WI-0090 | Record the compile/deploy design decisions | complete | strata, decisions | high |
 | WI-0091 | Correct the RLS disclosure that claims policies are not compared | complete |  | medium |
 | WI-0092 | A view whose AS is followed by a newline is silently never compared | complete |  | high |

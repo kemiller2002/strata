@@ -83,11 +83,11 @@ let run
         2
     else
 
-    match Artifact.ofText (File.ReadAllText artifactPath) with
+    match Attestation.readFile (File.ReadAllText artifactPath) with
     | Microsoft.FSharp.Core.Error message ->
         eprintfn "error: %s" message
         2
-    | Ok resolved ->
+    | Ok (resolved, _) ->
         let searchPath = searchPathFor explicitSearchPath resolved
 
         // On stderr, so `--json` output stays byte-identical (NFR-001) while the

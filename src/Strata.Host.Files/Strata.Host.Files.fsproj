@@ -19,6 +19,7 @@
     <Compile Include="Project.fs" />
     <Compile Include="RenameAnnotations.fs" />
     <Compile Include="Artifact.fs" />
+    <Compile Include="Attestation.fs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -52,6 +52,15 @@ COMMANDS
                                    rendering, and deparsing changes between
                                    majors. Same flags as apply: --confirm,
                                    --approve, --allow-drops.
+  keygen --key <priv.pem>          Make a signing key pair. The private key is
+         --public-key <pub.pem>    the whole of the guarantee: signing proves
+                                   that whoever holds THAT FILE signed the
+                                   artifact, and nothing more. An agent that can
+                                   read it can forge exactly as well as you can,
+                                   so where it lives is the decision that
+                                   matters. Needs no database.
+  sign --artifact <file>           Sign a compiled artifact in place. Needs no
+       --key <priv.pem>            database.
   drift --artifact <file>          Report whether a target still matches an
                                    artifact. Read-only: needs only read access,
                                    so it runs from a monitoring host that could
@@ -104,6 +113,14 @@ OPTIONS
   --out <file>       Where `compile` writes the artifact
   --artifact <file>  The artifact `deploy` and `validate` read
   --search-path <s>  Comma-separated schemas for `validate --artifact`
+  --key <file>       PEM private key, for `keygen` and `sign`
+  --public-key <file>  PEM public key, for `keygen` and for verifying a
+                     signature on deploy
+  --require-signature  Refuse an artifact that is unsigned, or whose signature
+                     does not check out against --public-key. Every compiled
+                     artifact carries an unkeyed integrity digest already, which
+                     catches an edited or truncated file; a SIGNATURE is what
+                     resists someone who wants to change it.
   --allow-drops      Propose removals. Without it, objects present in the
                      database and absent from the project are REPORTED but
                      never proposed for dropping.
@@ -294,12 +311,75 @@ let main argv =
 
     let positional = args |> List.filter (fun a -> not (a.StartsWith "--"))
 
-    // `validate --artifact` is dispatched BEFORE the connection is required,
-    // because needing no connection is the whole point of it: an editor, a
-    // pre-commit hook and a pull request from a fork have no credentials, and
-    // those are the three places the check is worth the most
+    // `keygen`, `sign` and `validate --artifact` touch no database, so they are
+    // dispatched BEFORE a connection is required. That is not a convenience: the
+    // machine holding a signing key has no business holding deployment
+    // credentials, and the places offline validation is worth the most — an
+    // editor, a pre-commit hook, a fork's pull request — have neither
     // (`DF-STRATA-2026-2F6B`).
     match positional, valueOf "--artifact" args with
+    | "keygen" :: _, _ ->
+        match valueOf "--key" args, valueOf "--public-key" args with
+        | Some privatePath, Some publicPath ->
+            let privatePem, publicPem = Attestation.generateKeyPair ()
+            IO.File.WriteAllText(privatePath, privatePem)
+            IO.File.WriteAllText(publicPath, publicPem)
+
+            // Best effort: on Unix this is the difference between a key only its
+            // owner can read and one every process on the box can.
+            try
+                IO.File.SetUnixFileMode(privatePath, IO.UnixFileMode.UserRead ||| IO.UnixFileMode.UserWrite)
+            with _ ->
+                eprintfn "warning: could not restrict permissions on %s. Check them yourself." privatePath
+
+            printfn "Wrote a private key to %s and its public key to %s." privatePath publicPath
+            printfn ""
+            printfn "The private key is the whole of the guarantee. `strata deploy --require-signature`"
+            printfn "proves that whoever holds THIS FILE signed the artifact, and nothing more — so an"
+            printfn "agent that can read it can forge exactly as well as you can."
+            0
+        | _ ->
+            eprintfn "error: keygen needs --key <private.pem> and --public-key <public.pem>."
+            2
+
+    | "sign" :: _, Some artifactPath ->
+        match valueOf "--key" args with
+        | None ->
+            eprintfn "error: sign needs --key <private.pem>. Make one with `strata keygen`."
+            2
+        | Some keyPath when not (IO.File.Exists artifactPath) ->
+            ignore keyPath
+            eprintfn "error: no artifact at %s." artifactPath
+            2
+        | Some keyPath when not (IO.File.Exists keyPath) ->
+            eprintfn "error: no key at %s. Make one with `strata keygen`." keyPath
+            2
+        | Some keyPath ->
+            match Attestation.readFile (IO.File.ReadAllText artifactPath) with
+            | Error message ->
+                eprintfn "error: %s" message
+                2
+            | Ok (resolved, wrapper) ->
+                match Attestation.sign (IO.File.ReadAllText keyPath) resolved with
+                | Error message ->
+                    eprintfn "error: %s" message
+                    2
+                | Ok signature ->
+                    IO.File.WriteAllText(
+                        artifactPath,
+                        Attestation.renderFile
+                            { wrapper with
+                                Digest = Some(Attestation.digestOf resolved)
+                                Signature = Some(Attestation.SignatureAlgorithm, signature) }
+                            resolved)
+
+                    printfn "Signed %s." artifactPath
+                    0
+
+    | "sign" :: _, None ->
+        eprintfn "error: sign needs --artifact <file>."
+        2
+
     | "validate" :: sqlPath :: _, Some artifactPath ->
         let parser = PgParserAdapter.PostgresParser() :> Strata.Analysis.DialectPort.IDialectParser
 
@@ -383,6 +463,7 @@ let main argv =
         | "drift" :: _ -> true
         | _ -> false
 
+
     let wantsApply =
         match positional with
         | "apply" :: _ -> true
@@ -413,6 +494,8 @@ let main argv =
         | "compile" :: _ -> Error "compile takes no positional arguments; use --project and --out"
         | "deploy" :: _ -> Error "deploy takes no positional arguments; use --artifact"
         | "drift" :: _ -> Error "drift takes no positional arguments; use --artifact"
+        | "keygen" :: _ -> Error "keygen takes no positional arguments; use --key and --public-key"
+        | "sign" :: _ -> Error "sign takes no positional arguments; use --artifact and --key"
         | command :: _ -> Error(sprintf "unknown or incomplete command: %s" command)
         | [] -> Error "no command given"
 
@@ -465,7 +548,13 @@ let main argv =
             // The warning for an empty corpus is `Deployment.run`'s, not this
             // branch's — saying it twice teaches people to skim it.
             try
-                Deploy.run parser connectionString artifactPath { deploymentOptions corpusRoots with Apply = true }
+                Deploy.run
+                    parser
+                    connectionString
+                    artifactPath
+                    (List.contains "--require-signature" args)
+                    (valueOf "--public-key" args |> Option.map IO.File.ReadAllText)
+                    { deploymentOptions corpusRoots with Apply = true }
             with ex ->
                 eprintfn "error: %s" ex.Message
                 2

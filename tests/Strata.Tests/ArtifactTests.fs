@@ -620,3 +620,130 @@ let ``an empty search path entry is dropped rather than becoming a schema`` () =
         [ "shop" ],
         Strata.Cli.OfflineValidation.searchPathFor (Some "shop,,") sample
         |> List.map (fun (i: Identifier) -> i.Text))
+
+// ---- integrity and signature ------------------------------------------------
+//
+// Two different claims, and the tests keep them apart because the code does.
+// Integrity answers "is this the artifact that was compiled?" and anyone who
+// changes the content can recompute it. A signature answers "did the holder of
+// this key produce it?" and is the only one of the two that resists someone who
+// WANTS to change the artifact.
+
+let private digested (r: ResolvedDesiredState) =
+    { Attestation.none with Digest = Some(Attestation.digestOf r) }
+
+[<Fact>]
+let ``a digest covers the content, not the file's formatting`` () =
+    // The digest is taken over the canonical body, which the reader reconstructs
+    // rather than reading from the file. So re-laying-out the wrapper cannot
+    // break it, and changing a single declared character must.
+    let changed =
+        { sample with
+            Declared = { sample.Declared with Declarations = [ qn "shop" "product", "CREATE TABLE shop.product (id int);" ] } }
+
+    Assert.NotEqual<string>(Attestation.digestOf sample, Attestation.digestOf changed)
+    Assert.Equal(Attestation.digestOf sample, Attestation.digestOf sample)
+
+[<Fact>]
+let ``an artifact that matches its digest reads back`` () =
+    match Attestation.readFile (Attestation.renderFile (digested sample) sample) with
+    | Ok (_, wrapper) -> Assert.True wrapper.Digest.IsSome
+    | Microsoft.FSharp.Core.Error message -> failwithf "a well-formed artifact was refused: %s" message
+
+[<Fact>]
+let ``an artifact edited after compiling is refused by its own digest`` () =
+    // The ordinary failure: a file changed by hand, truncated by a bad copy,
+    // merged badly. Caught without any key at all.
+    let text = Attestation.renderFile (digested sample) sample
+    let tampered = text.Replace("CREATE TABLE shop.product (id bigint);", "CREATE TABLE shop.product (id int);")
+    Assert.NotEqual<string>(text, tampered)
+
+    match Attestation.readFile tampered with
+    | Ok _ -> failwith "an edited artifact was accepted"
+    | Microsoft.FSharp.Core.Error message -> Assert.Contains("integrity digest", message)
+
+[<Fact>]
+let ``a bare artifact with no wrapper still reads`` () =
+    // Written by a build that predates this. Whether that is ACCEPTABLE is the
+    // caller's policy, not the reader's — `--require-signature` is where a
+    // decision about provenance belongs.
+    match Attestation.readFile (Artifact.toText sample) with
+    | Ok (_, wrapper) ->
+        Assert.True wrapper.Digest.IsNone
+        Assert.True wrapper.Signature.IsNone
+    | Microsoft.FSharp.Core.Error message -> failwithf "a bare artifact was refused: %s" message
+
+[<Fact>]
+let ``a signature made by a key verifies against its public half`` () =
+    let privatePem, publicPem = Attestation.generateKeyPair ()
+
+    match Attestation.sign privatePem sample with
+    | Microsoft.FSharp.Core.Error message -> failwithf "signing failed: %s" message
+    | Ok signature -> Assert.Equal(Ok(), Attestation.verify publicPem sample signature)
+
+[<Fact>]
+let ``a signature does not verify against a different key`` () =
+    let privatePem, _ = Attestation.generateKeyPair ()
+    let _, otherPublicPem = Attestation.generateKeyPair ()
+
+    match Attestation.sign privatePem sample with
+    | Microsoft.FSharp.Core.Error message -> failwithf "signing failed: %s" message
+    | Ok signature ->
+        match Attestation.verify otherPublicPem sample signature with
+        | Ok () -> failwith "a signature verified against the wrong key"
+        | Microsoft.FSharp.Core.Error message -> Assert.Contains("does not match", message)
+
+[<Fact>]
+let ``a signature does not verify against changed content`` () =
+    // The case the digest CANNOT catch, because an attacker who changes content
+    // recomputes the digest. This is what the key is for.
+    let privatePem, publicPem = Attestation.generateKeyPair ()
+    let changed = { sample with Warnings = [ "injected" ] }
+
+    match Attestation.sign privatePem sample with
+    | Microsoft.FSharp.Core.Error message -> failwithf "signing failed: %s" message
+    | Ok signature ->
+        match Attestation.verify publicPem changed signature with
+        | Ok () -> failwith "a signature verified against changed content"
+        | Microsoft.FSharp.Core.Error message -> Assert.Contains("does not match", message)
+
+[<Fact>]
+let ``an unsigned artifact is refused when a signature is required`` () =
+    match Attestation.provenanceProblem true None sample Attestation.none with
+    | None -> failwith "an unsigned artifact satisfied --require-signature"
+    | Some problem -> Assert.Contains("not signed", problem)
+
+[<Fact>]
+let ``a signature with no key to check it against is refused`` () =
+    // "A signature nobody verifies is decoration." Accepting it would make
+    // --require-signature a flag that proves the artifact has SOME signature.
+    let wrapper = { Attestation.none with Signature = Some(Attestation.SignatureAlgorithm, "irrelevant") }
+
+    match Attestation.provenanceProblem true None sample wrapper with
+    | None -> failwith "a signature with no key satisfied --require-signature"
+    | Some problem -> Assert.Contains("no --public-key", problem)
+
+[<Fact>]
+let ``a signature algorithm this build cannot check is refused, not ignored`` () =
+    let wrapper = { Attestation.none with Signature = Some("ed25519", "irrelevant") }
+    let _, publicPem = Attestation.generateKeyPair ()
+
+    match Attestation.provenanceProblem true (Some publicPem) sample wrapper with
+    | None -> failwith "an unknown signature algorithm was ignored"
+    | Some problem -> Assert.Contains("ed25519", problem)
+
+[<Fact>]
+let ``an unsigned artifact passes when no signature is required`` () =
+    // The default. Requiring one by default would make every existing pipeline
+    // fail on upgrade, and a check everyone disables protects nobody.
+    Assert.Equal(None, Attestation.provenanceProblem false None sample Attestation.none)
+
+[<Fact>]
+let ``a valid signature satisfies the requirement`` () =
+    let privatePem, publicPem = Attestation.generateKeyPair ()
+
+    match Attestation.sign privatePem sample with
+    | Microsoft.FSharp.Core.Error message -> failwithf "signing failed: %s" message
+    | Ok signature ->
+        let wrapper = { Attestation.none with Signature = Some(Attestation.SignatureAlgorithm, signature) }
+        Assert.Equal(None, Attestation.provenanceProblem true (Some publicPem) sample wrapper)

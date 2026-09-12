@@ -106,11 +106,11 @@ let drift
         2
     else
 
-    match Artifact.ofText (File.ReadAllText artifactPath) with
+    match Attestation.readFile (File.ReadAllText artifactPath) with
     | Microsoft.FSharp.Core.Error message ->
         eprintfn "error: %s" message
         2
-    | Ok resolved ->
+    | Ok (resolved, _) ->
 
     match versionProblem resolved.CompiledWith (CatalogIntrospection.readServerVersion connectionString) with
     | Some problem ->
@@ -149,6 +149,8 @@ let run
     (parser: Strata.Analysis.DialectPort.IDialectParser)
     (connectionString: string)
     (artifactPath: string)
+    (requireSignature: bool)
+    (publicKeyPem: string option)
     (options: Deployment.Options)
     : int =
 
@@ -157,11 +159,23 @@ let run
         2
     else
 
-    match Artifact.ofText (File.ReadAllText artifactPath) with
+    match Attestation.readFile (File.ReadAllText artifactPath) with
     | Microsoft.FSharp.Core.Error message ->
         eprintfn "error: %s" message
         2
-    | Ok resolved ->
+    | Ok (resolved, wrapper) ->
+
+    // Provenance is checked BEFORE the version and before anything is read from
+    // the target. An artifact nobody will vouch for is not one to ask questions
+    // of a production database with.
+    match Attestation.provenanceProblem requireSignature publicKeyPem resolved wrapper with
+    | Some problem ->
+        eprintfn "REFUSED: %s" problem
+        2
+    | None ->
+
+    if wrapper.Signature.IsSome && publicKeyPem.IsSome then
+        printfn "Signature verified."
 
     match versionProblem resolved.CompiledWith (CatalogIntrospection.readServerVersion connectionString) with
     | Some problem ->
