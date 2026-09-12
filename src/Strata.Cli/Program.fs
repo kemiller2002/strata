@@ -408,8 +408,17 @@ let main argv =
         match valueOf "--key" args, valueOf "--public-key" args with
         | Some privatePath, Some publicPath ->
             let privatePem, publicPem = Attestation.generateKeyPair ()
-            IO.File.WriteAllText(privatePath, privatePem)
-            IO.File.WriteAllText(publicPath, publicPem)
+
+            // A missing directory, a read-only volume, a path that is a
+            // directory: all ordinary, and all of them used to come out as an
+            // unhandled exception and a SIGABRT. A tool that aborts instead of
+            // saying what went wrong teaches people to distrust its exit codes.
+            try
+                IO.File.WriteAllText(privatePath, privatePem)
+                IO.File.WriteAllText(publicPath, publicPem)
+            with ex ->
+                eprintfn "error: could not write the key pair (%s)" ex.Message
+                exit 2
 
             // Best effort: on Unix this is the difference between a key only its
             // owner can read and one every process on the box can.
@@ -451,16 +460,20 @@ let main argv =
                     eprintfn "error: %s" message
                     2
                 | Ok signature ->
-                    IO.File.WriteAllText(
-                        artifactPath,
-                        Attestation.renderFile
-                            { wrapper with
-                                Digest = Some(Attestation.digestOf resolved)
-                                Signature = Some(Attestation.SignatureAlgorithm, signature) }
-                            resolved)
+                    try
+                        IO.File.WriteAllText(
+                            artifactPath,
+                            Attestation.renderFile
+                                { wrapper with
+                                    Digest = Some(Attestation.digestOf resolved)
+                                    Signature = Some(Attestation.SignatureAlgorithm, signature) }
+                                resolved)
 
-                    printfn "Signed %s." artifactPath
-                    0
+                        printfn "Signed %s." artifactPath
+                        0
+                    with ex ->
+                        eprintfn "error: could not write the signed artifact (%s)" ex.Message
+                        2
 
     | "sign" :: _, None ->
         eprintfn "error: sign needs --artifact <file>."

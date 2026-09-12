@@ -29,6 +29,7 @@
     <Compile Include="TypeCheckTests.fs" />
     <Compile Include="InvariantTests.fs" />
     <Compile Include="ManifestTests.fs" />
+    <Compile Include="CliTests.fs" />
     <Compile Include="AwkwardFormsTests.fs" />
     <Compile Include="Main.fs" />
   </ItemGroup>
