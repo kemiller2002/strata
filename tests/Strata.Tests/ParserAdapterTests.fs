@@ -145,3 +145,32 @@ let ``END TO END a WHERE inside a subquery does not bound the outer write`` () =
         parseOne "UPDATE sales.orders SET status = (SELECT s FROM sales.state WHERE id = 1)"
 
     Assert.False extraction.HasWherePredicate
+
+[<Fact>]
+let ``a schema-qualified equality is a join and NOT an unmodelled shape`` () =
+    // libpg_query reports an operator as a name path. `OPERATOR(pg_catalog.=)`
+    // arrives as ["pg_catalog"; "="], so a reader that takes the FIRST element
+    // sees the schema and calls the predicate unmodelled, while a reader that
+    // scans for "=" calls it a join. Both used to run, so the same node was
+    // reported as a join AND as an analysis gap naming operator 'pg_catalog'.
+    //
+    // A spurious gap is not harmless: "no relationship found" and "that shape
+    // is not analysed" are the two claims ER-008 exists to keep apart, and a
+    // gap that is not real degrades a scope for no reason.
+    let extraction =
+        parseOne "SELECT * FROM sales.a x JOIN sales.b y ON x.id OPERATOR(pg_catalog.=) y.id"
+
+    Assert.Single extraction.JoinPredicates |> ignore
+    Assert.DoesNotContain(extraction.UnmodelledConstructs, fun c -> c.Contains "pg_catalog")
+    Assert.Empty extraction.UnmodelledConstructs
+
+[<Fact>]
+let ``a schema-qualified NON-equality operator is reported by its symbol`` () =
+    // The control: qualifying the operator must not suppress a real gap, and
+    // the gap must name the operator rather than the schema.
+    let extraction =
+        parseOne "SELECT * FROM sales.a x JOIN sales.b y ON x.lo OPERATOR(pg_catalog.<) y.hi"
+
+    Assert.Empty extraction.JoinPredicates
+    Assert.Contains(extraction.UnmodelledConstructs, fun c -> c.Contains "operator '<'")
+    Assert.DoesNotContain(extraction.UnmodelledConstructs, fun c -> c.Contains "pg_catalog")

@@ -28,10 +28,19 @@ and `.sde/architecture/FOUR-TIER-ARCHITECTURE.md`.
 - Boundary checks: `tests/Strata.Tests/WireTests.fs` asserts the hand-written
   wire vocabulary exactly, so a renamed tag fails a test rather than silently
   changing Strata's output contract.
-- Build: `dotnet build Strata.sln`
-- Tests: `dotnet test tests/Strata.Tests/Strata.Tests.fsproj`
-- Live integration tests: set `STRATA_TEST_PG` to a PostgreSQL connection string;
-  without it those tests **skip** rather than pass silently.
+- Build: `scripts/build.sh` (Release). A bare `dotnet build Strata.sln` produces
+  a **Debug** build: the solution metaproject passes `Configuration=Debug` as a
+  global property that `Directory.Build.props` cannot override. Debug is ~1.6x
+  slower on the extraction path, so never take a timing from one — a Debug
+  `strata` binary says so on stderr.
+- Tests: `dotnet test tests/Strata.Tests/Strata.Tests.fsproj -c Release`
+- Live integration tests: build the fixture with `scripts/test-fixture.sh`
+  (needs a superuser connection; drops and recreates `strata_test`), then set
+  `STRATA_TEST_PG` to the connection string it prints. Without `STRATA_TEST_PG`
+  those tests **skip** rather than pass silently — which looks like a green
+  suite while testing nothing, so build the fixture.
+  The test role must NOT be a superuser: three tests exist because the
+  connected role cannot read the `hidden` schema, and a superuser can.
 
 ## Areas without separate manifests
 

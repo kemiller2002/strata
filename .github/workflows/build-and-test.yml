@@ -1,0 +1,100 @@
+# Build the code and run the tests, including the ones that need a real
+# PostgreSQL.
+#
+# Until this existed, CI ran ROS validation and nothing else: no machine but
+# the author's had ever compiled the F# or run a test. The live integration
+# tests SKIP without a database, which reads as a green suite while testing
+# nothing — so this stands one up and runs them for real. A run that skips them
+# is not a run that passed them.
+
+name: Build and test
+
+# `pull_request` covers every commit on a PR branch and `push` covers the
+# default branch. Listing both unqualified fires BOTH for a PR commit, which was
+# tolerable when the only job took seven seconds and is not now that each run
+# builds the solution and starts a database.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A run superseded by a newer push to the same branch is answering a question
+# nobody is asking any more.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        # Matches the version developed against. The parser targets PostgreSQL
+        # 17 grammar while the server is 16; RK-003 exists because those can
+        # differ, so pinning the server here keeps CI honest about which it is.
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        # `-U postgres` is not decoration: without it pg_isready connects as the
+        # runner's own user and the server logs `FATAL: role "root" does not
+        # exist` on every probe. The check still passed — the server was
+        # answering — but a health check that cannot authenticate is not
+        # checking health, and the noise hides a real failure if one ever
+        # appears.
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      # Release, not Debug. `dotnet build Strata.sln` silently produces Debug —
+      # the solution metaproject passes Configuration=Debug as a global
+      # property that Directory.Build.props cannot override — which is how two
+      # evidence records came to be timed on an unoptimised build.
+      - name: Build
+        run: ./scripts/build.sh
+
+      - name: Check the four-tier architecture
+        run: ./scripts/check-semantic-architecture.sh
+
+      - name: Build the live test fixture
+        run: ./scripts/test-fixture.sh
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+
+      # `dotnet test` fails the step on a failing test by itself. What it does
+      # NOT do is fail on a SKIPPED one — and the live PostgreSQL tests skip
+      # silently when the connection string is missing or wrong, which would
+      # look exactly like success. A run that skips them is not a run that
+      # passed them, so this checks.
+      - name: Test
+        env:
+          STRATA_TEST_PG: Host=localhost;Port=5432;Database=strata_test;Username=strata;Password=strata_local_test
+        run: |
+          set -uo pipefail
+          output=$(dotnet test Strata.sln -c Release --no-build 2>&1)
+          status=$?
+          echo "$output"
+          if [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
+          if echo "$output" | grep -qE 'Skipped:[[:space:]]*[1-9]'; then
+            echo "::error::Tests were skipped. The live PostgreSQL tests did not run, so this is not a pass."
+            exit 1
+          fi

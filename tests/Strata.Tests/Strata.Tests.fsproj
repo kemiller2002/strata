@@ -18,8 +18,19 @@
     <Compile Include="CorpusPipelineTests.fs" />
     <Compile Include="DeploymentGateTests.fs" />
     <Compile Include="ParserAdapterTests.fs" />
+    <Compile Include="ValidationTests.fs" />
+    <Compile Include="DesiredStateTests.fs" />
+    <Compile Include="SchemaDiffTests.fs" />
+    <Compile Include="RenameTests.fs" />
     <Compile Include="CatalogIntrospectionTests.fs" />
+    <Compile Include="AwkwardFormsTests.fs" />
     <Compile Include="Main.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The awkward-forms corpus is read at runtime, so it has to reach the
+         output directory; without this every theory over it runs zero cases. -->
+    <Content Include="awkward/**/*.sql" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

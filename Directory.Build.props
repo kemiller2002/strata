@@ -1,4 +1,28 @@
 <Project>
+
+  <!--
+    Release is the default configuration.
+
+    The SDK otherwise defaults to Debug, which is how the indexing timings in
+    EV-STRATA-2026-C9A4 and EV-STRATA-2026-D7B2 came to be measured on an
+    unoptimised build: nothing in the command line said Debug, so nothing in
+    the record said Debug either. A measurement that does not state its build
+    configuration is not reproducible, and the difference here is about 1.6x.
+
+    Scope, precisely: this wins for `dotnet build <project>.fsproj`, because
+    Microsoft.Common.props imports Directory.Build.props before applying its
+    own Debug default. It does NOT win for `dotnet build Strata.sln`: the
+    solution metaproject passes Configuration=Debug as a global property,
+    which no props file can override. Use `scripts/build.sh`, or pass
+    `-c Release` explicitly, for solution builds.
+
+    The remaining hole is closed at runtime instead: a Debug `strata` binary
+    says so on stderr, so a timing taken from one cannot be recorded silently.
+  -->
+  <PropertyGroup Condition="'$(Configuration)' == ''">
+    <Configuration>Release</Configuration>
+  </PropertyGroup>
+
   <PropertyGroup>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <WarningLevel>5</WarningLevel>

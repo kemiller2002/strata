@@ -47,6 +47,30 @@
     "title": "Targeted retrieval was lossy on three of nine tasks; fixing the loss cost almost nothing, so the context reduction is real"
   },
   {
+    "confidence": "high",
+    "contradicts": [],
+    "created_by_agent": "claude",
+    "evidence_type": "test-result",
+    "id": "EV-STRATA-2026-A7C3",
+    "path": "research/evidence/EV-STRATA-2026-A7C3--indexing-cost-is-not-where-i-said.md",
+    "related_theories": [],
+    "research_area": "strata-scale",
+    "retrieved": "2026-09-11",
+    "source_author": "claude",
+    "source_date": "2026-09-11",
+    "source_title": "Strata indexing-cost profile and single-pass extraction",
+    "source_uri": "3,000-file / 10,521-statement synthetic corpus; PostgreSQL 16.15; .NET 8.0.131 Release",
+    "supports": [],
+    "tags": [
+      "strata",
+      "performance",
+      "profiling",
+      "caching",
+      "correction"
+    ],
+    "title": "Indexing cost was 85% reflective string formatting of gap messages nothing reads, not parsing and not the absence of a cache — 34.9s to 8.0s with byte-identical output"
+  },
+  {
     "confidence": "medium",
     "contradicts": [],
     "created_by_agent": "claude",
@@ -94,6 +118,30 @@
       "risk"
     ],
     "title": "Parser AST cannot resolve object identity without catalog and scope resolution (Spike B, first pass)"
+  },
+  {
+    "confidence": "medium",
+    "contradicts": [],
+    "created_by_agent": "claude",
+    "evidence_type": "literature-review",
+    "id": "EV-STRATA-2026-C2F5",
+    "path": "research/evidence/EV-STRATA-2026-C2F5--declarative-landscape-and-fixtures.md",
+    "related_theories": [],
+    "research_area": "strata-product-value",
+    "retrieved": "2026-09-11",
+    "source_author": "claude",
+    "source_date": "2026-09-11",
+    "source_title": "Declarative schema tooling landscape and candidate fixtures",
+    "source_uri": "GitHub API and vendor documentation, observed 2026-09-11",
+    "supports": [],
+    "tags": [
+      "strata",
+      "competitive-landscape",
+      "desired-state",
+      "fixtures",
+      "orm-risk"
+    ],
+    "title": "pgschema already ships Strata's exact model for PostgreSQL; the dependency-aware-drop differentiator is genuinely unoccupied but most PostgreSQL codebases hide their queries in an ORM"
   },
   {
     "confidence": "high",
@@ -144,6 +192,30 @@
       "spike-d"
     ],
     "title": "At 3,009 files Strata's answer is correct but its scope block is 330x larger than the answer, and every query re-indexes for 247 seconds"
+  },
+  {
+    "confidence": "high",
+    "contradicts": [],
+    "created_by_agent": "claude",
+    "evidence_type": "test-result",
+    "id": "EV-STRATA-2026-D3A8",
+    "path": "research/evidence/EV-STRATA-2026-D3A8--diff-reports-a-false-clean.md",
+    "related_theories": [],
+    "research_area": "strata-deployment",
+    "retrieved": "2026-09-11",
+    "source_author": "claude",
+    "source_date": "2026-09-11",
+    "source_title": "Schema diff coverage probe against a live PostgreSQL database",
+    "source_uri": "strata_probe and strata_test on PostgreSQL 16.15",
+    "supports": [],
+    "tags": [
+      "strata",
+      "diff",
+      "false-clean",
+      "coverage",
+      "deployment"
+    ],
+    "title": "The diff reports \"already matches desired state\" while a foreign key, a check constraint and a column default all differ — a false clean, and 96% of real tables cannot be created"
   },
   {
     "confidence": "high",

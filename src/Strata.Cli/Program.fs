@@ -3,6 +3,7 @@ module Strata.Cli.Program
 open System
 open System.IO
 open Strata.Semantic.Identity
+open Strata.Semantic.Schema
 open Strata.Semantic.AnalysisScope
 open Strata.Analysis.Graph
 open Strata.Analysis.Corpus
@@ -21,6 +22,21 @@ USAGE
   strata <command> [args] --connection <connection-string> [--json]
 
 COMMANDS
+  plan [--project <dir>]           Dry run: diff the project's desired state
+                                   against the live database. Exit 0 allow,
+                                   1 block, 2 requires approval — and 0 when
+                                   the database ALREADY MATCHES, whatever the
+                                   verdict, because an empty plan from a diff
+                                   is convergence rather than a problem.
+  apply [--project <dir>]          Execute the plan. Requires --confirm, and
+                                   refuses unless the gate allows every change
+                                   or --approve accepts its requires-approval
+                                   findings. A block is never overridden.
+  validate <file.sql>              Check every relation and column in a SQL file
+                                   against the live schema. Exit 0 valid,
+                                   1 provably wrong — a reference that does not
+                                   exist, or SQL that does not parse —
+                                   2 something could not be verified.
   check <proposed.sql>             Gate a proposed migration. Exit 0 allow,
                                    1 block, 2 requires approval.
   scope                            Print the analysis scope alone, once
@@ -34,10 +50,113 @@ COMMANDS
 OPTIONS
   --connection <s>   PostgreSQL connection string (or set STRATA_PG)
   --corpus <dir>     Directory of .sql files to index (or set STRATA_CORPUS)
+  --project <dir>    Project root: a directory of object files (default: .)
+  --confirm          Required by `apply`. Without it, apply dry-runs and stops.
+  --approve          Accept the gate's requires-approval findings. This is the
+                     human decision the gate is asking for, so it is recorded
+                     in the output: each finding is restated as approved before
+                     anything runs. It NEVER overrides a block — a block is
+                     known breakage, not a judgement call — and it does not
+                     enable removals, which need --allow-drops as well.
+  --allow-drops      Propose removals. Without it, objects present in the
+                     database and absent from the project are REPORTED but
+                     never proposed for dropping.
   --json             Machine-readable output (default is human-readable)
   --brief            With --json, replace the scope block with a digest. Fetch
                      the full scope once via `strata scope`. Caveats that change
                      how a result must be read are ALWAYS kept inline.
+
+PROJECT LAYOUT
+  <project>/schema/<schema>/<kind>/<name>.sql, one object per file. `kind` is
+  the directory name and is yours to choose; tables/, views/, routines/,
+  indexes/, triggers/, sequences/ and grants/ are the conventional ones.
+
+  grants/<object>.sql holds GRANT statements, on a table, view or sequence, on
+  a SCHEMA, or on a function or procedure:
+
+      GRANT USAGE ON SCHEMA ref TO app_user;
+      GRANT SELECT, INSERT ON ref.account TO app_user;
+      GRANT EXECUTE ON FUNCTION ref.balance(bigint) TO app_user;
+      GRANT SELECT (id, email) ON ref.customer TO app_user;
+
+  USAGE on the schema is what makes the names inside it reachable, so a project
+  that grants on a table and nothing on its schema has granted nothing usable.
+  A routine grant must name its argument types: without them PostgreSQL picks
+  whichever overload is deployed, which is not something a file can declare.
+
+  Declaring a grant takes ownership of THAT GRANTEE's privileges on THAT
+  object — a grantee the project never names keeps what it has and is reported,
+  so managing app_user cannot silently revoke a replication or monitoring role.
+
+  Column privileges are a separate store from the table's, not a narrower view
+  of it: a role with table-wide SELECT reads every column. So declaring a
+  column grant claims that grantee's TABLE-wide privileges too, and a standing
+  table-wide SELECT is proposed for revoking — otherwise "only these columns"
+  would add access and narrow none. Another grantee is still untouched.
+
+  extensions/<name>.sql holds a CREATE EXTENSION:
+
+      CREATE EXTENSION pgcrypto;
+      CREATE EXTENSION citext VERSION '1.6';
+
+  A version the file does not pin is not compared: asking for the extension is
+  not asking for whichever version happens to be installed. An extension is
+  installed and version-updated, and NEVER dropped — citext alone owns 88
+  catalog objects and DROP EXTENSION takes every one, which is more than
+  anything else here removes from a single statement. An extension the project
+  does not declare is reported and left alone, and so are the objects any
+  extension owns.
+
+  policies/<name>.sql holds a CREATE POLICY, and the ALTER TABLE that switches
+  row-level security on:
+
+      CREATE POLICY doc_tenant ON app.doc FOR ALL TO app_user
+          USING (tenant = current_setting('app.tenant'));
+
+      ALTER TABLE app.doc ENABLE ROW LEVEL SECURITY;
+
+  A policy Strata declares, it creates and replaces. A policy it does NOT
+  declare is reported and never dropped, --allow-drops included: dropping one
+  breaks no query and loses no row, it makes rows that were hidden visible to
+  whoever can read the table, and nothing records that they used to be hidden.
+  That is the least recoverable mistake available, so it is the one thing drops
+  do not reach — the same rule reference rows get.
+
+  Two states are worth knowing because both look like an ordinary table, and a
+  plan says which holds for every managed table: row-level security enabled
+  with no policies hides every row from every role except the owner, and
+  policies on a table where it is disabled restrict nothing at all.
+
+  Switching row-level security on runs LAST in a plan, after any reference rows.
+  FORCE makes policies apply to the table's own owner, so enabling it first has
+  the server reject the plan's own inserts and roll the whole thing back.
+
+  Two things about privileges are reported and never changed. Every function
+  starts with EXECUTE granted to PUBLIC, so a project that does not declare
+  PUBLIC is told that PUBLIC can still call its functions. And WITH GRANT
+  OPTION is not modelled: a file cannot ask for it, and a grantee that already
+  has it is disclosed rather than left to look like an ordinary grant.
+
+  The <schema> directory names the schema, and Strata CREATES it if the
+  database does not have it — so a project applies against an empty database.
+  It never drops one: a schema holds objects, including any the project never
+  declared.
+
+  data/<table>.sql holds a reference table's ROWS, as plain INSERT statements:
+
+      INSERT INTO ref.account_type (id, code, label) VALUES
+          (1, 'checking', 'Checking'),
+          (2, 'savings',  'Savings');
+
+  Those rows are diffed like any other declared state, so a dry run says which
+  will be inserted and which updated. Every value must be a literal; a value
+  the file cannot fix belongs in the column's DEFAULT. Rows are matched on the
+  table's primary key, and a column the file does not name is a column it says
+  nothing about.
+
+  Declaring rows does NOT claim the table's other rows. A row the project does
+  not declare is reported and never deleted, `--allow-drops` included: user
+  data may reference it.
 
 NOTES
   Every answer carries its analysis scope. A result is bounded by what was
@@ -45,6 +164,12 @@ NOTES
 
   Without --corpus, no SQL is indexed, so readers/writers are necessarily
   empty and every answer says so.
+
+  `validate` distinguishes "does not exist" from "could not be verified" and
+  never merges them. An incomplete catalog snapshot yields exit 2, not exit 1:
+  Strata does not claim absence it cannot support, because an author who
+  "fixes" working SQL to satisfy a false error is worse off than with no
+  validator at all.
 
   For a multi-query session: run `strata scope` once, then pass --brief on
   each answer. The scope is identical across queries against one snapshot, so
@@ -64,8 +189,21 @@ let private valueOf (flag: string) (argv: string list) =
     |> List.pairwise
     |> List.tryPick (fun (a, b) -> if a = flag then Some b else None)
 
+/// A Debug binary is roughly 1.6x slower than a Release one on the extraction
+/// path. Two published timings were taken from a Debug build without anyone
+/// noticing, because nothing in the invocation or the output said so. Saying
+/// it here, on stderr, means a timing cannot be recorded silently again;
+/// stderr keeps it out of `--json` output, which stays byte-identical.
+let private announceBuildConfiguration () =
+#if DEBUG
+    eprintfn "strata: DEBUG build - timings from this binary are not representative of Release"
+#else
+    ()
+#endif
+
 [<EntryPoint>]
 let main argv =
+    announceBuildConfiguration ()
     let args = List.ofArray argv
 
     if List.isEmpty args || List.contains "--help" args || List.contains "-h" args then
@@ -104,6 +242,27 @@ let main argv =
         | "check" :: path :: _ -> Some path
         | _ -> None
 
+    let validateFile =
+        match positional with
+        | "validate" :: path :: _ -> Some path
+        | _ -> None
+
+    let projectRoot =
+        match valueOf "--project" args with
+        | Some dir -> dir
+        | None -> "."
+
+    let wantsPlan =
+        match positional with
+        | "plan" :: _
+        | "apply" :: _ -> true
+        | _ -> false
+
+    let wantsApply =
+        match positional with
+        | "apply" :: _ -> true
+        | _ -> false
+
     let query =
         match positional with
         | "scope" :: _ -> Ok Retrieval.ScopeOnly
@@ -123,8 +282,549 @@ let main argv =
             | _ -> Error "impact needs a fully qualified schema.table.column"
         | "readers" :: name :: _ -> Ok(Retrieval.Readers(parseName name))
         | "writers" :: name :: _ -> Ok(Retrieval.Writers(parseName name))
+        | "validate" :: _ -> Error "validate needs a path to a .sql file"
+        | "plan" :: _ -> Error "plan takes no positional arguments; use --project"
+        | "apply" :: _ -> Error "apply takes no positional arguments; use --project"
         | command :: _ -> Error(sprintf "unknown or incomplete command: %s" command)
         | [] -> Error "no command given"
+
+    if wantsPlan then
+        try
+            match Project.read projectRoot with
+            | Error message ->
+                eprintfn "error: %s" message
+                2
+            | Ok project ->
+                let parser = PgParserAdapter.PostgresParser() :> Strata.Analysis.DialectPort.IDialectParser
+
+                let declared =
+                    DesiredState.load
+                        parser
+                        (project.Files |> List.map (fun f -> f.Path, f.Contents))
+
+                // A file that could not even be located or read never reached
+                // the loader, so its failure has to be folded in here or the
+                // desired state would call itself complete while missing it.
+                let desired =
+                    if List.isEmpty project.Failures then declared.Snapshot
+                    else
+                        { declared.Snapshot with
+                            Completeness =
+                                Completeness.ofList
+                                    (declared.Snapshot.Completeness.Categories
+                                     |> List.map (fun (name, state) ->
+                                         if name = "relations" then
+                                             name,
+                                             Partial(
+                                                 sprintf
+                                                     "%d project file(s) could not be read"
+                                                     (List.length project.Failures))
+                                         else
+                                             name, state)) }
+
+                for path, reason in project.Failures do
+                    eprintfn "warning: %s: %s" path reason
+
+                for failure in declared.Failures do
+                    eprintfn "warning: %s: %s" failure.Path failure.Reason
+
+                // Taken BEFORE introspection so it covers the whole window in
+                // which the plan is computed, not just the tail of it.
+                let fingerprintBeforePlanning =
+                    match Execution.fingerprint connectionString with
+                    | Ok value -> value
+                    | Microsoft.FSharp.Core.Error _ -> ""
+
+                let actual = CatalogIntrospection.introspect connectionString
+
+                // Read separately from the snapshot because an EMPTY schema has
+                // no objects to appear in it. Without this, "the project
+                // declares objects in ref" and "ref exists" could not be told
+                // apart, and a first apply against a fresh database failed on
+                // the first CREATE TABLE.
+                let existingSchemas =
+                    match CatalogIntrospection.readSchemas connectionString with
+                    | Ok names -> Some names
+                    | Microsoft.FSharp.Core.Error message ->
+                        eprintfn "warning: could not read the database's schema list (%s)." message
+                        eprintfn "         Declared schemas will be reported as not-checked."
+                        None
+
+                // Read for the same reason and with the same care: an ACL that
+                // could not be read is not an absent privilege.
+                let actualGrants =
+                    match CatalogIntrospection.readGrants connectionString with
+                    | Ok grants -> Some grants
+                    | Microsoft.FSharp.Core.Error message ->
+                        eprintfn "warning: could not read the database's privileges (%s)." message
+                        eprintfn "         Declared grants will be reported as not-compared."
+                        None
+
+                // Reported, not compared — but READ, which is the point. Nothing
+                // looked at row-level security before, so a table with it
+                // enabled and no policies, hiding every row from every role,
+                // rendered exactly like a table with no row-level security at
+                // all: a clean plan and not a word about either.
+                //
+                // The snapshot's own `rls_policies` category stays
+                // `NotRequested`, the same as `grants`: the snapshot genuinely
+                // does not carry them, and this is read alongside it.
+                let actualRowLevelSecurity =
+                    match CatalogIntrospection.readRowLevelSecurity connectionString with
+                    | Ok state -> Some(Ok state)
+                    | Microsoft.FSharp.Core.Error message ->
+                        eprintfn "warning: could not read the database's row-level security (%s)." message
+                        eprintfn "         Which rows any role can see is unknown, and will be reported as such."
+                        // `Some (Error _)`, never `None`: the CLI DID ask, and
+                        // that failure is reported. `None` is reserved for a
+                        // caller that never asked.
+                        Some(Microsoft.FSharp.Core.Error message)
+
+                let actualExtensions =
+                    match CatalogIntrospection.readExtensions connectionString with
+                    | Ok installed -> Some(Ok installed)
+                    | Microsoft.FSharp.Core.Error message ->
+                        eprintfn "warning: could not read the database's extensions (%s)." message
+                        eprintfn "         Declared extensions will be reported as not-compared."
+                        Some(Microsoft.FSharp.Core.Error message)
+
+                let searchPath =
+                    match CatalogIntrospection.readSearchPath connectionString with
+                    | Ok p -> p
+                    | Error _ -> []
+
+                // Where the application SQL lives is the one thing the
+                // directory tree cannot say, so it comes from --corpus or from
+                // the manifest. Without it the gate can still run, but it can
+                // only ever answer requires-approval on a removal: "no
+                // dependency found" is not "no dependency exists" when nothing
+                // was searched.
+                let corpusRoots =
+                    match corpusDirectory with
+                    | Some dir -> [ dir ]
+                    | None ->
+                        project.Manifest.CorpusRoots
+                        |> List.map (fun root -> IO.Path.Combine(projectRoot, root))
+
+                if List.isEmpty corpusRoots then
+                    eprintfn "warning: no SQL corpus given (--corpus or corpusRoots in strata.json)."
+                    eprintfn "         Removals cannot be cleared, only approved: with nothing indexed,"
+                    eprintfn "         \"no dependency found\" is not evidence that none exists."
+
+                let corpusSources =
+                    corpusRoots
+                    |> List.collect (fun root ->
+                        match FileCorpus.read root with
+                        | Ok r -> r.Sources
+                        | Error _ -> [])
+
+                let analysis = CorpusPipeline.analyse parser actual searchPath corpusSources
+                let graph = CorpusPipeline.buildGraph actual analysis
+                let scope = CorpusPipeline.toScope parser actual analysis
+
+                let allowDrops = List.contains "--allow-drops" args
+
+                // Declared view DDL rendered the way the catalog renders it, so
+                // the two sides can be compared at all. Executed in a
+                // transaction that is always rolled back — the database is
+                // unchanged either way. If it cannot run (no CREATE privilege,
+                // a read-only target), views fall back to being disclosed as
+                // not-compared, which is what happened before this existed.
+                let normalisedViews =
+                    let declaredViews =
+                        declared.Snapshot.Objects
+                        |> List.choose (fun o ->
+                            match o with
+                            | ViewObject v when not v.IsMaterialized ->
+                                declared.Declarations
+                                |> List.tryPick (fun (name, text) ->
+                                    if QualifiedName.display name = QualifiedName.display v.Name then
+                                        Some(QualifiedName.display v.Name, text)
+                                    else
+                                        None)
+                            | _ -> None)
+
+                    match ShadowNormalisation.normaliseViews connectionString declaredViews with
+                    | Ok normalised -> normalised
+                    | Microsoft.FSharp.Core.Error message ->
+                        if not (List.isEmpty declaredViews) then
+                            eprintfn "warning: could not normalise declared views (%s)." message
+                            eprintfn "         View definitions will be reported as not-compared."
+
+                        []
+
+                // Declared defaults and checks rendered the way the catalog
+                // renders them, by the same rolled-back transaction.
+                let normalisedTables =
+                    let declaredTables =
+                        declared.Snapshot.Objects
+                        |> List.choose (fun o ->
+                            match o with
+                            | TableObject t ->
+                                declared.Declarations
+                                |> List.tryPick (fun (name, text) ->
+                                    if QualifiedName.display name = QualifiedName.display t.Name then
+                                        Some(QualifiedName.display t.Name, text)
+                                    else
+                                        None)
+                            | _ -> None)
+
+                    match ShadowNormalisation.normaliseTables connectionString declaredTables with
+                    | Ok normalised ->
+                        normalised
+                        |> List.map (fun n ->
+                            ({ Table = n.Table
+                               Defaults = n.Defaults
+                               Checks = n.Checks }: SchemaDiff.NormalisedTable))
+                    | Microsoft.FSharp.Core.Error message ->
+                        if not (List.isEmpty declaredTables) then
+                            eprintfn "warning: could not normalise declared tables (%s)." message
+                            eprintfn "         Defaults and check expressions will be reported as not-compared."
+
+                        []
+
+                // Declared policies, with their expressions rendered by the
+                // server. A file's `tenant = 'x'` and the catalog's
+                // `(tenant = 'x'::text)` are the same policy, and nothing but
+                // PostgreSQL can say so — the same reason check constraints go
+                // through the shadow.
+                //
+                // The table's own declared DDL comes along because a policy's
+                // expression is over the table's columns: it cannot be created
+                // until the table exists.
+                let declaredPolicies =
+                    let tableText name =
+                        declared.Declarations
+                        |> List.tryPick (fun (declaredName, text) ->
+                            if QualifiedName.display declaredName = QualifiedName.display name then Some text else None)
+
+                    let byTable =
+                        declared.Policies
+                        |> List.groupBy (fun (table, _) -> QualifiedName.display table)
+                        |> List.choose (fun (name, entries) ->
+                            match tableText (fst (List.head entries)) with
+                            | None -> None
+                            | Some tableDdl ->
+                                let policies =
+                                    entries
+                                    |> List.choose (fun (table, policy) ->
+                                        declared.PolicyDeclarations
+                                        |> List.tryPick (fun ((t, n), text) ->
+                                            if QualifiedName.display t = QualifiedName.display table
+                                               && Identifier.folded n = Identifier.folded policy.Name then
+                                                Some(policy.Name.Text, text)
+                                            else
+                                                None))
+
+                                if List.isEmpty policies then None else Some(name, tableDdl, policies))
+
+                    let rendered =
+                        match ShadowNormalisation.normalisePolicies connectionString byTable with
+                        | Ok normalised -> normalised
+                        | Microsoft.FSharp.Core.Error message ->
+                            if not (List.isEmpty byTable) then
+                                eprintfn "warning: could not normalise declared policies (%s)." message
+                                eprintfn "         Policy expressions will be reported as not-compared."
+
+                            []
+
+                    // A policy the server did not render keeps its placeholder,
+                    // so the diff compares everything else about it and says
+                    // nothing about the expression — rather than claiming the
+                    // expression matches, or that it differs.
+                    declared.Policies
+                    |> List.map (fun (table, policy) ->
+                        match
+                            rendered
+                            |> List.tryFind (fun n ->
+                                n.Table = QualifiedName.display table && n.Policy = policy.Name.Text)
+                        with
+                        | Some n -> table, { policy with Using = n.Using; WithCheck = n.WithCheck }
+                        | None -> table, policy)
+
+                // Declared reference rows, resolved against the live tables.
+                //
+                // Both sides come back rendered by the SERVER, through the real
+                // column types, so `1.250` in a file and `1.25` in a
+                // `numeric(12,2)` column are recognised as the same value
+                // rather than reported as a difference forever. Everything
+                // happens in a transaction that is rolled back.
+                let resolvedData, dataFailures =
+                    let declaredData =
+                        declared.Data
+                        |> List.map (fun d ->
+                            QualifiedName.display d.Table,
+                            d.Columns |> List.map (fun c -> c.Text),
+                            d.Rows,
+                            // Only needed when the table does not exist yet, so
+                            // the rows and the table that holds them can arrive
+                            // in one plan.
+                            declared.Declarations
+                            |> List.tryPick (fun (name, text) ->
+                                if QualifiedName.display name = QualifiedName.display d.Table then Some text
+                                else None))
+
+                    match ReferenceData.resolve connectionString declaredData with
+                    | Ok (resolutions, failures) ->
+                        resolutions
+                        |> List.map (fun r ->
+                            ({ Table = r.Table
+                               Columns = r.Columns
+                               KeyColumns = r.KeyColumns
+                               Declared =
+                                 r.Declared
+                                 |> List.map (fun row ->
+                                     ({ Key = row.Key
+                                        Rendered = row.Rendered
+                                        Literals = row.Literals }: SchemaDiff.ResolvedRow))
+                               Deployed =
+                                 r.Deployed
+                                 |> List.map (fun row ->
+                                     ({ Key = row.Key
+                                        Rendered = row.Rendered
+                                        Literals = row.Literals }: SchemaDiff.ResolvedRow)) }: SchemaDiff.ResolvedData)),
+                        failures
+                        |> List.map (fun f ->
+                            ({ Table = f.Table; Reason = f.Reason }: SchemaDiff.DataFailure))
+                    | Microsoft.FSharp.Core.Error message ->
+                        // Could not resolve ANY of them. Every declared table
+                        // becomes a failure rather than an empty result: a
+                        // table Strata could not read is not a table with no
+                        // rows, and treating it as one would propose inserting
+                        // every declared row into a table that already has them.
+                        if not (List.isEmpty declared.Data) then
+                            eprintfn "warning: could not resolve declared reference rows (%s)." message
+
+                        [],
+                        declared.Data
+                        |> List.map (fun d ->
+                            ({ Table = QualifiedName.display d.Table
+                               Reason = message }: SchemaDiff.DataFailure))
+
+                for failure in dataFailures do
+                    eprintfn "warning: %s: %s" failure.Table failure.Reason
+
+                // Rename intent, read from the raw file text: libpg_query
+                // discards comments, so there is nothing to read in the tree.
+                let renames =
+                    declared.Declarations
+                    |> List.map (fun (name, text) ->
+                        let annotations = RenameAnnotations.read text
+
+                        let qualify (raw: string) =
+                            match raw.Split('.') with
+                            | [| schema; object' |] ->
+                                QualifiedName.qualified
+                                    (Identifier.unquoted (schema.Trim '"'))
+                                    (Identifier.unquoted (object'.Trim '"'))
+                            | _ ->
+                                // An unqualified old name means the same schema
+                                // the object is declared in. Reaching across
+                                // schemas has to be spelled out.
+                                match name.Schema with
+                                | Some schema ->
+                                    QualifiedName.qualified schema (Identifier.unquoted (raw.Trim '"'))
+                                | None -> QualifiedName.unqualified (Identifier.unquoted (raw.Trim '"'))
+
+                        ({ Object = name
+                           RenamedFrom = annotations.Object |> Option.map qualify
+                           Columns = annotations.Columns }: SchemaDiff.DeclaredRename))
+                    |> List.filter (fun r -> r.RenamedFrom.IsSome || not (List.isEmpty r.Columns))
+
+                for r in renames do
+                    match r.RenamedFrom with
+                    | Some from ->
+                        eprintfn
+                            "note: %s declares a rename from %s"
+                            (QualifiedName.display r.Object)
+                            (QualifiedName.display from)
+                    | None -> ()
+
+                let diff =
+                    SchemaDiff.run
+                        { SchemaDiff.Inputs.between desired actual with
+                            AllowDrops = allowDrops
+                            ManagedSchemas = project.Manifest.ManagedSchemas
+                            Declarations = declared.Declarations
+                            TriggerDeclarations = declared.TriggerDeclarations
+                            ExistingSchemas = existingSchemas
+                            DeclaredInSchemas = DesiredState.schemasDeclaredIn declared
+                            DeclaredGrants = declared.Grants
+                            ActualGrants = actualGrants
+                            ActualRowLevelSecurity = actualRowLevelSecurity
+                            PolicyDeclarations = declared.PolicyDeclarations
+                            DeclaredPolicies = declaredPolicies
+                            DeclaredRowSecurity = declared.RowSecurity
+                            DeclaredExtensions = declared.Extensions
+                            ActualExtensions = actualExtensions
+                            Data = resolvedData
+                            DataFailures = dataFailures
+                            NormalisedViews = normalisedViews
+                            NormalisedTables = normalisedTables
+                            Renames = renames }
+                let gate = DeploymentGate.run graph scope diff.Changes
+
+                if List.contains "--json" args then
+                    printfn "%s" (SchemaDiff.toJson diff gate)
+                else
+                    printfn "%s" (SchemaDiff.toText diff gate)
+
+                // An empty change list means two different things depending on
+                // where it came from, and the gate cannot tell them apart.
+                //
+                // From a parsed migration script it means "Strata recognised
+                // nothing in what you gave it", which the gate rightly treats
+                // as requires-approval. From a DIFF it means the database
+                // already matches desired state — convergence, which is the
+                // success case a declarative tool exists to reach. Reporting
+                // the second as requires-approval would make every idempotent
+                // re-run look like a problem.
+                let converged = List.isEmpty diff.Changes
+
+                if converged then
+                    printfn ""
+                    printfn "Database already matches desired state; nothing to apply."
+
+                if not wantsApply then
+                    if converged then 0 else DeploymentGate.Verdict.exitCode gate.Verdict
+                elif converged then
+                    0
+                else
+
+                // Everything below is the only irreversible thing Strata does,
+                // so each refusal is separate and each says which one fired.
+                let unwritable =
+                    diff.Statements |> List.filter (fun s -> s.Sql.IsNone)
+
+                let approved = List.contains "--approve" args
+
+                // `--approve` answers requires-approval, which is precisely the
+                // question the gate asks a human. It never answers a BLOCK:
+                // that verdict means Strata found the breakage, not that it
+                // could not tell, and a flag that overrode both would make the
+                // three verdicts two.
+                let gateSatisfied =
+                    match gate.Verdict with
+                    | DeploymentGate.Allow -> true
+                    | DeploymentGate.RequiresApproval -> approved
+                    | DeploymentGate.Block -> false
+
+                if not gateSatisfied then
+                    eprintfn ""
+                    eprintfn "REFUSED: the gate did not allow this plan (%s)." (DeploymentGate.Verdict.tag gate.Verdict)
+
+                    match gate.Verdict with
+                    | DeploymentGate.RequiresApproval ->
+                        eprintfn "         Nothing was executed. Address the findings above, or pass --approve"
+                        eprintfn "         to record that a human accepted them."
+                    | DeploymentGate.Block ->
+                        // Saying this explicitly matters: someone who just
+                        // learned about --approve will reach for it here, and
+                        // the answer is that it does not apply.
+                        eprintfn "         Nothing was executed. A block is known breakage, not a judgement"
+                        eprintfn "         call, and --approve does not override it. Fix what the findings name."
+                    | DeploymentGate.Allow -> ()
+
+                    DeploymentGate.Verdict.exitCode gate.Verdict
+
+                elif not (List.isEmpty unwritable) then
+                    // Running the rest would leave the database matching neither
+                    // the desired state nor the state the plan was computed from.
+                    eprintfn ""
+                    eprintfn "REFUSED: %d change(s) were classified but cannot be written as DDL:" (List.length unwritable)
+
+                    for s in unwritable do
+                        eprintfn "         - %s" (Strata.Analysis.ProposedChange.Change.tag s.Change)
+
+                    eprintfn "         Applying the remainder would leave the database matching neither side."
+                    2
+
+                elif not (List.contains "--confirm" args) then
+                    printfn ""
+                    printfn "Dry run only. Re-run with --confirm to execute these %d statement(s)." (List.length diff.Changes)
+                    2
+
+                else
+
+                // The plan was computed against a snapshot. If the database has
+                // moved since, the plan's assumptions are already falsified —
+                // so it is re-fingerprinted immediately before executing and
+                // compared with the value taken before planning.
+                match Execution.fingerprint connectionString with
+                | Microsoft.FSharp.Core.Error message ->
+                    eprintfn "REFUSED: could not fingerprint the database before applying: %s" message
+                    2
+                | Ok afterPlanning when afterPlanning <> fingerprintBeforePlanning ->
+                    eprintfn ""
+                    eprintfn "REFUSED: the database schema changed while this plan was being computed."
+                    eprintfn "         The plan was built against a state that no longer exists. Re-run."
+                    2
+                | Ok _ ->
+                    // An approval nobody can see afterwards is not a decision
+                    // anyone can review. Each finding the human accepted is
+                    // restated here, in the run's own output, before it runs.
+                    if approved && gate.Verdict = DeploymentGate.RequiresApproval then
+                        printfn ""
+                        printfn "APPROVED by --approve:"
+
+                        for f in gate.Findings do
+                            if f.Verdict = DeploymentGate.RequiresApproval then
+                                printfn "  %s" f.Detected
+
+                    let statements = diff.Statements |> List.choose (fun s -> s.Sql)
+                    let result = Execution.apply connectionString statements
+
+                    printfn ""
+
+                    for outcome in result.Outcomes do
+                        match outcome with
+                        | Execution.Executed sql -> printfn "  ok      %s" (sql.Replace("\n", " "))
+                        | Execution.Failed (sql, message) ->
+                            printfn "  FAILED  %s" (sql.Replace("\n", " "))
+                            printfn "          %s" message
+                        | Execution.Skipped sql ->
+                            printfn "  skipped %s" (sql.Replace("\n", " "))
+
+                    printfn ""
+
+                    if result.RolledBack then
+                        printfn "ROLLED BACK. The database is unchanged; no statement took effect."
+                        1
+                    else
+                        printfn "Applied %d statement(s)." (List.length statements)
+                        0
+        with ex ->
+            eprintfn "error: %s" ex.Message
+            2
+    else
+
+    match validateFile with
+    | Some path when not (IO.File.Exists path) ->
+        eprintfn "error: file not found: %s" path
+        2
+    | Some path ->
+        try
+            let snapshot = CatalogIntrospection.introspect connectionString
+
+            let searchPath =
+                match CatalogIntrospection.readSearchPath connectionString with
+                | Ok p -> p
+                | Error _ -> []
+
+            let parser = PgParserAdapter.PostgresParser() :> Strata.Analysis.DialectPort.IDialectParser
+            let report = Validation.validate parser snapshot searchPath (IO.File.ReadAllText path)
+
+            if List.contains "--json" args then
+                printfn "%s" (Validation.toJson path report)
+            else
+                printfn "%s" (Validation.toText path report)
+
+            Validation.Report.exitCode report
+        with ex ->
+            eprintfn "error: %s" ex.Message
+            2
+
+    | None ->
 
     match gateFile with
     | Some path when not (IO.File.Exists path) ->

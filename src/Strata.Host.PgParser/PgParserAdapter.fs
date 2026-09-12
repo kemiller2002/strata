@@ -3,6 +3,7 @@ namespace Strata.Host.PgParser
 open System
 open PgSqlParser
 open Strata.Semantic.Identity
+open Strata.Semantic.Schema
 open Strata.Analysis.StatementReferences
 open Strata.Analysis.DialectPort
 
@@ -14,9 +15,24 @@ open Strata.Analysis.DialectPort
 /// Everything protobuf-shaped stops here. The walk below is the only code in
 /// Strata that knows what a `RangeVar` or `ColumnRef` is.
 ///
-/// The role assignment in `collectRelations` is the correctness-critical part:
+/// The role assignment in `relationsOf` is the correctness-critical part:
 /// it is what lets Tier 2 tell a CTE name from a table reference, which
 /// EV-STRATA-2026-B9C4 showed a naive walk cannot do.
+///
+/// ## One traversal, not six
+///
+/// The tree is walked exactly once. Reflective descent over the protobuf
+/// message graph costs about 2.6 us per node and is the dominant cost of
+/// extraction -- far above parsing itself, which is roughly 7% of the total.
+/// An earlier version of this module ran six independent `descend` passes
+/// (CTE names, relations, columns, join predicates, unmodelled shapes,
+/// dynamic SQL), paying that reflective cost six times over for six
+/// accumulators that are all functions of the same node stream.
+///
+/// `foldTree` threads one immutable `Gathered` state through a single visit.
+/// Everything that is a pure field read on the statement root -- shape, ALTER
+/// actions, INSERT/UPDATE target columns, DROP targets, WHERE presence --
+/// stays outside the walk, because none of it needs a traversal at all.
 module PgParserAdapter =
 
     /// Quoting is not recoverable from the parse tree: libpg_query normalises
@@ -37,9 +53,52 @@ module PgParserAdapter =
         else
             QualifiedName.qualified (identifierOf schema) (identifierOf name)
 
-    /// Generic descent over the protobuf message tree.
-    let rec private descend (msg: Google.Protobuf.IMessage) (visit: Google.Protobuf.IMessage -> unit) =
-        visit msg
+    /// A relation mention as it comes off the tree, before the CTE set is known.
+    ///
+    /// Role assignment needs the complete set of WITH bindings, which is only
+    /// final once the whole statement has been walked. Keeping the raw shape
+    /// here is what lets the walk run once: gather first, decide afterwards.
+    type private RawRelation =
+        { Schema: string
+          Relname: string
+          Alias: Identifier option
+          IsTemporary: bool }
+
+    /// Everything the single traversal accumulates.
+    ///
+    /// Lists are built in reverse and flipped once at the end, so each matched
+    /// node costs O(1) rather than O(n). Nodes that match nothing -- the large
+    /// majority -- return the state unchanged and allocate nothing.
+    type private Gathered =
+        { Ctes: string list
+          Relations: RawRelation list
+          Columns: ColumnMention list
+          JoinPredicates: JoinPredicate list
+          UnmodelledShapes: string list
+          ContainsDynamicSql: bool }
+
+    module private Gathered =
+
+        let empty =
+            { Ctes = []
+              Relations = []
+              Columns = []
+              JoinPredicates = []
+              UnmodelledShapes = []
+              ContainsDynamicSql = false }
+
+    /// Generic fold over the protobuf message tree.
+    ///
+    /// `visit` is pure: it takes a state and a node and returns the next state.
+    /// The single mutable local is the accumulator threaded across the child
+    /// loop; making it a `Seq.fold` instead would allocate an enumerator per
+    /// field on the hottest path in the system for no behavioural gain.
+    let rec private foldTree
+        (visit: 'State -> Google.Protobuf.IMessage -> 'State)
+        (state: 'State)
+        (msg: Google.Protobuf.IMessage)
+        : 'State =
+        let mutable acc = visit state msg
 
         for field in msg.Descriptor.Fields.InFieldNumberOrder() do
             match field.IsRepeated, field.FieldType with
@@ -48,14 +107,16 @@ module PgParserAdapter =
                 | :? System.Collections.IEnumerable as items ->
                     for item in items do
                         match item with
-                        | :? Google.Protobuf.IMessage as m -> descend m visit
+                        | :? Google.Protobuf.IMessage as m -> acc <- foldTree visit acc m
                         | _ -> ()
                 | _ -> ()
             | false, Google.Protobuf.Reflection.FieldType.Message ->
                 match field.Accessor.GetValue msg with
-                | :? Google.Protobuf.IMessage as m when not (isNull (box m)) -> descend m visit
+                | :? Google.Protobuf.IMessage as m when not (isNull (box m)) -> acc <- foldTree visit acc m
                 | _ -> ()
             | _ -> ()
+
+        acc
 
     /// Relations named by a DROP statement.
     ///
@@ -86,121 +147,253 @@ module PgParserAdapter =
                     | _ -> None)
             |> List.ofSeq
 
-    /// Names bound by WITH clauses anywhere in the statement.
+    /// A `ColumnRef`'s name parts, for join-predicate matching.
+    let private columnParts (node: Node) =
+        if isNull (box node) || isNull (box node.ColumnRef) then None
+        else
+            let names =
+                node.ColumnRef.Fields
+                |> Seq.choose (fun f ->
+                    if not (isNull (box f.String)) && not (String.IsNullOrEmpty f.String.Sval) then
+                        Some f.String.Sval
+                    else
+                        None)
+                |> List.ofSeq
+
+            match names with
+            | [ column ] -> Some(None, identifierOf column)
+            | qualifier :: rest when not rest.IsEmpty ->
+                Some(Some(identifierOf qualifier), identifierOf (List.last rest))
+            | _ -> None
+
+    let private isColumnRef (node: Node) =
+        not (isNull (box node)) && not (isNull (box node.ColumnRef))
+
+    /// The operator symbol an `A_Expr` names.
     ///
-    /// Collected separately and up front, because a CTE defined in a WITH clause
-    /// shadows a table of the same name in the statement body, and the body's
-    /// RangeVar carries nothing to distinguish it.
-    let private cteNames (stmt: Google.Protobuf.IMessage) =
-        let names = ResizeArray<string>()
+    /// libpg_query reports the operator as a NAME PATH, not a string: `=` is
+    /// `["="]`, but `OPERATOR(pg_catalog.=)` is `["pg_catalog"; "="]`. The
+    /// symbol is the LAST element; anything before it is the schema.
+    ///
+    /// Reading the first element instead is what made a schema-qualified
+    /// equality report itself as an unmodelled "predicate with operator
+    /// 'pg_catalog'" while the join path — which scanned every element for
+    /// `=` — correctly recorded it as a join. The two paths disagreed about
+    /// the same node, so they now share this one reader.
+    let private operatorSymbol (expr: A_Expr) =
+        expr.Name
+        |> Seq.choose (fun n ->
+            if not (isNull (box n.String)) && not (String.IsNullOrEmpty n.String.Sval) then
+                Some n.String.Sval
+            else
+                None)
+        |> Seq.tryLast
 
-        descend stmt (fun m ->
-            match m with
-            | :? CommonTableExpr as cte when not (String.IsNullOrEmpty cte.Ctename) -> names.Add cte.Ctename
-            | _ -> ())
+    let private columnMentionOf (cr: ColumnRef) =
+        let parts =
+            cr.Fields
+            |> Seq.map (fun node ->
+                if not (isNull (box node.String)) && not (String.IsNullOrEmpty node.String.Sval) then
+                    Choice1Of2 node.String.Sval
+                else
+                    Choice2Of2())
+            |> List.ofSeq
 
-        set names
+        let names = parts |> List.choose (function Choice1Of2 s -> Some s | Choice2Of2 _ -> None)
+        let hasStar = parts |> List.exists (function Choice2Of2 _ -> true | Choice1Of2 _ -> false)
+
+        match names, hasStar with
+        | [], true ->
+            { Qualifier = None; Column = None; IsWildcard = true; QueryLevel = 0 }
+        | [ qualifier ], true ->
+            // `t.*` — qualified wildcard.
+            { Qualifier = Some(identifierOf qualifier)
+              Column = None
+              IsWildcard = true
+              QueryLevel = 0 }
+        | [ column ], false ->
+            { Qualifier = None
+              Column = Some(identifierOf column)
+              IsWildcard = false
+              QueryLevel = 0 }
+        | qualifier :: rest, false when not rest.IsEmpty ->
+            { Qualifier = Some(identifierOf qualifier)
+              Column = Some(identifierOf (List.last rest))
+              IsWildcard = false
+              QueryLevel = 0 }
+        | _ ->
+            { Qualifier = None; Column = None; IsWildcard = hasStar; QueryLevel = 0 }
+
+    /// Join predicates contributed by one `A_Expr`.
+    ///
+    /// Equality predicates between two column references. This deliberately
+    /// catches both `JOIN ... ON a.x = b.y` and `WHERE a.x = b.y`, since the
+    /// latter is a join in older SQL style.
+    ///
+    /// A comparison against a literal or parameter is NOT a join predicate and
+    /// is skipped: only column-to-column equality is relationship evidence.
+    let private joinPredicateOf (expr: A_Expr) =
+        if expr.Kind <> A_Expr_Kind.AexprOp then None
+        else
+            // A schema-qualified operator such as `OPERATOR(pg_catalog.=)` is
+            // still equality: the symbol is the last name element.
+            if operatorSymbol expr <> Some "=" then None
+            else
+                match columnParts expr.Lexpr, columnParts expr.Rexpr with
+                | Some (leftQualifier, leftColumn), Some (rightQualifier, rightColumn) ->
+                    Some
+                        { LeftQualifier = leftQualifier
+                          LeftColumn = leftColumn
+                          RightQualifier = rightQualifier
+                          RightColumn = rightColumn
+                          QueryLevel = 0 }
+                | _ -> None
+
+    /// Predicates that relate two columns but which Strata does not model as
+    /// join evidence.
+    ///
+    /// Join detection above is equality-only. Without this, a corpus written
+    /// with range joins or `IN (SELECT ...)` yields FEWER relationships with no
+    /// indication anything was missed — making "no relationship found"
+    /// indistinguishable from "that shape is not analysed", which is exactly
+    /// the collapse ER-008 forbids.
+    ///
+    /// These are reported as unmodelled constructs so they become explicit
+    /// analysis gaps rather than silent omissions.
+    let private unmodelledShapeOf (expr: A_Expr) =
+        let operatorName = operatorSymbol expr
+
+        match expr.Kind with
+        | A_Expr_Kind.AexprOp ->
+            // A non-equality operator relating two columns is a range
+            // join. Real relationship evidence Strata does not model.
+            if isColumnRef expr.Lexpr && isColumnRef expr.Rexpr then
+                match operatorName with
+                | Some "=" -> None
+                | Some op -> Some(sprintf "column-to-column predicate with operator '%s' is not modelled as join evidence" op)
+                | None -> Some "column-to-column predicate with an unnamed operator is not modelled as join evidence"
+            else None
+        | A_Expr_Kind.AexprBetween
+        | A_Expr_Kind.AexprNotBetween
+        | A_Expr_Kind.AexprBetweenSym
+        | A_Expr_Kind.AexprNotBetweenSym ->
+            if isColumnRef expr.Lexpr then Some "BETWEEN predicate is not modelled as join evidence"
+            else None
+        | A_Expr_Kind.AexprIn ->
+            if isColumnRef expr.Lexpr then Some "IN predicate is not modelled as join evidence"
+            else None
+        | _ -> None
+
+    /// The single visit.
+    ///
+    /// Every accumulator that used to own a traversal is a branch here. The
+    /// `A_Expr` case feeds two of them, which is why they share one type test
+    /// rather than two walks.
+    let private gather (acc: Gathered) (m: Google.Protobuf.IMessage) : Gathered =
+        match m with
+        | :? CommonTableExpr as cte when not (String.IsNullOrEmpty cte.Ctename) ->
+            { acc with Ctes = cte.Ctename :: acc.Ctes }
+
+        | :? RangeVar as rv when not (String.IsNullOrEmpty rv.Relname) ->
+            let alias =
+                if isNull (box rv.Alias) || String.IsNullOrEmpty rv.Alias.Aliasname then None
+                else Some(identifierOf rv.Alias.Aliasname)
+
+            // relpersistence 't' marks a temporary relation. Distinguishing it
+            // here keeps a temp table from being treated as a managed object.
+            let raw =
+                { Schema = rv.Schemaname
+                  Relname = rv.Relname
+                  Alias = alias
+                  IsTemporary = rv.Relpersistence = "t" }
+
+            { acc with Relations = raw :: acc.Relations }
+
+        | :? ColumnRef as cr ->
+            { acc with Columns = columnMentionOf cr :: acc.Columns }
+
+        | :? A_Expr as expr ->
+            let withJoin =
+                match joinPredicateOf expr with
+                | Some predicate -> { acc with JoinPredicates = predicate :: acc.JoinPredicates }
+                | None -> acc
+
+            match unmodelledShapeOf expr with
+            | Some shape -> { withJoin with UnmodelledShapes = shape :: withJoin.UnmodelledShapes }
+            | None -> withJoin
+
+        | :? SubLink as sublink ->
+            // `x IN (SELECT ...)`, `EXISTS (SELECT ...)` and friends relate
+            // the outer query to an inner one. Strata extracts the inner
+            // relations as references but does not derive a relationship.
+            let shape =
+                match sublink.SubLinkType with
+                | SubLinkType.AnySublink -> Some "IN (SELECT ...) subquery is not modelled as join evidence"
+                | SubLinkType.ExistsSublink -> Some "EXISTS (SELECT ...) subquery is not modelled as join evidence"
+                | SubLinkType.AllSublink -> Some "ALL (SELECT ...) subquery is not modelled as join evidence"
+                | _ -> None
+
+            match shape with
+            | Some s -> { acc with UnmodelledShapes = s :: acc.UnmodelledShapes }
+            | None -> acc
+
+        | :? ExecuteStmt -> { acc with ContainsDynamicSql = true }
+
+        | _ -> acc
 
     /// Relations mentioned, each tagged with the role that decides its meaning.
-    let private collectRelations (stmt: Node) =
-        let ctes = cteNames stmt
-        let mentions = ResizeArray<RelationMention>()
+    ///
+    /// Roles are assigned here rather than during the walk because a CTE
+    /// defined in a WITH clause shadows a table of the same name in the
+    /// statement body, and the body's `RangeVar` carries nothing to
+    /// distinguish it — so the decision needs the complete set of WITH
+    /// bindings, which only exists once the walk is done.
+    let private relationsOf (stmt: Node) (gathered: Gathered) =
+        let ctes = Set.ofList gathered.Ctes
 
         // CTE definition sites, so Tier 2 can build bindings from them.
-        for name in ctes do
-            mentions.Add
+        let definitions =
+            ctes
+            |> Seq.map (fun name ->
                 { Name = QualifiedName.unqualified (identifierOf name)
                   Role = CommonTableExpressionDefinition
                   Alias = None
-                  QueryLevel = 0 }
+                  QueryLevel = 0 })
+            |> List.ofSeq
 
-        descend stmt (fun m ->
-            match m with
-            | :? RangeVar as rv when not (String.IsNullOrEmpty rv.Relname) ->
-                let alias =
-                    if isNull (box rv.Alias) || String.IsNullOrEmpty rv.Alias.Aliasname then None
-                    else Some(identifierOf rv.Alias.Aliasname)
-
-                // relpersistence 't' marks a temporary relation. Distinguishing it
-                // here keeps a temp table from being treated as a managed object.
-                let isTemporary = rv.Relpersistence = "t"
-
+        let references =
+            gathered.Relations
+            |> List.rev
+            |> List.map (fun raw ->
                 let role =
-                    if isTemporary then TemporaryRelationDefinition
-                    elif String.IsNullOrEmpty rv.Schemaname && ctes.Contains rv.Relname then
+                    if raw.IsTemporary then TemporaryRelationDefinition
+                    elif String.IsNullOrEmpty raw.Schema && ctes.Contains raw.Relname then
                         // A bare name matching a WITH binding. Reported as a
                         // reference; Tier 2's scope chain resolves it to the CTE
                         // rather than to a table. This is the RK-001 case.
                         RelationReference
                     else RelationReference
 
-                mentions.Add
-                    { Name = qualifiedNameOf rv.Schemaname rv.Relname
-                      Role = role
-                      Alias = alias
-                      QueryLevel = 0 }
-            | _ -> ())
+                { Name = qualifiedNameOf raw.Schema raw.Relname
+                  Role = role
+                  Alias = raw.Alias
+                  QueryLevel = 0 })
 
         // DROP targets are not RangeVar nodes and must be added explicitly.
-        for name in dropTargets stmt do
-            mentions.Add
+        let drops =
+            dropTargets stmt
+            |> List.map (fun name ->
                 { Name = name
                   Role = RelationReference
                   Alias = None
-                  QueryLevel = 0 }
+                  QueryLevel = 0 })
 
-        List.ofSeq mentions
-
-    let private collectColumns (stmt: Google.Protobuf.IMessage) =
-        let mentions = ResizeArray<ColumnMention>()
-
-        descend stmt (fun m ->
-            match m with
-            | :? ColumnRef as cr ->
-                let parts =
-                    cr.Fields
-                    |> Seq.map (fun node ->
-                        if not (isNull (box node.String)) && not (String.IsNullOrEmpty node.String.Sval) then
-                            Choice1Of2 node.String.Sval
-                        else
-                            Choice2Of2())
-                    |> List.ofSeq
-
-                let names = parts |> List.choose (function Choice1Of2 s -> Some s | Choice2Of2 _ -> None)
-                let hasStar = parts |> List.exists (function Choice2Of2 _ -> true | Choice1Of2 _ -> false)
-
-                let mention =
-                    match names, hasStar with
-                    | [], true ->
-                        { Qualifier = None; Column = None; IsWildcard = true; QueryLevel = 0 }
-                    | [ qualifier ], true ->
-                        // `t.*` — qualified wildcard.
-                        { Qualifier = Some(identifierOf qualifier)
-                          Column = None
-                          IsWildcard = true
-                          QueryLevel = 0 }
-                    | [ column ], false ->
-                        { Qualifier = None
-                          Column = Some(identifierOf column)
-                          IsWildcard = false
-                          QueryLevel = 0 }
-                    | qualifier :: rest, false when not rest.IsEmpty ->
-                        { Qualifier = Some(identifierOf qualifier)
-                          Column = Some(identifierOf (List.last rest))
-                          IsWildcard = false
-                          QueryLevel = 0 }
-                    | _ ->
-                        { Qualifier = None; Column = None; IsWildcard = hasStar; QueryLevel = 0 }
-
-                mentions.Add mention
-            | _ -> ())
-
-        List.ofSeq mentions
+        definitions @ references @ drops
 
     /// Columns an INSERT or UPDATE targets.
     ///
     /// These live in `ResTarget.Name`, NOT in a `ColumnRef`, so the generic
-    /// column walk above never sees them. Without this, `UPDATE t SET c = ...`
+    /// column walk never sees them. Without this, `UPDATE t SET c = ...`
     /// contributes no dependency on `c` at all — which would make a column
     /// impact report omit every writer of the column, understating the blast
     /// radius of a drop in exactly the direction that causes damage.
@@ -283,117 +476,6 @@ module PgParserAdapter =
         | Node.NodeOneofCase.TransactionStmt -> UtilityShape "TRANSACTION"
         | other -> UnsupportedShape(string other)
 
-    /// Equality predicates between two column references.
-    ///
-    /// Walks `A_Expr` nodes whose operator is `=` and whose both sides are
-    /// `ColumnRef`. This deliberately catches both `JOIN ... ON a.x = b.y` and
-    /// `WHERE a.x = b.y`, since the latter is a join in older SQL style.
-    ///
-    /// A comparison against a literal or parameter is NOT a join predicate and
-    /// is skipped: only column-to-column equality is relationship evidence.
-    let private collectJoinPredicates (stmt: Google.Protobuf.IMessage) =
-        let predicates = ResizeArray<JoinPredicate>()
-
-        let columnParts (node: Node) =
-            if isNull (box node) || isNull (box node.ColumnRef) then None
-            else
-                let names =
-                    node.ColumnRef.Fields
-                    |> Seq.choose (fun f ->
-                        if not (isNull (box f.String)) && not (String.IsNullOrEmpty f.String.Sval) then
-                            Some f.String.Sval
-                        else
-                            None)
-                    |> List.ofSeq
-
-                match names with
-                | [ column ] -> Some(None, identifierOf column)
-                | qualifier :: rest when not rest.IsEmpty ->
-                    Some(Some(identifierOf qualifier), identifierOf (List.last rest))
-                | _ -> None
-
-        descend stmt (fun m ->
-            match m with
-            | :? A_Expr as expr when expr.Kind = A_Expr_Kind.AexprOp ->
-                let isEquality =
-                    expr.Name
-                    |> Seq.exists (fun n ->
-                        not (isNull (box n.String)) && n.String.Sval = "=")
-
-                if isEquality then
-                    match columnParts expr.Lexpr, columnParts expr.Rexpr with
-                    | Some (leftQualifier, leftColumn), Some (rightQualifier, rightColumn) ->
-                        predicates.Add
-                            { LeftQualifier = leftQualifier
-                              LeftColumn = leftColumn
-                              RightQualifier = rightQualifier
-                              RightColumn = rightColumn
-                              QueryLevel = 0 }
-                    | _ -> ()
-            | _ -> ())
-
-        List.ofSeq predicates
-
-    /// Predicates that relate two columns but which Strata does not model as
-    /// join evidence.
-    ///
-    /// Join detection above is equality-only. Without this, a corpus written
-    /// with range joins or `IN (SELECT ...)` yields FEWER relationships with no
-    /// indication anything was missed — making "no relationship found"
-    /// indistinguishable from "that shape is not analysed", which is exactly
-    /// the collapse ER-008 forbids.
-    ///
-    /// These are reported as unmodelled constructs so they become explicit
-    /// analysis gaps rather than silent omissions.
-    let private collectUnmodelledJoinShapes (stmt: Google.Protobuf.IMessage) =
-        let shapes = ResizeArray<string>()
-
-        let isColumnRef (node: Node) =
-            not (isNull (box node)) && not (isNull (box node.ColumnRef))
-
-        descend stmt (fun m ->
-            match m with
-            | :? A_Expr as expr ->
-                let operatorName =
-                    expr.Name
-                    |> Seq.tryPick (fun n ->
-                        if not (isNull (box n.String)) && not (String.IsNullOrEmpty n.String.Sval) then
-                            Some n.String.Sval
-                        else
-                            None)
-
-                match expr.Kind with
-                | A_Expr_Kind.AexprOp ->
-                    // A non-equality operator relating two columns is a range
-                    // join. Real relationship evidence Strata does not model.
-                    if isColumnRef expr.Lexpr && isColumnRef expr.Rexpr then
-                        match operatorName with
-                        | Some "=" -> ()
-                        | Some op -> shapes.Add(sprintf "column-to-column predicate with operator '%s' is not modelled as join evidence" op)
-                        | None -> shapes.Add "column-to-column predicate with an unnamed operator is not modelled as join evidence"
-                | A_Expr_Kind.AexprBetween
-                | A_Expr_Kind.AexprNotBetween
-                | A_Expr_Kind.AexprBetweenSym
-                | A_Expr_Kind.AexprNotBetweenSym ->
-                    if isColumnRef expr.Lexpr then
-                        shapes.Add "BETWEEN predicate is not modelled as join evidence"
-                | A_Expr_Kind.AexprIn ->
-                    if isColumnRef expr.Lexpr then
-                        shapes.Add "IN predicate is not modelled as join evidence"
-                | _ -> ()
-            | :? SubLink as sublink ->
-                // `x IN (SELECT ...)`, `EXISTS (SELECT ...)` and friends relate
-                // the outer query to an inner one. Strata extracts the inner
-                // relations as references but does not derive a relationship.
-                match sublink.SubLinkType with
-                | SubLinkType.AnySublink -> shapes.Add "IN (SELECT ...) subquery is not modelled as join evidence"
-                | SubLinkType.ExistsSublink -> shapes.Add "EXISTS (SELECT ...) subquery is not modelled as join evidence"
-                | SubLinkType.AllSublink -> shapes.Add "ALL (SELECT ...) subquery is not modelled as join evidence"
-                | _ -> ()
-            | _ -> ())
-
-        shapes |> Seq.distinct |> List.ofSeq
-
     /// Does this statement carry a WHERE predicate?
     ///
     /// Read from the statement node's own whereClause rather than by searching
@@ -407,16 +489,1201 @@ module PgParserAdapter =
         | Node.NodeOneofCase.DeleteStmt -> not (isNull (box stmt.DeleteStmt.WhereClause))
         | _ -> false
 
-    /// Does this statement execute dynamically constructed SQL?
-    let private containsDynamicSql (stmt: Google.Protobuf.IMessage) =
-        let mutable found = false
+    // ---- desired state ------------------------------------------------------
+    //
+    // Everything below reads what a statement DECLARES, for PR-025. The walk
+    // above reads what a statement REFERENCES. They share a grammar and
+    // nothing else: a `CREATE TABLE` mentions its own columns nowhere a
+    // `ColumnRef` walk can see them, which is why extracting five columns from
+    // a five-column table previously yielded one.
 
-        descend stmt (fun m ->
-            match m with
-            | :? ExecuteStmt -> found <- true
-            | _ -> ())
+    /// PostgreSQL's internal type names, mapped to the spelling the catalog
+    /// reports.
+    ///
+    /// The parser canonicalises `bigint` to `int8`; `format_type()`, which
+    /// introspection reads, renders the same type as `bigint`. They are the
+    /// same type spelled two ways, and a diff comparing the two spellings
+    /// reports every column of every table as changed, forever. Measured
+    /// against a live database: 5 of 7 columns differed on type alone while
+    /// every structural property matched.
+    ///
+    /// The catalog's spelling wins because it is the one a human sees in
+    /// `\d`, and because the declared side is the one Strata controls.
+    let private canonicalTypeNames =
+        dict [ "int8", "bigint"
+               "int4", "integer"
+               "int2", "smallint"
+               "float8", "double precision"
+               "float4", "real"
+               "bool", "boolean"
+               "varchar", "character varying"
+               "bpchar", "character"
+               "timestamptz", "timestamp with time zone"
+               "timestamp", "timestamp without time zone"
+               "timetz", "time with time zone"
+               "time", "time without time zone" ]
 
-        found
+    /// Integer type modifiers, in order: the `(12,2)` of `numeric(12,2)`.
+    ///
+    /// An earlier version dropped these on the stated grounds that "the catalog
+    /// side does not carry them either". That was simply wrong — introspection
+    /// reports `numeric(12,2)` — and the round-trip against a live database is
+    /// what exposed it.
+    let private typeModifiers (typeName: TypeName) =
+        if isNull (box typeName.Typmods) then []
+        else
+            typeName.Typmods
+            |> Seq.choose (fun node ->
+                if isNull (box node.AConst) || isNull (box node.AConst.Ival) then None
+                else Some(string node.AConst.Ival.Ival))
+            |> List.ofSeq
+
+    /// A type name as written, flattened from libpg_query's name path and
+    /// rendered the way the catalog renders it.
+    /// A type name with any modifier removed: `numeric(12,2)` -> `numeric`.
+    ///
+    /// Used only for a routine's ARGUMENT types. A column keeps its modifier,
+    /// because there the modifier is part of the declaration; a routine's
+    /// identity ignores it entirely.
+    let private stripTypeModifier (rendered: string) =
+        match rendered.IndexOf '(' with
+        | -1 -> rendered
+        | i ->
+            // `timestamp(3) with time zone` keeps its tail: the modifier sits
+            // inside the phrase, so only the bracketed part is dropped.
+            let closing = rendered.IndexOf(')', i)
+            if closing < 0 then rendered.Substring(0, i).Trim()
+            else (rendered.Substring(0, i) + rendered.Substring(closing + 1)).Trim()
+
+    let private typeNameOf (typeName: TypeName) =
+        if isNull (box typeName) then QualifiedName.unqualified (identifierOf "unknown")
+        else
+            let parts =
+                typeName.Names
+                |> Seq.choose (fun n ->
+                    if not (isNull (box n.String)) && not (String.IsNullOrEmpty n.String.Sval) then
+                        Some n.String.Sval
+                    else
+                        None)
+                |> List.ofSeq
+
+            let canonical (name: string) =
+                match canonicalTypeNames.TryGetValue name with
+                | true, mapped -> mapped
+                | false, _ -> name
+
+            let withModifiers (name: string) =
+                match typeModifiers typeName with
+                | [] -> name
+                | modifiers ->
+                    // `timestamp(3) with time zone` — the precision sits inside
+                    // the phrase, not after it, so a naive append is wrong for
+                    // exactly the types whose canonical spelling is a phrase.
+                    let rendered = String.concat "," modifiers
+
+                    if name.Contains " with time zone" then
+                        name.Replace(" with time zone", sprintf "(%s) with time zone" rendered)
+                    elif name.Contains " without time zone" then
+                        name.Replace(" without time zone", sprintf "(%s) without time zone" rendered)
+                    else
+                        sprintf "%s(%s)" name rendered
+
+            match parts with
+            | [ "pg_catalog"; name ] -> QualifiedName.unqualified (identifierOf (withModifiers (canonical name)))
+            | [ name ] -> QualifiedName.unqualified (identifierOf (withModifiers (canonical name)))
+            | [ schema; name ] -> qualifiedNameOf schema (withModifiers name)
+            | _ -> QualifiedName.unqualified (identifierOf "unknown")
+
+    let private constraintsOf (col: ColumnDef) =
+        if isNull (box col.Constraints) then []
+        else
+            col.Constraints
+            |> Seq.choose (fun n -> if isNull (box n.Constraint) then None else Some n.Constraint)
+            |> List.ofSeq
+
+    /// One column of a table definition.
+    ///
+    /// Nullability is NOT NULL-or-absent in the grammar, so the default is
+    /// nullable — matching PostgreSQL rather than guessing. A PRIMARY KEY
+    /// written inline implies NOT NULL, which the catalog reports and a file
+    /// therefore must too, or every primary key column would diff.
+    /// The serial pseudo-types, and what PostgreSQL actually creates.
+    ///
+    /// `serial` is not a type. `id bigserial` becomes
+    /// `id bigint NOT NULL DEFAULT nextval(...)` plus a sequence, so the
+    /// catalog reports `bigint` WITH a default while the file says `bigserial`
+    /// with none. Read literally that is two differences on a column nobody
+    /// changed — and `serial` is common enough that a diff would report
+    /// permanent churn on most real schemas.
+    ///
+    /// Found by round-tripping a created table back through the diff, the same
+    /// way the int8/bigint spelling mismatch was.
+    let private serialTypes =
+        dict [ "smallserial", "smallint"
+               "serial2", "smallint"
+               "serial", "integer"
+               "serial4", "integer"
+               "bigserial", "bigint"
+               "serial8", "bigint" ]
+
+    let private columnOf (position: int) (col: ColumnDef) =
+        let constraints = constraintsOf col
+
+        let hasKind kind =
+            constraints |> List.exists (fun c -> c.Contype = kind)
+
+        let declaredType = typeNameOf col.TypeName
+
+        let serial =
+            match declaredType.Schema with
+            | Some _ -> None
+            | None ->
+                match serialTypes.TryGetValue(Identifier.folded declaredType.Name) with
+                | true, underlying -> Some underlying
+                | false, _ -> None
+
+        let isNotNull =
+            hasKind ConstrType.ConstrNotnull
+            || hasKind ConstrType.ConstrPrimary
+            // A serial column is NOT NULL whether or not the author wrote it.
+            || serial.IsSome
+            // So is an IDENTITY column, for the same reason and by a different
+            // route: PostgreSQL rejects a NULL into one. Found by a round-trip
+            // — a table with `GENERATED BY DEFAULT AS IDENTITY` reported a
+            // nullability difference on every run and could never converge.
+            || hasKind ConstrType.ConstrIdentity
+
+        { Name = identifierOf col.Colname
+          Type =
+            { TypeName =
+                match serial with
+                | Some underlying -> QualifiedName.unqualified (identifierOf underlying)
+                | None -> declaredType
+              IsNullable = not isNotNull }
+          Position = position
+          // A serial column always has a nextval default, which the catalog
+          // reports and the file does not write.
+          // An IDENTITY column is deliberately NOT counted here, though a
+          // serial one is. The two look alike and the catalog treats them
+          // differently: a serial column really does get a `nextval` default in
+          // pg_attrdef, while an identity column's value comes from
+          // `attidentity` and it has no default at all. Claiming one produced
+          // "default present in desired state and absent in the database" on
+          // every run — caught by the round-trip immediately after the
+          // nullability fix above, in the same edit.
+          HasDefault = hasKind ConstrType.ConstrDefault || serial.IsSome
+          // A declared default is not comparable until the SERVER has rendered
+          // it: the file says DEFAULT 'open', the catalog says 'open'::text.
+          // ShadowNormalisation supplies the comparable form.
+          DefaultExpression = None
+          IsGenerated = hasKind ConstrType.ConstrGenerated
+          IsIdentity = hasKind ConstrType.ConstrIdentity }
+
+    let private keyNames (keys: Google.Protobuf.Collections.RepeatedField<Node>) =
+        if isNull (box keys) then []
+        else
+            keys
+            |> Seq.choose (fun n ->
+                if not (isNull (box n.String)) && not (String.IsNullOrEmpty n.String.Sval) then
+                    Some(identifierOf n.String.Sval)
+                else
+                    None)
+            |> List.ofSeq
+
+    /// Read a CREATE TABLE into the semantic model.
+    ///
+    /// Table-level and column-inline constraints are both collected: the same
+    /// primary key can be written either way and the catalog cannot tell which
+    /// the author chose, so a loader that read only one form would diff a table
+    /// against itself.
+    let private tableOf (stmt: CreateStmt) =
+        let elements =
+            if isNull (box stmt.TableElts) then []
+            else stmt.TableElts |> List.ofSeq
+
+        let columnDefs =
+            elements
+            |> List.choose (fun n -> if isNull (box n.ColumnDef) then None else Some n.ColumnDef)
+
+        let columns = columnDefs |> List.mapi (fun i c -> columnOf (i + 1) c)
+
+        // Constraints written at table level.
+        let tableConstraints =
+            elements
+            |> List.choose (fun n -> if isNull (box n.Constraint) then None else Some n.Constraint)
+
+        // Constraints written inline on a column, paired with that column.
+        let inlineConstraints =
+            columnDefs
+            |> List.collect (fun c -> constraintsOf c |> List.map (fun con -> identifierOf c.Colname, con))
+
+        /// The name the file gave the constraint, if it gave one.
+        ///
+        /// `None`, never a fabricated placeholder. An unnamed constraint's name
+        /// is assigned by the server at CREATE time, so inventing one here made
+        /// the declared side permanently disagree with the catalog — see
+        /// `Schema.ConstraintName`.
+        let constraintName (c: Constraint) : ConstraintName =
+            if isNull (box c) || String.IsNullOrEmpty c.Conname then None
+            else Some(identifierOf c.Conname)
+
+        // PrimaryKey and UniqueConstraint are structurally identical, so these
+        // are annotated: without it F# infers the later-declared type and the
+        // table would carry its primary key in the wrong field.
+        let primaryKey: PrimaryKey option =
+            let fromTable =
+                tableConstraints
+                |> List.tryFind (fun c -> c.Contype = ConstrType.ConstrPrimary)
+                |> Option.map (fun c ->
+                    { PrimaryKey.ConstraintName = constraintName c
+                      Columns = keyNames c.Keys })
+
+            match fromTable with
+            | Some pk -> Some pk
+            | None ->
+                inlineConstraints
+                |> List.tryFind (fun (_, c) -> c.Contype = ConstrType.ConstrPrimary)
+                |> Option.map (fun (column, c) ->
+                    { PrimaryKey.ConstraintName = constraintName c
+                      Columns = [ column ] })
+
+        let uniques: UniqueConstraint list =
+            (tableConstraints
+             |> List.filter (fun c -> c.Contype = ConstrType.ConstrUnique)
+             |> List.map (fun c ->
+                 { ConstraintName = constraintName c
+                   Columns = keyNames c.Keys }))
+            @ (inlineConstraints
+               |> List.filter (fun (_, c) -> c.Contype = ConstrType.ConstrUnique)
+               |> List.map (fun (column, c) ->
+                   { ConstraintName = constraintName c
+                     Columns = [ column ] }))
+
+        let checks =
+            (tableConstraints |> List.filter (fun c -> c.Contype = ConstrType.ConstrCheck)
+             |> List.map (fun c -> constraintName c, c))
+            @ (inlineConstraints |> List.filter (fun (_, c) -> c.Contype = ConstrType.ConstrCheck)
+               |> List.map (fun (_, c) -> constraintName c, c))
+            |> List.map (fun (name, _) ->
+                // The predicate TEXT is not recoverable from the parse tree
+                // without deparsing, and the catalog reports it already
+                // normalised. Carrying the name alone keeps a check constraint
+                // visible as an object without inventing an expression that
+                // would diff against the server's own rendering every time.
+                { ConstraintName = name; Expression = "" })
+
+        let foreignKeys =
+            (tableConstraints
+             |> List.filter (fun c -> c.Contype = ConstrType.ConstrForeign)
+             |> List.map (fun c -> None, c))
+            @ (inlineConstraints
+               |> List.filter (fun (_, c) -> c.Contype = ConstrType.ConstrForeign)
+               |> List.map (fun (column, c) -> Some column, c))
+            |> List.map (fun (inlineColumn, c) ->
+                let columns =
+                    match inlineColumn with
+                    | Some column -> [ column ]
+                    | None -> keyNames c.FkAttrs
+
+                { ConstraintName = constraintName c
+                  Columns = columns
+                  ReferencedTable =
+                    if isNull (box c.Pktable) then QualifiedName.unqualified (identifierOf "unknown")
+                    else qualifiedNameOf c.Pktable.Schemaname c.Pktable.Relname
+                  ReferencedColumns = keyNames c.PkAttrs })
+
+        { Name =
+            if isNull (box stmt.Relation) then QualifiedName.unqualified (identifierOf "unknown")
+            else qualifiedNameOf stmt.Relation.Schemaname stmt.Relation.Relname
+          Columns = columns
+          PrimaryKey = primaryKey
+          UniqueConstraints = uniques
+          CheckConstraints = checks
+          ForeignKeys = foreignKeys
+          // Indexes are separate statements in PostgreSQL, so a CREATE TABLE
+          // declares none. An empty list here means "this statement declared
+          // no index", not "this table has none".
+          Indexes = []
+          Triggers = []
+          // Everything in a project's desired state is by definition managed.
+          Scope = Managed }
+
+    /// The body and language of a `CREATE FUNCTION`, when it defines one.
+    ///
+    /// libpg_query puts both in `Options` as `DefElem` nodes: `as` carries the
+    /// body (a List of String, because `AS 'obj_file', 'link_symbol'` is legal
+    /// for C functions), `language` carries the language name.
+    ///
+    /// Only the single-element `as` form yields a body. A two-element one names
+    /// an object file and a symbol, which is not SQL and must not be handed to
+    /// a SQL parser as though it were.
+    let private routineBodyOf (stmt: Node) =
+        if stmt.NodeCase <> Node.NodeOneofCase.CreateFunctionStmt then None
+        else
+            let options =
+                if isNull (box stmt.CreateFunctionStmt.Options) then []
+                else
+                    stmt.CreateFunctionStmt.Options
+                    |> Seq.choose (fun n -> if isNull (box n.DefElem) then None else Some n.DefElem)
+                    |> List.ofSeq
+
+            let stringsOf (arg: Node) =
+                if isNull (box arg) then []
+                elif not (isNull (box arg.String)) then [ arg.String.Sval ]
+                elif not (isNull (box arg.List)) then
+                    arg.List.Items
+                    |> Seq.choose (fun i ->
+                        if not (isNull (box i.String)) then Some i.String.Sval else None)
+                    |> List.ofSeq
+                else []
+
+            let valueOf name =
+                options
+                |> List.tryFind (fun d -> d.Defname = name)
+                |> Option.map (fun d -> stringsOf d.Arg)
+
+            match valueOf "as" with
+            | Some [ body ] ->
+                let language =
+                    match valueOf "language" with
+                    | Some [ l ] -> l
+                    | _ -> "unknown"
+
+                // IN and INOUT parameters are visible as bare names inside the
+                // body. OUT parameters are too, so every named parameter is
+                // collected regardless of mode.
+                let parameters =
+                    if isNull (box stmt.CreateFunctionStmt.Parameters) then []
+                    else
+                        stmt.CreateFunctionStmt.Parameters
+                        |> Seq.choose (fun n ->
+                            if isNull (box n.FunctionParameter) then None
+                            elif String.IsNullOrEmpty n.FunctionParameter.Name then None
+                            else Some(identifierOf n.FunctionParameter.Name))
+                        |> List.ofSeq
+
+                Some
+                    { Language = language
+                      Body = body
+                      Parameters = parameters }
+            | Some _
+            | None -> None
+
+    /// A view, as its file declares it.
+    ///
+    /// `Columns` and `Definition` come back EMPTY, and neither means "none".
+    /// A view's column list is a property of the query it wraps and is only
+    /// knowable by resolving that query, which the catalog does and a file
+    /// cannot; the definition text is not recoverable from the parse tree
+    /// without deparsing, and PostgreSQL rewrites what it stores anyway
+    /// (`SELECT 1 AS x` comes back schema-qualified and reformatted), so even
+    /// a perfect deparse would not compare equal.
+    ///
+    /// The `View` record cannot express "unknown" for either field. The diff is
+    /// therefore required to compare views by PRESENCE only and to report
+    /// their definitions as not-compared — never to read these empties as
+    /// facts. `DF-STRATA-2026-B1E7` and `ER-008`.
+    let private viewOf (name: RangeVar) (isMaterialized: bool) =
+        { Name = qualifiedNameOf name.Schemaname name.Relname
+          Columns = []
+          IsMaterialized = isMaterialized
+          Definition = ""
+          Scope = Managed }
+
+    /// A routine, as its file declares it.
+    ///
+    /// Identity is name PLUS argument types: PostgreSQL allows overloads, so
+    /// `f(int)` and `f(text)` are different objects and matching on name alone
+    /// would make one look like a redefinition of the other.
+    let private routineOf (stmt: CreateFunctionStmt) =
+        let nameParts =
+            if isNull (box stmt.Funcname) then []
+            else
+                stmt.Funcname
+                |> Seq.choose (fun n ->
+                    if not (isNull (box n.String)) && not (String.IsNullOrEmpty n.String.Sval) then
+                        Some n.String.Sval
+                    else
+                        None)
+                |> List.ofSeq
+
+        let name =
+            match nameParts with
+            | [ single ] -> QualifiedName.unqualified (identifierOf single)
+            | [ schema; single ] -> qualifiedNameOf schema single
+            | _ -> QualifiedName.unqualified (identifierOf "unknown")
+
+        let parameters =
+            if isNull (box stmt.Parameters) then []
+            else
+                stmt.Parameters
+                |> Seq.choose (fun n -> if isNull (box n.FunctionParameter) then None else Some n.FunctionParameter)
+                |> List.ofSeq
+
+        // Only IN and INOUT parameters form the signature; an OUT parameter
+        // does not participate in overload resolution, so including it would
+        // give the routine an identity PostgreSQL does not recognise.
+        let argumentTypes =
+            parameters
+            |> List.filter (fun p ->
+                p.Mode = FunctionParameterMode.FuncParamDefault
+                || p.Mode = FunctionParameterMode.FuncParamIn
+                || p.Mode = FunctionParameterMode.FuncParamInout
+                || p.Mode = FunctionParameterMode.FuncParamVariadic)
+            // WITHOUT type modifiers, unlike a column type where the modifier
+            // is part of what is being declared. A modifier is not part of a
+            // routine's identity: PostgreSQL rejects `f(numeric)` as "function
+            // f already exists with same argument types" when `f(numeric(12,2))`
+            // exists, and the catalog stores the argument as plain `numeric`.
+            // Carrying `(12,2)` here made the declared signature differ from the
+            // deployed one, so the routine was proposed as a create AND its
+            // deployed twin as a removal, forever. Found by the awkward-forms
+            // corpus; verified against a live server.
+            |> List.map (fun p -> QualifiedName.display (typeNameOf p.ArgType) |> stripTypeModifier)
+
+        let language =
+            if isNull (box stmt.Options) then "unknown"
+            else
+                stmt.Options
+                |> Seq.choose (fun n -> if isNull (box n.DefElem) then None else Some n.DefElem)
+                |> Seq.tryPick (fun d ->
+                    if d.Defname = "language" && not (isNull (box d.Arg)) && not (isNull (box d.Arg.String)) then
+                        Some d.Arg.String.Sval
+                    else
+                        None)
+                |> Option.defaultValue "unknown"
+
+        // The body as the author wrote it, which is what PostgreSQL stores in
+        // prosrc for a classic AS $$...$$ routine — so the two compare
+        // directly. A two-element `AS 'file', 'symbol'` form names an object
+        // file rather than a body and yields None.
+        let body =
+            if isNull (box stmt.Options) then None
+            else
+                stmt.Options
+                |> Seq.choose (fun n -> if isNull (box n.DefElem) then None else Some n.DefElem)
+                |> Seq.tryPick (fun d ->
+                    if d.Defname <> "as" || isNull (box d.Arg) then None
+                    elif not (isNull (box d.Arg.String)) then Some d.Arg.String.Sval
+                    elif not (isNull (box d.Arg.List)) && d.Arg.List.Items.Count = 1 then
+                        let only = d.Arg.List.Items.[0]
+                        if isNull (box only.String) then None else Some only.String.Sval
+                    else None)
+
+        { Name = name
+          Kind = if stmt.IsProcedure then Procedure else Function
+          ArgumentTypes = argumentTypes
+          ReturnType =
+            if isNull (box stmt.ReturnType) then None
+            else Some(QualifiedName.display (typeNameOf stmt.ReturnType))
+          Language = language
+          Body = body
+          Scope = Managed }
+
+    /// An index, as its file declares it.
+    ///
+    /// `Predicate` is left `None` even when the statement has a WHERE clause:
+    /// the expression is not recoverable from the parse tree without
+    /// deparsing, and the catalog reports its own normalised rendering. The
+    /// diff compares name, columns and uniqueness, and discloses predicates.
+    let private indexOf (stmt: IndexStmt) =
+        let columns =
+            if isNull (box stmt.IndexParams) then []
+            else
+                stmt.IndexParams
+                |> Seq.choose (fun n ->
+                    if isNull (box n.IndexElem) || String.IsNullOrEmpty n.IndexElem.Name then None
+                    else Some(identifierOf n.IndexElem.Name))
+                |> List.ofSeq
+
+        let table =
+            if isNull (box stmt.Relation) then QualifiedName.unqualified (identifierOf "unknown")
+            else qualifiedNameOf stmt.Relation.Schemaname stmt.Relation.Relname
+
+        table,
+        { Name = identifierOf stmt.Idxname
+          Columns = columns
+          IsUnique = stmt.Unique
+          Predicate = None }
+
+    /// PostgreSQL's trigger type bitmask, from `trigger.h`.
+    ///
+    /// The same bits appear in `CreateTrigStmt.timing`/`.events` here and in
+    /// `pg_trigger.tgtype` on the catalog side, which is why a declared trigger
+    /// and a deployed one compare at all. Verified against a live server:
+    /// `BEFORE INSERT ... FOR EACH ROW` reports tgtype 7 = ROW|BEFORE|INSERT,
+    /// and `AFTER INSERT OR UPDATE OR DELETE` reports 28 = INSERT|DELETE|UPDATE.
+    [<Literal>]
+    let private TriggerBefore = 2
+
+    [<Literal>]
+    let private TriggerInstead = 64
+
+    /// Event bits, paired with the name each stands for, in bit order. The
+    /// order here IS the canonical order `Trigger.Events` promises, and the
+    /// catalog query orders by the same bits so the two always agree.
+    let private triggerEventBits = [ 4, "insert"; 8, "delete"; 16, "update"; 32, "truncate" ]
+
+    let private triggerEvents (events: int) =
+        triggerEventBits
+        |> List.choose (fun (bit, name) -> if events &&& bit <> 0 then Some name else None)
+
+    /// The last two elements of a name path, as schema and object.
+    ///
+    /// A `funcname` is a path: `touch`, `app.touch`, or in principle
+    /// `db.app.touch`. Taking the last two mirrors `operatorSymbol`, which
+    /// takes the last element of an operator's path for the same reason.
+    let private nameFromPath (parts: string list) =
+        match List.rev parts with
+        | name :: schema :: _ -> Some(QualifiedName.qualified (identifierOf schema) (identifierOf name))
+        | [ name ] -> Some(QualifiedName.unqualified (identifierOf name))
+        | [] -> None
+
+    let private stringValues (nodes: Google.Protobuf.Collections.RepeatedField<Node>) =
+        if isNull (box nodes) then []
+        else
+            nodes
+            |> Seq.choose (fun n -> if isNull (box n.String) then None else Some n.String.Sval)
+            |> List.ofSeq
+
+    /// A trigger, as its file declares it.
+    ///
+    /// `None` for a shape Strata does not model, so the caller reports it as
+    /// unmodelled rather than loading a trigger that means something else.
+    /// A policy a file declares.
+    ///
+    /// The expressions are NOT read from the parse tree. `qual` and `with_check`
+    /// are trees Strata does not deparse, and even if it did, the text would not
+    /// match the catalog: PostgreSQL adds parentheses and every implicit cast, so
+    /// a file's `tenant = 'x'` renders as `(tenant = 'x'::text)`. They are
+    /// carried as presence only here and filled in by the server, which is
+    /// exactly how a check constraint is handled.
+    ///
+    /// `polcmd` has no ROLESPEC equivalent for "no FOR clause": PostgreSQL
+    /// defaults it to ALL, and `cmd_name` is absent in that case rather than
+    /// holding "all".
+    let private policyOf (stmt: CreatePolicyStmt) : Result<QualifiedName * Policy, string> =
+        if isNull (box stmt.Table) then
+            Microsoft.FSharp.Core.Error "CREATE POLICY with no resolvable table"
+        else
+
+        let command =
+            match (if isNull stmt.CmdName then "" else stmt.CmdName.ToLowerInvariant()) with
+            // Absent, because PostgreSQL's default for a missing FOR clause is
+            // ALL and the field is simply not set.
+            | ""
+            | "all" -> Ok PolicyCommand.All
+            | "select" -> Ok PolicyCommand.Select
+            | "insert" -> Ok PolicyCommand.Insert
+            | "update" -> Ok PolicyCommand.Update
+            | "delete" -> Ok PolicyCommand.Delete
+            | other ->
+                Microsoft.FSharp.Core.Error(
+                    sprintf "CREATE POLICY ... FOR %s names a command Strata does not model" other)
+
+        let roles =
+            if isNull (box stmt.Roles) then []
+            else
+                stmt.Roles
+                |> Seq.choose (fun n ->
+                    if isNull (box n.RoleSpec) then None
+                    else
+                        match n.RoleSpec.Roletype with
+                        | RoleSpecType.RolespecPublic -> Some "PUBLIC"
+                        | RoleSpecType.RolespecCstring when not (String.IsNullOrEmpty n.RoleSpec.Rolename) ->
+                            Some n.RoleSpec.Rolename
+                        | _ -> None)
+                |> List.ofSeq
+
+        match command with
+        | Microsoft.FSharp.Core.Error e -> Microsoft.FSharp.Core.Error e
+        | Ok command ->
+            if List.isEmpty roles then
+                // No TO clause means PUBLIC, which the parser already renders as
+                // a ROLESPEC_PUBLIC entry — so an empty list here means every
+                // role it did name was CURRENT_USER or SESSION_USER, which a
+                // file cannot fix and a diff cannot compare.
+                Microsoft.FSharp.Core.Error
+                    "CREATE POLICY with no role a file can fix (CURRENT_USER and SESSION_USER are not declarable)"
+            else
+                Ok(
+                    qualifiedNameOf stmt.Table.Schemaname stmt.Table.Relname,
+                    { Name = identifierOf stmt.PolicyName
+                      Command = command
+                      IsPermissive = stmt.Permissive
+                      Roles = roles |> List.distinct |> List.sort
+                      // Presence only, from the parse tree. The server fills in
+                      // the rendered text; until it has, these say whether the
+                      // clause was written at all — which is the part that is
+                      // comparable without it.
+                      Using = if isNull (box stmt.Qual) then None else Some ""
+                      WithCheck = if isNull (box stmt.WithCheck) then None else Some "" })
+
+    /// Row-level security settings an `ALTER TABLE` declares.
+    ///
+    /// Only the four row-security subtypes are read. An `ALTER TABLE` mixing one
+    /// of them with anything else is REFUSED rather than partly read: acting on
+    /// half a statement is how a project ends up with row-level security
+    /// enabled and the column it also asked for missing.
+    let private rowSecurityOf (stmt: AlterTableStmt) : Result<(QualifiedName * RowSecuritySetting) list, string> option =
+        if isNull (box stmt.Relation) || isNull (box stmt.Cmds) then None
+        else
+
+        let table = qualifiedNameOf stmt.Relation.Schemaname stmt.Relation.Relname
+
+        let settings =
+            stmt.Cmds
+            |> Seq.map (fun n ->
+                if isNull (box n.AlterTableCmd) then None
+                else
+                    match n.AlterTableCmd.Subtype with
+                    | AlterTableType.AtEnableRowSecurity -> Some RowSecuritySetting.Enable
+                    | AlterTableType.AtDisableRowSecurity -> Some RowSecuritySetting.Disable
+                    | AlterTableType.AtForceRowSecurity -> Some RowSecuritySetting.Force
+                    | AlterTableType.AtNoForceRowSecurity -> Some RowSecuritySetting.NoForce
+                    | _ -> None)
+            |> List.ofSeq
+
+        if settings |> List.forall Option.isNone then
+            // Nothing to do with row security. Left for whatever handles other
+            // ALTER TABLE statements, which today is the unmodelled path.
+            None
+        elif settings |> List.exists Option.isNone then
+            Some(
+                Microsoft.FSharp.Core.Error
+                    "an ALTER TABLE mixing row-level security with other changes is not read as declared state: Strata would act on half the statement")
+        else
+            Some(Ok(settings |> List.choose id |> List.map (fun setting -> table, setting)))
+
+    /// An extension a file declares.
+    ///
+    /// `IF NOT EXISTS` is ignored deliberately: a desired-state file says the
+    /// extension should be present, and whether it already is is the diff's
+    /// question. Writing it or not writing it declares the same state.
+    let private extensionOf (stmt: CreateExtensionStmt) : Result<Extension, string> =
+        if String.IsNullOrEmpty stmt.Extname then
+            Microsoft.FSharp.Core.Error "CREATE EXTENSION with no resolvable name"
+        else
+
+        let option name =
+            if isNull (box stmt.Options) then
+                None
+            else
+                stmt.Options
+                |> Seq.choose (fun n -> if isNull (box n.DefElem) then None else Some n.DefElem)
+                |> Seq.tryPick (fun d ->
+                    if d.Defname = name && not (isNull (box d.Arg)) && not (isNull (box d.Arg.String)) then
+                        Some d.Arg.String.Sval
+                    else
+                        None)
+
+        // `CASCADE` installs whatever this extension requires, which is a
+        // decision about objects the file never named. Refused rather than
+        // executed quietly.
+        let cascade =
+            not (isNull (box stmt.Options))
+            && stmt.Options
+               |> Seq.exists (fun n ->
+                   not (isNull (box n.DefElem)) && n.DefElem.Defname = "cascade")
+
+        if cascade then
+            Microsoft.FSharp.Core.Error
+                "CREATE EXTENSION ... CASCADE is not read as declared state: it installs whatever the extension requires, which the file does not name"
+        else
+            Ok
+                { Name = identifierOf stmt.Extname
+                  Schema = option "schema" |> Option.map identifierOf
+                  Version = option "new_version"
+                  // Only the catalog knows. `false` here is never read: the
+                  // declared side is compared against the deployed side's flag.
+                  IsRelocatable = false }
+
+    let private triggerOf (stmt: CreateTrigStmt) : Result<QualifiedName * Trigger, string> =
+        if stmt.Isconstraint then
+            // A CONSTRAINT TRIGGER carries deferrability and a FROM relation
+            // that this model has no room for. Loading it as an ordinary
+            // trigger would make a deferred trigger compare equal to an
+            // immediate one.
+            Microsoft.FSharp.Core.Error "CREATE CONSTRAINT TRIGGER is not yet read as a desired-state declaration"
+        elif isNull (box stmt.Relation) then
+            Microsoft.FSharp.Core.Error "CREATE TRIGGER with no resolvable table"
+        else
+            match nameFromPath (stringValues stmt.Funcname) with
+            | None -> Microsoft.FSharp.Core.Error "CREATE TRIGGER with no resolvable function name"
+            | Some func ->
+                let table = qualifiedNameOf stmt.Relation.Schemaname stmt.Relation.Relname
+
+                Ok(
+                    table,
+                    { Name = identifierOf stmt.Trigname
+                      Timing =
+                        if stmt.Timing &&& TriggerInstead <> 0 then TriggerTiming.InsteadOf
+                        elif stmt.Timing &&& TriggerBefore <> 0 then TriggerTiming.Before
+                        // AFTER is the absence of both bits, not a bit of its
+                        // own: TRIGGER_TYPE_AFTER is 0.
+                        else TriggerTiming.After
+                      Events = triggerEvents stmt.Events
+                      Level = if stmt.Row then TriggerLevel.Row else TriggerLevel.Statement
+                      UpdateColumns = stringValues stmt.Columns |> List.map identifierOf
+                      Function = func
+                      Arguments = stringValues stmt.Args
+                      HasCondition = not (isNull (box stmt.WhenClause)) })
+
+    /// Rows a reference-data file declares.
+    ///
+    /// Every value must be a LITERAL. A `now()` or any other expression is
+    /// refused rather than accepted, and the reason is not fussiness: the
+    /// shadow pass would render it to a concrete value, the real row would
+    /// then hold a different concrete value, and the two would differ on every
+    /// run forever. A column whose value the file cannot fix belongs in the
+    /// table's DEFAULT, not in its data file.
+    ///
+    /// `A_Const.ValCase` is the discriminator, NOT the presence of the
+    /// `Boolval` message: PostgreSQL encodes `false` as a Boolval whose field
+    /// holds the protobuf default, so a null check reads `false` as "no value
+    /// given". Verified against the parser.
+    /// One literal, re-emitted as the SQL token that produced it.
+    ///
+    /// Not interpreted: a float keeps its exact source spelling, so `1.250`
+    /// stays `1.250` and the server decides what that means in the column it
+    /// lands in. A string is re-quoted by PostgreSQL's own rule — double the
+    /// single quotes — because the parser hands back the UNescaped value.
+    ///
+    /// The `| _ ->` case is a refusal, not a fallback. A constant kind nobody
+    /// anticipated must stop the file from loading, because the alternative is
+    /// writing a row that does not say what the author wrote.
+    let private literalOf (c: A_Const) : Result<string, string> =
+        if c.Isnull then Ok "NULL"
+        else
+            match c.ValCase with
+            | A_Const.ValOneofCase.Ival -> Ok(string c.Ival.Ival)
+            | A_Const.ValOneofCase.Fval -> Ok c.Fval.Fval
+            | A_Const.ValOneofCase.Sval -> Ok("'" + c.Sval.Sval.Replace("'", "''") + "'")
+            // `false` is encoded as a Boolval message whose field holds the
+            // protobuf default, so the CASE is the only reliable signal that a
+            // boolean was written at all. Testing the message for null reads
+            // every `false` as "no value given".
+            | A_Const.ValOneofCase.Boolval -> Ok(if c.Boolval.Boolval then "true" else "false")
+            | A_Const.ValOneofCase.Bsval -> Ok("B'" + c.Bsval.Bsval.TrimStart('b', 'B') + "'")
+            | other -> Microsoft.FSharp.Core.Error(sprintf "constant of kind %s is not re-emittable" (string other))
+
+    let private rowsOf (stmt: InsertStmt) : Result<QualifiedName * Identifier list * string list list, string> =
+        if isNull (box stmt.Relation) then
+            Microsoft.FSharp.Core.Error "INSERT with no resolvable table"
+        elif isNull (box stmt.SelectStmt) || isNull (box stmt.SelectStmt.SelectStmt) then
+            Microsoft.FSharp.Core.Error "INSERT without a VALUES list is not read as declared data"
+        else
+
+        let select = stmt.SelectStmt.SelectStmt
+
+        let columns =
+            if isNull (box stmt.Cols) then []
+            else
+                stmt.Cols
+                |> Seq.choose (fun n ->
+                    if isNull (box n.ResTarget) || String.IsNullOrEmpty n.ResTarget.Name then None
+                    else Some(identifierOf n.ResTarget.Name))
+                |> List.ofSeq
+
+        if List.isEmpty columns then
+            // INSERT INTO t VALUES (...) with no column list depends on the
+            // table's current column ORDER, which a file cannot see and a later
+            // ALTER can change underneath it.
+            Microsoft.FSharp.Core.Error "INSERT without an explicit column list is not read as declared data"
+        elif isNull (box select.ValuesLists) || select.ValuesLists.Count = 0 then
+            Microsoft.FSharp.Core.Error "INSERT without a VALUES list is not read as declared data"
+        else
+
+        let rows = select.ValuesLists |> List.ofSeq
+
+        let nonLiteral =
+            rows
+            |> List.collect (fun row ->
+                if isNull (box row.List) then []
+                else
+                    row.List.Items
+                    |> Seq.filter (fun item -> isNull (box item.AConst))
+                    |> Seq.map (fun item -> string item.NodeCase)
+                    |> List.ofSeq)
+            |> List.distinct
+
+        let wrongWidth =
+            rows
+            |> List.exists (fun row ->
+                isNull (box row.List) || row.List.Items.Count <> List.length columns)
+
+        if not (List.isEmpty nonLiteral) then
+            Microsoft.FSharp.Core.Error(
+                sprintf
+                    "declared data must be literals; found %s. A value the file cannot fix belongs in the column's DEFAULT."
+                    (String.concat ", " nonLiteral))
+        elif wrongWidth then
+            Microsoft.FSharp.Core.Error "a VALUES row does not match the column list"
+        else
+
+        let rendered =
+            rows
+            |> List.map (fun row -> row.List.Items |> Seq.map (fun item -> literalOf item.AConst) |> List.ofSeq)
+
+        match rendered |> List.collect id |> List.tryPick (function Microsoft.FSharp.Core.Error e -> Some e | Ok _ -> None) with
+        | Some reason -> Microsoft.FSharp.Core.Error reason
+        | None ->
+            Ok(
+                qualifiedNameOf stmt.Relation.Schemaname stmt.Relation.Relname,
+                columns,
+                rendered |> List.map (List.map (function Ok v -> v | Microsoft.FSharp.Core.Error _ -> "NULL")))
+
+    /// A sequence, as its file declares it.
+    ///
+    /// `CREATE SEQUENCE app.s;` carries NO options, so every value below is a
+    /// default this code has to supply — and supply exactly, or a sequence
+    /// nobody touched reports a difference forever. PostgreSQL's rules, which
+    /// the round-trip test pins to a live server rather than to this comment:
+    ///
+    ///   type       bigint, unless AS says otherwise
+    ///   increment  1
+    ///   ascending  MINVALUE 1, MAXVALUE <type max>, START = MINVALUE
+    ///   descending MINVALUE <type min>, MAXVALUE -1, START = MAXVALUE
+    ///   cache      1
+    ///   cycle      off
+    ///
+    /// The current value is not read, because it is not declared and is not
+    /// structure.
+    let private sequenceOf (stmt: CreateSeqStmt) =
+        let options =
+            if isNull (box stmt.Options) then []
+            else
+                stmt.Options
+                |> Seq.choose (fun n -> if isNull (box n.DefElem) then None else Some n.DefElem)
+                |> List.ofSeq
+
+        let option name = options |> List.tryFind (fun d -> d.Defname = name)
+
+        let intOption name =
+            option name
+            |> Option.bind (fun d ->
+                if isNull (box d.Arg) || isNull (box d.Arg.Integer) then None
+                else Some(int64 d.Arg.Integer.Ival))
+
+        let dataType =
+            option "as"
+            |> Option.bind (fun d ->
+                if isNull (box d.Arg) || isNull (box d.Arg.TypeName) then None
+                else Some(QualifiedName.display (typeNameOf d.Arg.TypeName)))
+            |> Option.defaultValue "bigint"
+
+        let typeMin, typeMax =
+            match dataType with
+            | "smallint" -> -32768L, 32767L
+            | "integer" -> -2147483648L, 2147483647L
+            | _ -> System.Int64.MinValue, System.Int64.MaxValue
+
+        let increment = intOption "increment" |> Option.defaultValue 1L
+        let ascending = increment > 0L
+
+        let minValue =
+            intOption "minvalue" |> Option.defaultValue (if ascending then 1L else typeMin)
+
+        let maxValue =
+            intOption "maxvalue" |> Option.defaultValue (if ascending then typeMax else -1L)
+
+        { Name = qualifiedNameOf stmt.Sequence.Schemaname stmt.Sequence.Relname
+          DataType = dataType
+          Start = intOption "start" |> Option.defaultValue (if ascending then minValue else maxValue)
+          Increment = increment
+          MinValue = minValue
+          MaxValue = maxValue
+          Cache = intOption "cache" |> Option.defaultValue 1L
+          Cycle =
+            // `CYCLE` is a Boolean arg, and `NO CYCLE` is the same arg holding
+            // the protobuf default — so the VALUE is what matters here, unlike
+            // a trigger's timing where only the case is reliable.
+            option "cycle"
+            |> Option.map (fun d -> not (isNull (box d.Arg)) && not (isNull (box d.Arg.Boolean)) && d.Arg.Boolean.Boolval)
+            |> Option.defaultValue false
+          Scope = Managed }
+
+    /// Every privilege `ALL` means, per object type.
+    ///
+    /// `GRANT ALL` arrives with NO privileges list at all — absence is the
+    /// encoding — so the set has to be written out here. Getting it wrong in
+    /// either direction shows up as permanent churn: too few and Strata keeps
+    /// granting, too many and it keeps revoking.
+    let private allPrivileges (objectType: ObjectType) =
+        match objectType with
+        | ObjectType.ObjectSequence -> [ "USAGE"; "SELECT"; "UPDATE" ]
+        | ObjectType.ObjectSchema -> [ "USAGE"; "CREATE" ]
+        | ObjectType.ObjectFunction
+        | ObjectType.ObjectProcedure
+        | ObjectType.ObjectRoutine -> [ "EXECUTE" ]
+        | _ -> [ "SELECT"; "INSERT"; "UPDATE"; "DELETE"; "TRUNCATE"; "REFERENCES"; "TRIGGER" ]
+
+    /// What `ALL` means on a COLUMN: four privileges, not the table's seven.
+    ///
+    /// `DELETE`, `TRUNCATE` and `TRIGGER` act on rows or on the table itself, so
+    /// there is nothing for them to mean on one column. Verified live:
+    /// `GRANT ALL (note) ON t` yields `arwx` — SELECT, INSERT, UPDATE,
+    /// REFERENCES. Using the table's list here would propose granting `DELETE`
+    /// on a column forever.
+    let private allColumnPrivileges = [ "INSERT"; "REFERENCES"; "SELECT"; "UPDATE" ]
+
+    /// A grant's object kind, spelled as SQL spells it.
+    ///
+    /// The protobuf enum name (`ObjectTablespace`, `ObjectFdw`) is an internal
+    /// detail of the parser library. A refusal a person has to act on should
+    /// name the thing they wrote, so it says `TABLESPACE` rather than leaking a
+    /// C# identifier into the output.
+    let private grantObjectKindSql (objectType: ObjectType) =
+        match objectType with
+        | ObjectType.ObjectDatabase -> "DATABASE"
+        | ObjectType.ObjectTablespace -> "TABLESPACE"
+        | ObjectType.ObjectLanguage -> "LANGUAGE"
+        | ObjectType.ObjectType -> "TYPE"
+        | ObjectType.ObjectDomain -> "DOMAIN"
+        | ObjectType.ObjectFdw -> "FOREIGN DATA WRAPPER"
+        | ObjectType.ObjectForeignServer -> "FOREIGN SERVER"
+        | ObjectType.ObjectLargeobject -> "LARGE OBJECT"
+        | ObjectType.ObjectParameterAcl -> "PARAMETER"
+        | other ->
+            // Not a fallback that pretends to know: it says plainly that the
+            // kind is one Strata has no name for, rather than inventing SQL
+            // that does not exist.
+            sprintf "an object kind Strata has no name for (%s)" (string other)
+
+    /// The routine signature a `GRANT ON FUNCTION` names.
+    ///
+    /// `Ok` carries the argument types rendered exactly as a routine's own
+    /// `ArgumentTypes` are rendered — same `typeNameOf`, same modifier
+    /// stripping — because a grant whose types are spelled differently from the
+    /// routine it is on can never be matched to that routine.
+    ///
+    /// `args_unspecified` is its own state and gets its own refusal.
+    /// `GRANT EXECUTE ON FUNCTION f TO r` carries NO argument list at all and
+    /// sets that flag; PostgreSQL then resolves it only if exactly one `f`
+    /// exists. Read without the flag it looks identical to `f()`, a
+    /// zero-argument routine — so the grant would silently land on the wrong
+    /// overload, or on a routine that is not the one meant. Which overload is
+    /// intended depends on what is deployed, so a FILE cannot say, and a
+    /// desired-state file that cannot say must not be guessed at.
+    let private grantRoutineOf (o: ObjectWithArgs) =
+        let name =
+            if isNull (box o.Objname) then []
+            else
+                o.Objname
+                |> Seq.choose (fun n ->
+                    if isNull (box n.String) || String.IsNullOrEmpty n.String.Sval then None
+                    else Some n.String.Sval)
+                |> List.ofSeq
+
+        if o.ArgsUnspecified then
+            Microsoft.FSharp.Core.Error
+                "a GRANT on a routine named without its argument types is not read as declared state: PostgreSQL resolves it against whatever is deployed, so the file does not say which overload it means"
+        else
+
+        // `objfuncargs` in preference to `objargs`: the same reason
+        // `CREATE FUNCTION` reads its parameters from there, and it carries the
+        // parameter MODE, so OUT parameters can be excluded the way they are
+        // excluded from a routine's identity.
+        let arguments =
+            if isNull (box o.Objfuncargs) then []
+            else
+                o.Objfuncargs
+                |> Seq.choose (fun n -> if isNull (box n.FunctionParameter) then None else Some n.FunctionParameter)
+                |> Seq.filter (fun fp ->
+                    fp.Mode = FunctionParameterMode.FuncParamDefault
+                    || fp.Mode = FunctionParameterMode.FuncParamIn
+                    || fp.Mode = FunctionParameterMode.FuncParamInout
+                    || fp.Mode = FunctionParameterMode.FuncParamVariadic)
+                |> Seq.map (fun fp -> QualifiedName.display (typeNameOf fp.ArgType) |> stripTypeModifier)
+                |> List.ofSeq
+
+        match name with
+        | [ schema; routine ] -> Ok(GrantTarget.Routine(qualifiedNameOf schema routine, arguments))
+        | [ routine ] -> Ok(GrantTarget.Routine(QualifiedName.unqualified (identifierOf routine), arguments))
+        | _ -> Microsoft.FSharp.Core.Error "a GRANT on a routine whose name Strata cannot resolve" 
+
+    /// Grants a file declares, one per object/grantee pair.
+    let private grantsOf (stmt: GrantStmt) : Result<Grant list, string> =
+        if not stmt.IsGrant then
+            // A desired-state file says what SHOULD hold, not what to take
+            // away. A REVOKE describes an operation, and the diff decides
+            // those — the same reason `INSERT ... ON CONFLICT` is refused.
+            Microsoft.FSharp.Core.Error
+                "REVOKE is not read as declared state: a file says which privileges should be held, and removing the others is the diff's decision"
+        elif stmt.Targtype <> GrantTargetType.AclTargetObject then
+            Microsoft.FSharp.Core.Error "only a grant on a named object is read as declared state"
+        else
+
+        // Privileges are read PER AccessPriv rather than flattened, because one
+        // statement can mix scopes: `GRANT SELECT (id), INSERT ON t` is a column
+        // grant and a table grant together, and a flat list would lose which
+        // was which. That loss is exactly how an earlier version read
+        // `GRANT SELECT (id, total) ON t` as a whole-table grant and handed out
+        // access to columns the file withheld.
+        //
+        // An AccessPriv with NO privilege name is `ALL`, and what `ALL` covers
+        // differs by scope: four privileges on a column, seven on a table.
+        let columnsOf (a: AccessPriv) =
+            if isNull (box a.Cols) then []
+            else
+                a.Cols
+                |> Seq.choose (fun c ->
+                    if isNull (box c.String) || String.IsNullOrEmpty c.String.Sval then None
+                    else Some(identifierOf c.String.Sval))
+                |> List.ofSeq
+
+        /// Privilege names paired with the columns they are restricted to.
+        /// An empty column list means the whole object.
+        let privilegeGroups : (Identifier list * string list) list =
+            if isNull (box stmt.Privileges) || stmt.Privileges.Count = 0 then
+                // No privileges list at all is `GRANT ALL ON <object>`, which is
+                // never column-scoped: there are no columns to attach it to.
+                [ [], allPrivileges stmt.Objtype ]
+            else
+                stmt.Privileges
+                |> Seq.choose (fun n -> if isNull (box n.AccessPriv) then None else Some n.AccessPriv)
+                |> Seq.map (fun a ->
+                    let columns = columnsOf a
+
+                    let names =
+                        if String.IsNullOrEmpty a.PrivName then
+                            if List.isEmpty columns then allPrivileges stmt.Objtype
+                            else allColumnPrivileges
+                        else
+                            [ a.PrivName.ToUpperInvariant() ]
+
+                    columns, names)
+                // Two clauses naming the same columns are merged, so
+                // `GRANT SELECT (id), UPDATE (id)` is one grant with two
+                // privileges rather than two grants that overwrite each other.
+                |> Seq.groupBy (fun (columns, _) -> columns |> List.map Identifier.folded)
+                |> Seq.map (fun (_, group) ->
+                    let group = List.ofSeq group
+                    fst (List.head group), group |> List.collect snd |> List.distinct |> List.sort)
+                |> List.ofSeq
+
+        let privileges = privilegeGroups |> List.collect snd |> List.distinct |> List.sort
+
+        let grantees =
+            if isNull (box stmt.Grantees) then []
+            else
+                stmt.Grantees
+                |> Seq.choose (fun n ->
+                    if isNull (box n.RoleSpec) then None
+                    else
+                        match n.RoleSpec.Roletype with
+                        | RoleSpecType.RolespecPublic -> Some "PUBLIC"
+                        | RoleSpecType.RolespecCstring when not (String.IsNullOrEmpty n.RoleSpec.Rolename) ->
+                            Some n.RoleSpec.Rolename
+                        // CURRENT_USER and SESSION_USER name whoever happens to
+                        // be connected, which a file cannot fix and a diff
+                        // cannot compare.
+                        | _ -> None)
+                |> List.ofSeq
+
+        // Each object type carries its name in a DIFFERENT node, and that is
+        // the encoding rather than an inconsistency: a relation arrives as a
+        // RangeVar, a schema as a bare String, a routine as an ObjectWithArgs.
+        // Reading only the RangeVar (which is what a previous version did) made
+        // every schema and routine grant look like a statement with no
+        // resolvable object.
+        let objects : Result<GrantTarget, string> list =
+            if isNull (box stmt.Objects) then []
+            else
+                stmt.Objects
+                |> Seq.map (fun n ->
+                    match stmt.Objtype with
+                    | ObjectType.ObjectSchema ->
+                        if isNull (box n.String) || String.IsNullOrEmpty n.String.Sval then
+                            Microsoft.FSharp.Core.Error "a GRANT ON SCHEMA whose schema name Strata cannot resolve"
+                        else
+                            Ok(GrantTarget.Schema(identifierOf n.String.Sval))
+                    | ObjectType.ObjectFunction
+                    | ObjectType.ObjectProcedure
+                    | ObjectType.ObjectRoutine ->
+                        if isNull (box n.ObjectWithArgs) then
+                            Microsoft.FSharp.Core.Error "a GRANT on a routine Strata cannot resolve"
+                        else
+                            grantRoutineOf n.ObjectWithArgs
+                    | ObjectType.ObjectTable
+                    | ObjectType.ObjectSequence ->
+                        if isNull (box n.RangeVar) then
+                            Microsoft.FSharp.Core.Error "a GRANT on a relation Strata cannot resolve"
+                        else
+                            Ok(GrantTarget.Relation(qualifiedNameOf n.RangeVar.Schemaname n.RangeVar.Relname))
+                    | other ->
+                        // A database, tablespace, language, type, foreign
+                        // server and so on. Each is a real GRANT that Strata
+                        // does not model, and naming which beats a blanket
+                        // "unresolvable object".
+                        Microsoft.FSharp.Core.Error(
+                            sprintf
+                                "GRANT on %s is not read as declared state: Strata models privileges on relations, schemas and routines"
+                                (grantObjectKindSql other)))
+                |> List.ofSeq
+
+        let objectErrors = objects |> List.choose (function Microsoft.FSharp.Core.Error e -> Some e | Ok _ -> None)
+        let targets = objects |> List.choose (function Ok t -> Some t | Microsoft.FSharp.Core.Error _ -> None)
+
+        // A column list is only meaningful on a relation. `GRANT USAGE (x) ON
+        // SCHEMA s` does not parse, but `GRANT EXECUTE (x) ON FUNCTION f` does,
+        // and there is no such thing as a column of a function.
+        let columnsOnNonRelation =
+            privilegeGroups
+            |> List.exists (fun (columns, _) ->
+                not (List.isEmpty columns)
+                && (match stmt.Objtype with
+                    | ObjectType.ObjectTable -> false
+                    | _ -> true))
+
+        if columnsOnNonRelation then
+            Microsoft.FSharp.Core.Error
+                "a GRANT naming columns on something that has no columns is not read as declared state"
+        elif stmt.GrantOption then
+            // The same shape as the column-level refusal, and it exists for the
+            // same reason. `WITH GRANT OPTION` lets the grantee pass the
+            // privilege on to anyone; the model holds the privilege and not
+            // that power, so reading this as a plain grant would have the plan
+            // say "grants SELECT to r" while r can hand SELECT to the world.
+            // The catalog side DOES read it (`aclexplode`'s `is_grantable`) and
+            // discloses it, so the two halves agree that this is a state Strata
+            // sees and does not manage.
+            Microsoft.FSharp.Core.Error
+                "a GRANT ... WITH GRANT OPTION is not read as declared state: Strata models which privileges a grantee holds, not the power to pass them on, and reading this as a plain grant would understate what the file asks for"
+        elif not (List.isEmpty objectErrors) then
+            Microsoft.FSharp.Core.Error(objectErrors |> List.distinct |> String.concat "; ")
+        elif List.isEmpty targets then
+            Microsoft.FSharp.Core.Error "GRANT with no resolvable object"
+        elif List.isEmpty grantees then
+            Microsoft.FSharp.Core.Error "GRANT with no grantee a file can fix (CURRENT_USER and SESSION_USER are not declarable)"
+        elif List.isEmpty privileges then
+            Microsoft.FSharp.Core.Error "GRANT with no recognised privilege"
+        else
+            Ok
+                [ for target in targets do
+                    for grantee in grantees do
+                        for (columns, names) in privilegeGroups do
+                            // One grant per COLUMN, matching how the ACLs are
+                            // stored: `GRANT SELECT (id, total)` writes an entry
+                            // into `id`'s attacl and another into `total`'s.
+                            let scoped =
+                                match columns, target with
+                                | [], _ -> [ target ]
+                                | cols, GrantTarget.Relation name ->
+                                    cols |> List.map (fun c -> GrantTarget.RelationColumn(name, c))
+                                // Unreachable: columns on a non-relation is
+                                // refused above. Listed rather than wildcarded
+                                // so adding a target kind has to come back here.
+                                | _, other -> [ other ]
+
+                            for t in scoped do
+                                { Target = t
+                                  Grantee = grantee
+                                  Privileges = names |> List.distinct |> List.sort
+                                  // A file that asked for `WITH GRANT OPTION`
+                                  // never reaches here: it is refused above. So
+                                  // a declared grant has nothing grantable.
+                                  Grantable = [] } ]
 
     let private errorOf (e: PgSqlParser.Error) =
         { Message = e.Message
@@ -424,20 +1691,27 @@ module PgParserAdapter =
           Context = if String.IsNullOrEmpty e.Context then None else Some e.Context }
 
     /// Extract one statement into the dialect-neutral shape.
+    ///
+    /// One traversal, then assembly from what it gathered plus the root-node
+    /// field reads that never needed a traversal.
     let extractStatement (stmt: Node) : StatementExtraction =
-        { Shape = shapeOf stmt
-          Relations = collectRelations stmt
-          Columns = collectColumns stmt @ collectTargetColumns stmt
+        let gathered = foldTree gather Gathered.empty stmt
+        let shape = shapeOf stmt
+
+        { Shape = shape
+          Relations = relationsOf stmt gathered
+          Columns = (gathered.Columns |> List.rev) @ collectTargetColumns stmt
           UnmodelledConstructs =
-            (match shapeOf stmt with
+            (match shape with
              | UnsupportedShape detail -> [ detail ]
              | SelectShape | InsertShape | UpdateShape | DeleteShape
              | DdlShape _ | UtilityShape _ -> [])
-            @ collectUnmodelledJoinShapes stmt
-          ContainsDynamicSql = containsDynamicSql stmt
-          JoinPredicates = collectJoinPredicates stmt
+            @ (gathered.UnmodelledShapes |> List.rev |> List.distinct)
+          ContainsDynamicSql = gathered.ContainsDynamicSql
+          JoinPredicates = gathered.JoinPredicates |> List.rev
           AlterActions = collectAlterActions stmt
-          HasWherePredicate = hasWhereClause stmt }
+          HasWherePredicate = hasWhereClause stmt
+          RoutineBody = routineBodyOf stmt }
 
     /// The adapter.
     type PostgresParser() =
@@ -473,6 +1747,106 @@ module PgParserAdapter =
             member _.ParseRoutineBody(body: string) =
                 let result = Parser.ParsePlpgsql body
                 if result.IsSuccess then Ok() else Microsoft.FSharp.Core.Error(errorOf result.Error)
+
+            member _.ParseObjectDefinitions(sql: string) =
+                let result = Parser.Parse(sql, ParserOptions())
+
+                if not result.IsSuccess then
+                    [ DeclarationFailed(errorOf result.Error) ]
+                else
+                    result.Value.Stmts
+                    // `collect`, not `map`: one GRANT statement declares a
+                    // grant per object/grantee pair, so an arm may yield more
+                    // than one. Every other arm yields exactly one.
+                    |> Seq.collect (fun raw ->
+                        let stmt = raw.Stmt
+
+                        match stmt.NodeCase with
+                        | Node.NodeOneofCase.CreateStmt -> [ Declared(TableObject(tableOf stmt.CreateStmt)) ]
+
+                        | Node.NodeOneofCase.ViewStmt when not (isNull (box stmt.ViewStmt.View)) ->
+                            [ Declared(ViewObject(viewOf stmt.ViewStmt.View false)) ]
+
+                        // CREATE MATERIALIZED VIEW is a CreateTableAsStmt with
+                        // an objtype of matview, not a ViewStmt.
+                        | Node.NodeOneofCase.CreateTableAsStmt when
+                            stmt.CreateTableAsStmt.Objtype = ObjectType.ObjectMatview
+                            && not (isNull (box stmt.CreateTableAsStmt.Into))
+                            && not (isNull (box stmt.CreateTableAsStmt.Into.Rel)) ->
+                            [ Declared(ViewObject(viewOf stmt.CreateTableAsStmt.Into.Rel true)) ]
+
+                        | Node.NodeOneofCase.GrantStmt ->
+                            match grantsOf stmt.GrantStmt with
+                            | Ok [] -> [ Unmodelled "GRANT declared nothing" ]
+                            | Ok grants -> grants |> List.map DeclaredGrant
+                            | Microsoft.FSharp.Core.Error detail -> [ Unmodelled detail ]
+
+                        | Node.NodeOneofCase.CreateSeqStmt when not (isNull (box stmt.CreateSeqStmt.Sequence)) ->
+                            [ Declared(SequenceObject(sequenceOf stmt.CreateSeqStmt)) ]
+
+                        | Node.NodeOneofCase.CreateFunctionStmt ->
+                            [ Declared(RoutineObject(routineOf stmt.CreateFunctionStmt)) ]
+
+                        // An unnamed index gets a server-generated name, which
+                        // a file cannot predict and a diff cannot match. It is
+                        // unmodelled rather than guessed at.
+                        | Node.NodeOneofCase.IndexStmt when not (String.IsNullOrEmpty stmt.IndexStmt.Idxname) ->
+                            let table, index = indexOf stmt.IndexStmt
+                            [ DeclaredIndex(table, index) ]
+
+                        // A trigger is always named, so there is no unnamed
+                        // case to refuse as there is for an index.
+                        // A reference table's rows. `ON CONFLICT` is refused:
+                        // it describes how to RECONCILE, which is the diff's
+                        // job, and a file carrying its own reconciliation would
+                        // mean two answers to the same question.
+                        | Node.NodeOneofCase.InsertStmt when isNull (box stmt.InsertStmt.OnConflictClause) ->
+                            match rowsOf stmt.InsertStmt with
+                            | Ok (table, columns, rows) -> [ DeclaredRows(table, columns, rows) ]
+                            | Microsoft.FSharp.Core.Error detail -> [ Unmodelled detail ]
+
+                        | Node.NodeOneofCase.InsertStmt ->
+                            [ Unmodelled
+                                "INSERT ... ON CONFLICT is not read as declared data: reconciling declared rows against deployed ones is the diff's decision, not the file's" ]
+
+                        | Node.NodeOneofCase.CreateTrigStmt ->
+                            match triggerOf stmt.CreateTrigStmt with
+                            | Ok (table, trigger) -> [ DeclaredTrigger(table, trigger) ]
+                            | Microsoft.FSharp.Core.Error detail -> [ Unmodelled detail ]
+
+                        | Node.NodeOneofCase.CreateExtensionStmt ->
+                            match extensionOf stmt.CreateExtensionStmt with
+                            | Ok extension -> [ DeclaredExtension extension ]
+                            | Microsoft.FSharp.Core.Error detail -> [ Unmodelled detail ]
+
+                        // `ALTER EXTENSION ... UPDATE TO` describes an
+                        // OPERATION, not a state. The declarative form is
+                        // `CREATE EXTENSION ... VERSION`, and letting both in
+                        // would have two files disagree about the same fact.
+                        // Same reason REVOKE is refused.
+                        | Node.NodeOneofCase.AlterExtensionStmt ->
+                            [ Unmodelled
+                                "ALTER EXTENSION is not read as declared state: a file says which version should be installed, and getting there is the diff's decision — write CREATE EXTENSION ... VERSION instead" ]
+
+                        | Node.NodeOneofCase.CreatePolicyStmt ->
+                            match policyOf stmt.CreatePolicyStmt with
+                            | Ok (table, policy) -> [ DeclaredPolicy(table, policy) ]
+                            | Microsoft.FSharp.Core.Error detail -> [ Unmodelled detail ]
+
+                        // Only the row-security subtypes. `rowSecurityOf`
+                        // returns None for every other ALTER TABLE, which then
+                        // falls through to the unmodelled path below rather than
+                        // being read as an empty declaration.
+                        | Node.NodeOneofCase.AlterTableStmt when (rowSecurityOf stmt.AlterTableStmt).IsSome ->
+                            match (rowSecurityOf stmt.AlterTableStmt).Value with
+                            | Ok settings -> settings |> List.map DeclaredRowSecurity
+                            | Microsoft.FSharp.Core.Error detail -> [ Unmodelled detail ]
+                        // Recognised, modelled nowhere yet. Saying so keeps a
+                        // view file from reading as an empty declaration, which
+                        // a diff would treat as "nothing to create" (ER-008).
+                        | other ->
+                            [ Unmodelled(sprintf "%s is not yet read as a desired-state declaration" (string other)) ])
+                    |> List.ofSeq
 
             member _.Fingerprint(sql: string) =
                 let result = Parser.Fingerprint(sql, ParserOptions())

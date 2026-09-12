@@ -1,3 +1,9 @@
+/// Shares the live database with AwkwardFormsTests, which creates and drops a
+/// scratch schema. xUnit runs distinct test classes in PARALLEL, and an F#
+/// module's tests compile to one such class — so without a shared collection
+/// that scratch schema can appear between the two reads of `introspection is
+/// deterministic across runs` and fail it for no reason at all.
+[<Xunit.Collection("live-database")>]
 module Strata.Tests.CatalogIntrospectionTests
 
 open System
@@ -30,7 +36,8 @@ type RequiresPostgresAttribute() =
         base.Skip <-
             match connectionString with
             | Some _ -> null
-            | None -> "STRATA_TEST_PG not set; live PostgreSQL integration test skipped"
+            | None ->
+                "STRATA_TEST_PG not set; live PostgreSQL integration test skipped.                  Build the fixture with scripts/test-fixture.sh and set the connection string it prints."
 
 let private snapshot = lazy (CatalogIntrospection.introspect connectionString.Value)
 
@@ -148,8 +155,18 @@ let ``completeness names categories Strata did not read`` () =
     let completeness = snapshot.Value.Completeness
 
     Assert.Equal(NotRequested, Completeness.stateOf "rls_policies" completeness)
-    Assert.Equal(NotRequested, Completeness.stateOf "triggers" completeness)
+    Assert.Equal(NotRequested, Completeness.stateOf "grants" completeness)
     Assert.Equal(Complete, Completeness.stateOf "relations" completeness)
+    // Sequences moved from "not read" to read, like triggers before them. The
+    // assertion moves with them: a category that stops being NotRequested must
+    // start being something, and a test that only checked the old value would
+    // pass just as well if the new one were never reported at all.
+    Assert.Equal(Complete, Completeness.stateOf "sequences" completeness)
+    // Triggers moved from "not read" to read. The assertion moved with it
+    // rather than being deleted: a category that stops being NotRequested must
+    // start being something, and a test that only ever checked the old value
+    // would pass just as well if the new one were never reported at all.
+    Assert.Equal(Complete, Completeness.stateOf "triggers" completeness)
 
 [<RequiresPostgres>]
 let ``a catalog-visible but unreadable object is reported, not silently dropped`` () =

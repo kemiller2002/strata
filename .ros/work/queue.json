@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 30,
+  "nextSeq": 78,
   "items": [
     {
       "id": "WI-0001",
@@ -495,6 +495,849 @@
       "updatedAt": "2026-09-11T18:33:13.000Z",
       "createdBy": "claude",
       "source": "user-request",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0030",
+      "title": "Profile and fix indexing cost: single-pass extraction and hand-written gap formatting",
+      "description": "Indexing was attributed to parser cost and the absence of a cache. Profiling shows 85% of analyse was sprintf \"%A\" building 58,578 gap-message strings per run that no code path reads, plus six redundant reflective walks of every parse tree. Replace %A with hand-written describe functions, collapse the six walks into one fold, default builds to Release, and record the measurement.",
+      "tags": [
+        "strata",
+        "performance",
+        "profiling"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T20:00:53Z",
+      "updatedAt": "2026-09-11T20:01:01Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0031",
+      "title": "Qualified operator reported as both a join and an unmodelled shape",
+      "description": "libpg_query reports an operator as a name path; OPERATOR(pg_catalog.=) is [pg_catalog; =]. The join path scanned every element for = and recorded a join; the unmodelled path took the first element and reported a gap naming operator 'pg_catalog'. Both ran, so one node was reported two contradictory ways. Share one operator-symbol reader that takes the last element.",
+      "tags": [
+        "strata",
+        "parser",
+        "correctness"
+      ],
+      "priority": "medium",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T20:20:28Z",
+      "updatedAt": "2026-09-11T20:20:28Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0032",
+      "title": "Record Q-003 decision: desired state is DACPAC-style object files",
+      "description": "The desired-state authoring source was named: one declarative file per object, DACPAC/SSDT shape, with Strata diffing files against the live database. Records DF-STRATA-2026-B1E7 and the gap analysis it exposes.",
+      "tags": [
+        "strata",
+        "desired-state",
+        "decision"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T20:23:35Z",
+      "updatedAt": "2026-09-11T20:23:43Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0033",
+      "title": "Survey the declarative schema landscape and candidate fixtures",
+      "description": "After DF-STRATA-2026-B1E7 fixed the product shape, survey what already does declarative PostgreSQL schema diffing, whether dependency-aware drop safety is novel, and which real repositories can serve as fixtures.",
+      "tags": [
+        "strata",
+        "competitive-landscape",
+        "fixtures"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T20:36:26Z",
+      "updatedAt": "2026-09-11T20:36:26Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0034",
+      "title": "Slice V: validate candidate SQL against the schema (PR-018)",
+      "description": "Validate a SQL file against a catalog snapshot. Every relation and column resolved; unresolved references reported as errors with position and exit code. The compile-time equivalent for agent-authored SQL. Tests HY-STRATA-2026-D5B8.",
+      "tags": [
+        "strata"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T21:16:16Z",
+      "updatedAt": "2026-09-11T21:16:34Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0035",
+      "title": "Slice P: strata.json project file and desired-state loader (PR-025)",
+      "description": "Read a project manifest and per-object CREATE TABLE files into a SchemaSnapshot. Requires extracting ColumnDef name/type/nullability/default plus PK, FK, unique and check constraints, none of which the adapter reads today.",
+      "tags": [
+        "strata"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T21:16:16Z",
+      "updatedAt": "2026-09-11T21:39:11Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0036",
+      "title": "Slice D: diff desired against actual with dry-run output (PR-022, PR-023)",
+      "description": "diff : desired -> actual -> Change list, fed to the existing DeploymentGate. Honours NG-006 and 1437: absence from desired state never implies delete, and objects outside managedSchemas are never dropped.",
+      "tags": [
+        "strata"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T21:16:16Z",
+      "updatedAt": "2026-09-11T21:45:17Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0037",
+      "title": "Slice X: execute a plan against the database (PR-024)",
+      "description": "Ordered DDL from the Change list, gate as precondition, fingerprint check so a plan cannot apply to a database that changed after planning, verification after execution per ER-011.",
+      "tags": [
+        "strata"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T21:16:16Z",
+      "updatedAt": "2026-09-11T22:03:04Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0038",
+      "title": "Requirements and decisions for validation and deployment capabilities",
+      "description": "Promote PR-018 to active and PR-022/023/024 out of deferred, add PR-025 for the project manifest, record DF-STRATA-2026-A4D9 (strata.json plus schema/<schema>/<type>/<name>.sql) and HY-STRATA-2026-D5B8 (validation catches what reasoning does not), and mark Q-003 answered.",
+      "tags": [
+        "strata",
+        "requirements"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T21:16:34Z",
+      "updatedAt": "2026-09-11T21:16:34Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0039",
+      "title": "Record PostgreSQL-only scope and the dialect port's known leaks",
+      "description": "Other engines are phase two. Record that the port boundary already holds (no engine packages above Tier 4) and list the three places PostgreSQL has leaked past it, so phase two is a known quantity rather than a discovery.",
+      "tags": [
+        "strata",
+        "dialect",
+        "scope"
+      ],
+      "priority": "medium",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T21:30:30Z",
+      "updatedAt": "2026-09-11T21:30:30Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0040",
+      "title": "Make the project manifest optional and require opt-in for removals",
+      "description": "Pointing at a directory is the normal case. Infer managed schemas from the directory tree rather than repeating them in a manifest. Removals become opt-in behind --allow-drops, matching SSDT, sqldef, migra and pg-schema-diff, because inferred scope plus default drops would let creating a directory imply owning a schema.",
+      "tags": [
+        "strata",
+        "project"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T21:50:22Z",
+      "updatedAt": "2026-09-11T21:50:22Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0041",
+      "title": "Validate SQL routine bodies instead of reporting them unverifiable",
+      "description": "A CREATE FUNCTION body is a string literal to the parser, so a typo inside it was invisible and the validator could only say unverifiable. Re-parse a LANGUAGE sql body as SQL and validate it against the same catalog, with the routine's parameters treated as bound names.",
+      "tags": [
+        "strata",
+        "validation"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T21:56:27Z",
+      "updatedAt": "2026-09-11T21:56:27Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0042",
+      "title": "Probe diff coverage: false clean on constraints, 96% of tables uncreatable",
+      "description": "Measure what the shipped plan and apply commands actually cover. Found: constraint and default differences are never compared, so the diff reports 'already matches desired state' while three real differences exist; and 47 of 49 tables cannot be created because the model carries that defaults and checks exist but not their text.",
+      "tags": [
+        "strata",
+        "diff",
+        "coverage"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T22:11:49Z",
+      "updatedAt": "2026-09-11T22:11:49Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0043",
+      "title": "Compare constraints and defaults; report what cannot be compared",
+      "description": "Fix the false clean found by EV-STRATA-2026-D3A8. Compare primary keys, foreign keys, uniques, check presence and default presence between tables on both sides; report check and default EXPRESSIONS as not-compared rather than implying equality.",
+      "tags": [
+        "strata",
+        "diff"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T22:15:32Z",
+      "updatedAt": "2026-09-11T22:15:32Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0044",
+      "title": "Create tables from the declaring file; canonicalise serial pseudo-types",
+      "description": "Creation reconstructed DDL from the parse tree and refused any table with a default or check, which is 96% of real tables. Carry the declaring file's verbatim text and execute it instead. Round-tripping a created table then exposed serial pseudo-types reporting permanent churn.",
+      "tags": [
+        "strata",
+        "deployment"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T22:20:31Z",
+      "updatedAt": "2026-09-11T22:20:31Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0045",
+      "title": "Views and routines as desired state; disclose uncompared indexes",
+      "description": "Load CREATE VIEW, CREATE MATERIALIZED VIEW and CREATE FUNCTION/PROCEDURE as desired state; compare them by presence with definitions disclosed as not-compared; add CreateView and CreateRoutine to the change vocabulary as additive; report secondary indexes as not compared rather than ignoring them.",
+      "tags": [
+        "strata",
+        "desired-state"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T22:45:50Z",
+      "updatedAt": "2026-09-11T22:45:50Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0046",
+      "title": "Compare view definitions by normalising declared DDL through the server",
+      "description": "A view's declared text never matches its catalog form, so view definitions could only be disclosed as not-compared and an edited view file went unnoticed. Execute the declared DDL in a rolled-back transaction, read it back through pg_get_viewdef, and compare renderings.",
+      "tags": [
+        "strata",
+        "diff"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:06:59Z",
+      "updatedAt": "2026-09-11T23:06:59Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0047",
+      "title": "Compare routine bodies directly from prosrc",
+      "description": "An edited function body went unnoticed. PostgreSQL stores a classic AS $$...$$ body verbatim in prosrc, so declared and deployed text compare directly with no shadow needed. A BEGIN ATOMIC body is stored as a tree and is disclosed instead.",
+      "tags": [
+        "strata",
+        "diff"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:11:53Z",
+      "updatedAt": "2026-09-11T23:11:53Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0048",
+      "title": "Compare default and check expressions via shadow normalisation",
+      "description": "Defaults and check constraints were disclosed as not-compared because the catalog renders them differently from the file. Round-trip the declared table through a rolled-back transaction and compare the server's rendering of both sides. Sequence defaults are excluded: a shadow table's sequence can never match.",
+      "tags": [
+        "strata",
+        "diff"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:18:26Z",
+      "updatedAt": "2026-09-11T23:18:26Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0049",
+      "title": "Rename detection via -- strata:renamed_from (Q-004)",
+      "description": "A rename and a drop-plus-add produce identical desired states, so intent is declared rather than inferred. Read the annotation from raw file text, collapse the create/drop pair into RenameTable and RenameColumn, and gate on readers of the OLD name.",
+      "tags": [
+        "strata",
+        "rename"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:25:19Z",
+      "updatedAt": "2026-09-11T23:25:19Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0050",
+      "title": "Indexes as desired state",
+      "description": "CREATE INDEX files load and attach to their table, so indexes are created, dropped and compared like any other object. A project declaring no index file says nothing about indexes and drops none; declaring any takes ownership.",
+      "tags": [
+        "strata",
+        "desired-state"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:31:08Z",
+      "updatedAt": "2026-09-11T23:31:08Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0051",
+      "title": "Triggers as desired state",
+      "description": "CREATE TRIGGER files load and attach to their table, so triggers are created, replaced, dropped and compared like any other object. A project declaring no trigger file says nothing about triggers and drops none; declaring any takes ownership. Internal triggers backing foreign keys are excluded.",
+      "tags": [
+        "strata",
+        "desired-state"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:49:24Z",
+      "updatedAt": "2026-09-11T23:49:33Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0052",
+      "title": "Table creations are not ordered by foreign key",
+      "description": "A project whose child table sorts before its parent cannot be applied at all: CREATE TABLE order_audit ... REFERENCES orders fails with 42P01 and the whole transaction rolls back. Found by a live round-trip. Order table creations by their declared foreign keys; report a cycle rather than emitting an order no execution can satisfy.",
+      "tags": [
+        "strata",
+        "diff"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:51:15Z",
+      "updatedAt": "2026-09-11T23:54:32Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0053",
+      "title": "The live test fixture is not reproducible",
+      "description": "The 17 CatalogIntrospection tests need a strata_test database containing sales.orders, hidden.secret, idx_orders_open and a non-superuser role. Nothing in the repository creates it, so on any other machine the tests skip rather than run. Commit a fixture script and name it in SDE-MAP.",
+      "tags": [
+        "strata",
+        "testing"
+      ],
+      "priority": "medium",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:51:15Z",
+      "updatedAt": "2026-09-12T00:43:49Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0054",
+      "title": "An unnamed constraint never converges",
+      "description": "CREATE TABLE t (order_id bigint REFERENCES orders (id)) makes the parser fabricate the constraint name 'foreign_key'; the catalog reports order_audit_order_id_fkey. Every re-plan proposes add-constraint plus an unclassified drop, forever. A declared constraint with no name has an UNKNOWN name, not a name of 'foreign_key' — model it as such and match it by what it does.",
+      "tags": [
+        "strata",
+        "diff"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:54:47Z",
+      "updatedAt": "2026-09-12T00:02:21Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0055",
+      "title": "apply has no way to accept a requires-approval finding",
+      "description": "The gate asks a human to decide and the CLI offers no way to answer, so any change on a table with writers can never be applied. Add --approve, which satisfies requires-approval and never a block, and record each accepted finding in the run's output.",
+      "tags": [
+        "strata",
+        "deployment"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T00:05:16Z",
+      "updatedAt": "2026-09-12T00:05:16Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0056",
+      "title": "Reference data as desired state",
+      "description": "A reference table (account_type, status codes) has rows that are part of the schema, not user data. Declare them as INSERT files under schema/<schema>/data/<table>.sql; diff them against the live table so a dry run says what will be inserted or updated. Literals are resolved through a shadow table so PostgreSQL does the type coercion. Declaring some rows does not mean owning all of them: undeclared rows are reported, never deleted.",
+      "tags": [
+        "strata",
+        "desired-state"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T00:09:47Z",
+      "updatedAt": "2026-09-12T00:09:47Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0057",
+      "title": "A declared row colliding with an undeclared deployed row is caught late",
+      "description": "The shadow table holds only declared rows, so a declared row that duplicates a unique value held by a deployed row the project does not declare is proposed, and fails when the apply rolls back. Seeding the shadow with the undeclared deployed rows first would move that to plan time. Reference tables are small by definition, so the copy is cheap.",
+      "tags": [
+        "strata",
+        "reference-data"
+      ],
+      "priority": "medium",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T00:22:49Z",
+      "updatedAt": "2026-09-12T00:41:22Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0058",
+      "title": "Constraint differences cannot be applied",
+      "description": "AddConstraint emits no DDL and a removed constraint surfaces as UnclassifiedChange, so any constraint difference refuses the whole apply. Carry the constraint kind and columns on the change, add a DropConstraint case, and emit ALTER TABLE ADD/DROP CONSTRAINT. A redefinition becomes a drop plus an add under the same name, gated as the removal it is.",
+      "tags": [
+        "strata",
+        "diff"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T00:34:52Z",
+      "updatedAt": "2026-09-12T00:34:52Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0059",
+      "title": "CI builds nothing and runs no tests",
+      "description": "The only workflow runs ROS validation. No machine but the author's has ever compiled the F# or run a test. Add a build-and-test job with a PostgreSQL service, build the fixture, run the suite, and fail the run if any test was skipped — a suite that skips the live tests passes while testing nothing.",
+      "tags": [
+        "strata",
+        "ci"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T00:46:36Z",
+      "updatedAt": "2026-09-12T00:46:36Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0060",
+      "title": "Every PR commit ran CI twice",
+      "description": "on: [pull_request, push] with push unqualified fires both triggers for a commit on a PR branch, so each push ran two full build-and-test jobs including a PostgreSQL container. Restrict push to the default branch and add concurrency cancel-in-progress. Also pass -U postgres to pg_isready: without it the health probe logged FATAL role root does not exist on every attempt.",
+      "tags": [
+        "strata",
+        "ci"
+      ],
+      "priority": "medium",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T00:54:31Z",
+      "updatedAt": "2026-09-12T00:54:41Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0061",
+      "title": "ros work complete does not update queue.md when an item is captured and completed in the same run",
+      "description": "WI-0059 shows 'ready' in .ros/work/queue.md while .ros/context/current.json records state=complete with evidence. Items captured in an earlier commit update correctly, so the completion writes the mirror only for rows it did not itself add. Both ros work validate and backlog-validate report valid, so the tool does not see it. The ros CLI is an upstream self-contained binary fetched by ./ros, so this is reported rather than patched, and queue.md is generated so it is not hand-edited.",
+      "tags": [
+        "ros",
+        "tooling"
+      ],
+      "priority": "low",
+      "status": "blocked",
+      "attachments": [],
+      "createdAt": "2026-09-12T00:54:31Z",
+      "updatedAt": "2026-09-12T00:59:08Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null,
+      "blockedReason": "The ros CLI is an upstream self-contained binary fetched by ./ros, and queue.md is generated. Reported, not fixed here."
+    },
+    {
+      "id": "WI-0062",
+      "title": "CLI help claims narrower behaviour than the code has",
+      "description": "Found by exercising every documented command and its error paths. validate exit 1 is documented as 'a reference provably does not exist' but is also returned for SQL that does not parse; apply is documented as refusing unless the gate allows every change, which --approve changed; plan returns 0 on convergence whatever the verdict, which anything gating on the exit code needs to know.",
+      "tags": [
+        "strata",
+        "docs"
+      ],
+      "priority": "low",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T00:57:53Z",
+      "updatedAt": "2026-09-12T00:57:53Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0063",
+      "title": "Record metrics for the validation and deployment increment",
+      "description": "WI-0015 and WI-0016 recorded metrics per increment. A 31-commit increment has landed with no such record.",
+      "tags": [
+        "strata",
+        "metrics"
+      ],
+      "priority": "medium",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T00:59:34Z",
+      "updatedAt": "2026-09-12T00:59:34Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0064",
+      "title": "Strata cannot create a schema",
+      "description": "The project infers managed schemas from directory names, so it knows every schema's name, and never creates one. Pointed at an empty database, strata apply fails on the first CREATE TABLE because its schema does not exist; every round-trip in development worked around it with a hand-run CREATE SCHEMA. Propose CreateSchema for a declared schema absent from the database, ordered before everything else. Never propose dropping one: a schema holds objects, and absence from desired state is not authority to remove it.",
+      "tags": [
+        "strata",
+        "desired-state"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T01:28:26Z",
+      "updatedAt": "2026-09-12T01:28:26Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0065",
+      "title": "Sequences as desired state",
+      "description": "Standalone CREATE SEQUENCE files load, and sequences are created, altered and dropped. The sequences PostgreSQL creates for serial and identity columns are excluded: serial depends with deptype 'a' and identity with 'i', and filtering on 'a' alone leaves an identity column's sequence looking droppable.",
+      "tags": [
+        "strata",
+        "desired-state"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T01:48:31Z",
+      "updatedAt": "2026-09-12T01:48:31Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0066",
+      "title": "Grants as desired state",
+      "description": "GRANT files load and privileges are granted and revoked. Ownership is per object AND per grantee: declaring a grant for a role takes ownership of that role's privileges on that object and nothing else, because a coarser rule would have a project managing app_user silently revoke the replication and monitoring roles. The owner's implicit privileges are excluded, PUBLIC is translated from grantee OID 0, and an unreadable ACL is not an absent privilege.",
+      "tags": [
+        "strata",
+        "desired-state"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T02:00:13Z",
+      "updatedAt": "2026-09-12T02:00:13Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0067",
+      "title": "A column-level GRANT was widened to the whole table",
+      "description": "GRANT SELECT (id, total) ON t parses with the same RangeVar as a table-wide grant; the columns live in AccessPriv.cols, which the adapter never read. Column ACLs live in pg_attribute.attacl, which introspection does not read either, so the catalog side showed nothing and the diff proposed the TABLE-wide grant, which the gate allowed as additive. Strata would have handed out more access than the file asked for and executed it. Refuse column-level grants until column privileges are modelled.",
+      "tags": [
+        "strata",
+        "security"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T09:19:49Z",
+      "updatedAt": "2026-09-12T09:19:49Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0068",
+      "title": "Awkward-forms corpus: the server as oracle for declaration reading",
+      "description": "Two defects shipped green in one afternoon (IDENTITY read as nullable, column-level GRANT widened to table-wide) because every round-trip used the shapes the author had in mind. Add a fixture SQL corpus per object type containing awkward forms, executed against a live PostgreSQL in CI, asserting each form is either read the way the server reads it or refused explicitly, never silently reinterpreted.",
+      "tags": [
+        "testing",
+        "postgres",
+        "er-008"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T09:32:34Z",
+      "updatedAt": "2026-09-12T09:32:41Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0069",
+      "title": "Schema and routine grants as desired state",
+      "description": "GRANT USAGE ON SCHEMA and GRANT EXECUTE ON FUNCTION were refused by the loader, which made the grants feature unusable in practice: USAGE on the schema is what makes the names inside it reachable at all. Read all three grant kinds, keyed correctly, and disclose the two privilege states Strata sees and does not manage (PUBLIC's default EXECUTE on every function, and WITH GRANT OPTION).",
+      "tags": [
+        "postgres",
+        "privileges",
+        "er-008"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T09:49:02Z",
+      "updatedAt": "2026-09-12T09:49:08Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0070",
+      "title": "Attribute the awkward-forms corpus fixtures to a work item",
+      "description": "WI-0068 completed with the harness and the two defect fixes as evidence, but not the 19 fixture .sql files that ARE its deliverable — so ros validate, run with ROS_BASE_REF as CI runs it, reported 17 files with no work-item attribution. A completed item's evidence cannot be amended through the ros CLI, and hand-editing .ros/context/current.json would make the record untrustworthy, so this item carries the corpus directory as evidence instead. Local runs missed it because ROS_BASE_REF is unset outside CI, which narrows validation to the working tree.",
+      "tags": [
+        "ros",
+        "process"
+      ],
+      "priority": "medium",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T09:51:31Z",
+      "updatedAt": "2026-09-12T09:51:36Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0071",
+      "title": "State each awkward-forms fixture's contract in the file itself",
+      "description": "The corpus directory name is the only thing saying what a fixture asserts: converges/ means 'this must produce a zero diff', refused/ means 'this must fail to load'. Everywhere else this project writes such a contract out rather than leaving it to a convention, and someone adding a case reads the file, not the harness. Each fixture gains a header naming its contract. This also attributes the 17 fixtures committed before WI-0068 completed: ros fills a work event's paths from the dirty tree at completion, so files already committed carry no attribution and neither evidence paths nor work attach (which copies files as artifacts) can supply it after the fact.",
+      "tags": [
+        "ros",
+        "process"
+      ],
+      "priority": "medium",
+      "status": "ready",
+      "attachments": [
+        {
+          "id": "ATT-1",
+          "seq": 1,
+          "name": "grant-shapes.sql",
+          "file": "1-grant-shapes.sql",
+          "size": 264,
+          "contentType": null,
+          "uploadedAt": "2026-09-12T09:53:14Z"
+        },
+        {
+          "id": "ATT-2",
+          "seq": 2,
+          "name": "identity-column.sql",
+          "file": "2-identity-column.sql",
+          "size": 259,
+          "contentType": null,
+          "uploadedAt": "2026-09-12T09:53:14Z"
+        }
+      ],
+      "createdAt": "2026-09-12T09:52:34Z",
+      "updatedAt": "2026-09-12T09:53:44Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0072",
+      "title": "Make local ROS validation match CI's scope",
+      "description": "./ros validate checks only the working tree; CI sets ROS_BASE_REF to the PR base, widening the check to every file changed on the branch. The two disagree silently in the direction that matters — local passes, CI fails — which is how 17 unattributed fixture files reached CI. A script that sets ROS_BASE_REF from the merge base removes the difference, and documents the attribution rule that caused it.",
+      "tags": [
+        "ros",
+        "ci"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T09:56:02Z",
+      "updatedAt": "2026-09-12T09:56:02Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0073",
+      "title": "Column-level privileges as desired state",
+      "description": "GRANT SELECT (id) ON t was refused rather than modelled, because reading it as a table-wide grant would hand out access to columns the file withheld. Read column privileges properly from pg_attribute.attacl, one grant per column, with a declared column grant claiming that grantee's table-wide privileges so the file can actually narrow access rather than only widen it.",
+      "tags": [
+        "postgres",
+        "privileges",
+        "er-008"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T10:10:11Z",
+      "updatedAt": "2026-09-12T10:10:20Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0074",
+      "title": "SchemaDiff.run took sixteen positional arguments, two of them transposable",
+      "description": "run's desired and actual parameters were ADJACENT and both SchemaSnapshot. Transposing them compiles cleanly and inverts the entire diff: every declared object becomes a proposed drop and every deployed one a proposed create. Two more parameters were both string list. Replace the parameter list with a named record so the transposition cannot be written.",
+      "tags": [
+        "refactor",
+        "safety"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T10:22:07Z",
+      "updatedAt": "2026-09-12T10:22:08Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0075",
+      "title": "Report row-level security instead of not looking at it",
+      "description": "Nothing read row-level security, so a table with it enabled and no policies — hiding every row from every role — rendered exactly like a table with none: a clean plan and not a word. Read pg_policy and pg_class.relrowsecurity and disclose what holds, including the two states that look like an ordinary table and are not. Policies stay unmanaged; the point is that Strata stops being silent about them.",
+      "tags": [
+        "postgres",
+        "security",
+        "er-008"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T10:28:51Z",
+      "updatedAt": "2026-09-12T10:29:02Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0076",
+      "title": "Row-level security policies as desired state",
+      "description": "Read CREATE POLICY and the row-security ALTER TABLE forms as declared state, normalise policy expressions through the server, and diff them. A declared policy is created or replaced; an undeclared one is reported and never dropped, because removing a policy exposes rows silently and nothing records that they used to be hidden.",
+      "tags": [
+        "postgres",
+        "security",
+        "er-008"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T10:49:40Z",
+      "updatedAt": "2026-09-12T10:49:51Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0077",
+      "title": "Extensions as desired state",
+      "description": "Read CREATE EXTENSION as declared state: install a missing extension, update a pinned version, move a relocatable one. Never drop: citext alone owns 88 catalog objects and DROP EXTENSION takes every one. An unpinned version is not compared, and a non-relocatable extension in the wrong schema is disclosed rather than given a statement the server rejects.",
+      "tags": [
+        "postgres",
+        "er-008"
+      ],
+      "priority": "medium",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T11:01:40Z",
+      "updatedAt": "2026-09-12T11:01:56Z",
+      "createdBy": "claude",
+      "source": "manual",
       "sourceReference": null
     }
   ]

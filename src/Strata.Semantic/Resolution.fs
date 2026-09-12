@@ -52,6 +52,41 @@ module Resolution =
         | Unresolved of gap: ResolutionGap
 
     [<RequireQualifiedAccess>]
+    module ResolutionGap =
+
+        /// Human-readable description of a gap.
+        ///
+        /// Hand-written for the same reason `Resolution.tag` is: a gap that
+        /// reaches a reader through `sprintf "%A"` is showing F# union-case
+        /// reflection, not a designed vocabulary, and Boundary Preservation
+        /// forbids leaking the one as the other.
+        ///
+        /// It is also why this exists at all. `%A` is reflection-based
+        /// structured formatting, and the corpus pipeline formats one message
+        /// per gap: on a 3,000-file corpus that was 58,578 calls and 18.9 s,
+        /// 85% of the entire analysis phase. A gap message is produced for
+        /// every gap whether or not anything ever prints it.
+        let describe (gap: ResolutionGap) =
+            match gap with
+            | SchemaNotQualified ->
+                "name is not schema-qualified and search_path has not been applied"
+            | ColumnNotAttributable candidates ->
+                sprintf
+                    "column cannot be attributed to one of %d candidate relations (%s)"
+                    (List.length candidates)
+                    (candidates |> List.map QualifiedName.display |> String.concat ", ")
+            | WildcardNotExpanded ->
+                "SELECT * was used, so the column list is only knowable against a catalog snapshot"
+            | MultipleCandidates candidates ->
+                sprintf
+                    "%d catalog objects match under the effective search_path (%s)"
+                    (List.length candidates)
+                    (candidates |> List.map QualifiedName.display |> String.concat ", ")
+            | ConstructNotModelled construct ->
+                sprintf "construct is not modelled: %s" construct
+            | AnalyzabilityLimit reason ->
+                sprintf "analysis could not proceed: %s" reason
+
     module Resolution =
 
         /// The only predicate permitted to gate dependency-edge creation.

@@ -1,0 +1,11 @@
+-- CONTRACT: Strata must read this the way the server does — the diff after
+--           introspecting it back must be EMPTY. See AwkwardFormsTests.fs.
+--
+-- IF NOT EXISTS declares the same state as its absence: a file says the
+-- extension should be present, and whether it already is is the diff's
+-- question.
+--
+-- This case is not vacuous. It pins NO version, so a diff that compared an
+-- unpinned version against the installed one would propose an update here and
+-- the diff would not be empty.
+CREATE EXTENSION IF NOT EXISTS citext;

@@ -18,6 +18,7 @@ let private col name position =
       Type = { TypeName = QualifiedName.unqualified (id' "text"); IsNullable = true }
       Position = position
       HasDefault = false
+      DefaultExpression = None
       IsGenerated = false
       IsIdentity = false }
 
@@ -30,6 +31,7 @@ let private tableWithFk schema name fks =
           CheckConstraints = []
           ForeignKeys = fks
           Indexes = []
+          Triggers = []
           Scope = ManagementScope.Observed }
 
 let private snapshot =
@@ -37,7 +39,7 @@ let private snapshot =
         [ tableWithFk
               "sales"
               "orders"
-              [ { ConstraintName = id' "fk_orders_customer"
+              [ { ConstraintName = Some(id' "fk_orders_customer")
                   Columns = [ id' "customer_id" ]
                   ReferencedTable = qn "sales" "customer"
                   ReferencedColumns = [ id' "id" ] } ]

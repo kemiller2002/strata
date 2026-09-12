@@ -48,6 +48,50 @@
     "confidence": "medium",
     "created": "2026-09-11",
     "created_by_agent": "claude",
+    "decision_type": "product-architecture",
+    "evidence": [
+      "EV-STRATA-2026-C2F5"
+    ],
+    "id": "DF-STRATA-2026-A4D9",
+    "path": "research/decisions/DF-STRATA-2026-A4D9--project-file-and-layout.md",
+    "status": "accepted",
+    "superseded_by": [],
+    "supersedes": [],
+    "tags": [
+      "strata",
+      "project-file",
+      "desired-state",
+      "layout",
+      "q-003"
+    ],
+    "title": "A Strata project is a strata.json manifest plus per-object SQL files under schema/, and both validation and deployment read it",
+    "updated": "2026-09-11"
+  },
+  {
+    "confidence": "high",
+    "created": "2026-09-11",
+    "created_by_agent": "claude",
+    "decision_type": "product-architecture",
+    "evidence": [],
+    "id": "DF-STRATA-2026-B1E7",
+    "path": "research/decisions/DF-STRATA-2026-B1E7--desired-state-is-object-files.md",
+    "status": "accepted",
+    "superseded_by": [],
+    "supersedes": [],
+    "tags": [
+      "strata",
+      "desired-state",
+      "schema-diff",
+      "dacpac",
+      "q-003"
+    ],
+    "title": "Desired schema is authored as one declarative file per object, DACPAC-style, and Strata's job is to diff it against the live database",
+    "updated": "2026-09-11"
+  },
+  {
+    "confidence": "medium",
+    "created": "2026-09-11",
+    "created_by_agent": "claude",
     "decision_type": "architecture",
     "evidence": [],
     "id": "DF-STRATA-2026-D3F8",
@@ -63,6 +107,27 @@
       "sde"
     ],
     "title": "Strata adopts SDE four-tier architecture with a mechanically checked semantic tier",
+    "updated": "2026-09-11"
+  },
+  {
+    "confidence": "high",
+    "created": "2026-09-11",
+    "created_by_agent": "claude",
+    "decision_type": "architecture",
+    "evidence": [],
+    "id": "DF-STRATA-2026-E8C1",
+    "path": "research/decisions/DF-STRATA-2026-E8C1--postgresql-only-for-now.md",
+    "status": "accepted",
+    "superseded_by": [],
+    "supersedes": [],
+    "tags": [
+      "strata",
+      "dialect",
+      "ports",
+      "scope",
+      "phase-two"
+    ],
+    "title": "PostgreSQL is the only supported engine; the port boundary is kept honest now so other engines stay possible later, but nothing is built for them",
     "updated": "2026-09-11"
   }
 ]

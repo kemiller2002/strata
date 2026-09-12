@@ -88,6 +88,17 @@ module StatementReferences =
         | UtilityShape of operation: string
         | UnsupportedShape of detail: string
 
+    /// A routine body, with the names its own signature binds.
+    ///
+    /// `Parameters` is load-bearing rather than informational: inside the body
+    /// a parameter is an ordinary bare name, indistinguishable from a column
+    /// reference. A validator that does not know them reports every parameter
+    /// of every function as a column that does not exist.
+    type RoutineBodyDefinition =
+        { Language: string
+          Body: string
+          Parameters: Identifier list }
+
     /// Everything one statement contributes, before any resolution.
     type StatementExtraction =
         { Shape: StatementShape
@@ -117,7 +128,20 @@ module StatementReferences =
           /// `WHERE order_id = 42` differ only here. It deliberately says
           /// nothing about how selective the predicate is — Strata has not
           /// evaluated it and has no row counts.
-          HasWherePredicate: bool }
+          HasWherePredicate: bool
+
+          /// A routine body the statement defines.
+          ///
+          /// A `CREATE FUNCTION` body is a STRING LITERAL in the grammar, so
+          /// nothing inside it appears in the fields above: a five-line body
+          /// selecting a column that does not exist extracts as a statement
+          /// with no columns and no relations. Carrying the text lets a caller
+          /// parse it as SQL in its own right, which is the only way a
+          /// validator can see inside it.
+          ///
+          /// `None` means the statement defines no routine. It does NOT mean
+          /// the body was empty or was checked.
+          RoutineBody: RoutineBodyDefinition option }
 
     [<RequireQualifiedAccess>]
     module StatementExtraction =
@@ -130,4 +154,5 @@ module StatementReferences =
               ContainsDynamicSql = false
               JoinPredicates = []
               AlterActions = []
-              HasWherePredicate = false }
+              HasWherePredicate = false
+              RoutineBody = None }

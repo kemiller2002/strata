@@ -18,6 +18,7 @@ let private column name position =
       Type = { TypeName = QualifiedName.unqualified (id' "text"); IsNullable = true }
       Position = position
       HasDefault = false
+      DefaultExpression = None
       IsGenerated = false
       IsIdentity = false }
 
@@ -30,6 +31,7 @@ let private table schema name columns =
           CheckConstraints = []
           ForeignKeys = []
           Indexes = []
+          Triggers = []
           Scope = Observed }
 
 let private snapshot =

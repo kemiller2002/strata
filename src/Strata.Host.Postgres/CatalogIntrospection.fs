@@ -113,13 +113,23 @@ module CatalogIntrospection =
           Relation: string
           Index: Index }
 
+    type private TriggerRow =
+        { Schema: string
+          Relation: string
+          /// `r`/`p` for a table, `v`/`m` for a view. Carried so a trigger on
+          /// a view is visibly NOT attached to anything rather than quietly
+          /// dropped: `Table` is the only place the model has for one.
+          RelationKind: string
+          Trigger: Trigger }
+
     type private RoutineRow =
         { Schema: string
           Name: string
           Kind: char
-          Arguments: string
+          ArgumentTypes: string list
           ReturnType: string
           Language: string
+          Body: string
           ExtensionOwned: bool }
 
     /// Introspect a database into a snapshot.
@@ -172,6 +182,12 @@ module CatalogIntrospection =
                           IsNullable = boolOf r "is_nullable" }
                       Position = intOf r "ordinal"
                       HasDefault = boolOf r "has_default"
+                      DefaultExpression =
+                        // Empty means no default, which `HasDefault` already
+                        // says; the option carries only a real expression.
+                        match str r "default_expression" with
+                        | "" -> None
+                        | expression -> Some expression
                       IsGenerated = boolOf r "is_generated"
                       IsIdentity = boolOf r "is_identity" } })
             |> categoryResult "columns"
@@ -200,6 +216,47 @@ module CatalogIntrospection =
                       Predicate = strOpt r "predicate" } })
             |> categoryResult "indexes"
 
+        let triggers =
+            readCategory connection "triggers" CatalogQueries.triggers (fun r ->
+                { Schema = str r "schema_name"
+                  Relation = str r "relation_name"
+                  RelationKind = str r "relation_kind"
+                  Trigger =
+                    { Name = identifierOf (str r "trigger_name")
+                      Timing =
+                        match str r "timing" with
+                        | "before" -> TriggerTiming.Before
+                        | "instead" -> TriggerTiming.InsteadOf
+                        | _ -> TriggerTiming.After
+                      Events = arrayOf r "events"
+                      Level =
+                        match str r "level" with
+                        | "row" -> TriggerLevel.Row
+                        | _ -> TriggerLevel.Statement
+                      UpdateColumns = arrayOf r "update_columns" |> List.map identifierOf
+                      Function =
+                        (match strOpt r "function_schema" with
+                         | Some schema when schema <> "" ->
+                             qualified schema (str r "function_name")
+                         | _ -> QualifiedName.unqualified (identifierOf (str r "function_name")))
+                      Arguments = arrayOf r "arguments"
+                      HasCondition = boolOf r "has_condition" } })
+            |> categoryResult "triggers"
+
+        let sequences =
+            readCategory connection "sequences" CatalogQueries.sequences (fun r ->
+                SequenceObject
+                    { Name = qualified (str r "schema_name") (str r "sequence_name")
+                      DataType = str r "data_type"
+                      Start = r.GetInt64(r.GetOrdinal "start_value")
+                      Increment = r.GetInt64(r.GetOrdinal "increment_by")
+                      MinValue = r.GetInt64(r.GetOrdinal "min_value")
+                      MaxValue = r.GetInt64(r.GetOrdinal "max_value")
+                      Cache = r.GetInt64(r.GetOrdinal "cache_size")
+                      Cycle = boolOf r "is_cycled"
+                      Scope = (if boolOf r "extension_owned" then ExtensionOwned else Observed) })
+            |> categoryResult "sequences"
+
         let viewDefinitions =
             readCategory connection "view_definitions" CatalogQueries.viewDefinitions (fun r ->
                 (str r "schema_name", str r "relation_name"), str r "definition")
@@ -210,9 +267,10 @@ module CatalogIntrospection =
                 { Schema = str r "schema_name"
                   Name = str r "routine_name"
                   Kind = (str r "kind").[0]
-                  Arguments = str r "arguments"
+                  ArgumentTypes = arrayOf r "argument_types"
                   ReturnType = str r "return_type"
                   Language = str r "language"
+                  Body = str r "body"
                   ExtensionOwned = boolOf r "extension_owned" })
             |> categoryResult "routines"
 
@@ -235,6 +293,20 @@ module CatalogIntrospection =
             |> Option.defaultValue []
             |> List.filter (fun i -> i.Schema = schema && i.Relation = relation)
             |> List.map (fun i -> i.Index)
+
+        let triggersFor schema relation =
+            triggers
+            |> Option.defaultValue []
+            |> List.filter (fun t -> t.Schema = schema && t.Relation = relation)
+            |> List.map (fun t -> t.Trigger)
+
+        // Triggers on a view. `INSTEAD OF` triggers only exist on views, and
+        // the model has no place for them, so they are counted and disclosed
+        // in the completeness block rather than silently absent.
+        let triggersOnNonTables =
+            triggers
+            |> Option.defaultValue []
+            |> List.filter (fun t -> t.RelationKind <> "r" && t.RelationKind <> "p")
 
         let scopeOf extensionOwned =
             // An extension-owned object is observed, never managed (RK-008).
@@ -279,19 +351,19 @@ module CatalogIntrospection =
                             cons
                             |> List.tryFind (fun c -> c.Type = 'p')
                             |> Option.map (fun c ->
-                                { ConstraintName = identifierOf c.Name
+                                { ConstraintName = Some(identifierOf c.Name)
                                   Columns = c.Columns |> List.map identifierOf })
                           UniqueConstraints =
                             cons
                             |> List.filter (fun c -> c.Type = 'u')
                             |> List.map (fun c ->
-                                { ConstraintName = identifierOf c.Name
+                                { ConstraintName = Some(identifierOf c.Name)
                                   Columns = c.Columns |> List.map identifierOf })
                           CheckConstraints =
                             cons
                             |> List.filter (fun c -> c.Type = 'c')
                             |> List.map (fun c ->
-                                { ConstraintName = identifierOf c.Name
+                                { ConstraintName = Some(identifierOf c.Name)
                                   Expression = c.Definition })
                           ForeignKeys =
                             cons
@@ -300,12 +372,13 @@ module CatalogIntrospection =
                                 match c.ReferencedSchema, c.ReferencedRelation with
                                 | Some refSchema, Some refRelation ->
                                     Some
-                                        { ConstraintName = identifierOf c.Name
+                                        { ConstraintName = Some(identifierOf c.Name)
                                           Columns = c.Columns |> List.map identifierOf
                                           ReferencedTable = qualified refSchema refRelation
                                           ReferencedColumns = c.ReferencedColumns |> List.map identifierOf }
                                 | _ -> None)
                           Indexes = indexesFor rel.Schema rel.Name
+                          Triggers = triggersFor rel.Schema rel.Name
                           Scope = scopeOf rel.ExtensionOwned })
 
         let routineObjects =
@@ -315,11 +388,13 @@ module CatalogIntrospection =
                 RoutineObject
                     { Name = qualified r.Schema r.Name
                       Kind = if r.Kind = 'p' then Procedure else Function
-                      ArgumentTypes =
-                        if String.IsNullOrWhiteSpace r.Arguments then []
-                        else r.Arguments.Split(',') |> Array.map (fun s -> s.Trim()) |> List.ofArray
+                      ArgumentTypes = r.ArgumentTypes
                       ReturnType = if String.IsNullOrWhiteSpace r.ReturnType then None else Some r.ReturnType
                       Language = r.Language
+                      // Empty means the server holds no TEXT for this body — a
+                      // BEGIN ATOMIC body is a parse tree — not that the body
+                      // is empty. Nothing may compare on it.
+                      Body = if String.IsNullOrEmpty r.Body then None else Some r.Body
                       Scope = scopeOf r.ExtensionOwned })
 
         // A category that failed is Inaccessible with its reason; one that
@@ -340,9 +415,23 @@ module CatalogIntrospection =
                   stateFor "routines" (Option.isSome routines)
                   // Categories Strata does not yet read at all. Stated rather
                   // than omitted, so their absence is visible (§6, §129).
+                  (match stateFor "triggers" (Option.isSome triggers) with
+                   // Read, but the ones on views have nowhere to live. Partial
+                   // with a count, never Complete: a category that dropped
+                   // rows must not claim it saw everything (ER-008).
+                   | name, Complete when not (List.isEmpty triggersOnNonTables) ->
+                       name,
+                       Partial(
+                           sprintf
+                               "%d trigger(s) are defined on views, which Strata models nowhere: %s"
+                               (List.length triggersOnNonTables)
+                               (triggersOnNonTables
+                                |> List.map (fun t -> t.Schema + "." + t.Relation + "." + t.Trigger.Name.Text)
+                                |> List.sort
+                                |> String.concat ", "))
+                   | state -> state)
+                  stateFor "sequences" (Option.isSome sequences)
                   "rls_policies", NotRequested
-                  "triggers", NotRequested
-                  "sequences", NotRequested
                   "extensions", NotRequested
                   "grants", NotRequested
 
@@ -365,11 +454,198 @@ module CatalogIntrospection =
                        )) ]
 
         { Objects =
-            (objects @ routineObjects)
+            (objects @ routineObjects @ (sequences |> Option.defaultValue []))
             // Deterministic order regardless of catalog return order (NFR-001).
             |> List.sortBy (fun o -> QualifiedName.display (SchemaObject.name o))
           ServerVersion = serverVersion
           Completeness = completeness }
+
+    /// Privileges granted on relations, schemas, routines and columns.
+    ///
+    /// Returned as a `Result` for the same reason `readSchemas` is: a caller
+    /// that could not read the ACLs must not conclude a privilege is absent
+    /// and propose granting it, nor conclude one is undeclared and revoke it.
+    ///
+    /// All four catalogs are read in ONE connection and one `Result`. Reading
+    /// them separately would allow a partial answer — relations read, routines
+    /// not — and a partial answer here is the dangerous kind: it looks like a
+    /// complete one in which nobody holds anything.
+    let readGrants (connectionString: string) : Result<Grant list, string> =
+        try
+            use connection = new NpgsqlConnection(connectionString)
+            connection.Open()
+
+            /// One ACL query's rows, keyed by target and grantee.
+            ///
+            /// `is_grantable` is carried rather than compared. A privilege held
+            /// WITH GRANT OPTION is still that privilege, so it converges
+            /// against a declared plain grant; the power to pass it on is
+            /// something Strata sees and does not manage, and it is disclosed
+            /// rather than dropped on the floor.
+            let read (sql: string) (targetOf: NpgsqlDataReader -> GrantTarget) =
+                use command = new NpgsqlCommand(sql, connection)
+                use reader = command.ExecuteReader() :?> NpgsqlDataReader
+
+                let rows =
+                    [ while reader.Read() do
+                        yield
+                            (targetOf reader, str reader "grantee"),
+                            (str reader "privilege_type", reader.GetBoolean(reader.GetOrdinal "is_grantable")) ]
+
+                rows
+                |> List.groupBy fst
+                |> List.map (fun ((target, grantee), privileges) ->
+                    { Target = target
+                      Grantee = grantee
+                      Privileges = privileges |> List.map (snd >> fst) |> List.distinct |> List.sort
+                      Grantable =
+                        privileges
+                        |> List.filter (snd >> snd)
+                        |> List.map (snd >> fst)
+                        |> List.distinct
+                        |> List.sort })
+
+            let relations =
+                read CatalogQueries.grants (fun r ->
+                    GrantTarget.Relation(qualified (str r "schema_name") (str r "object_name")))
+
+            let schemaLevel =
+                read CatalogQueries.schemaGrants (fun r ->
+                    GrantTarget.Schema(Identifier.unquoted (str r "schema_name")))
+
+            let routineLevel =
+                read CatalogQueries.routineGrants (fun r ->
+                    let arguments =
+                        let ordinal = r.GetOrdinal "argument_types"
+                        if r.IsDBNull ordinal then []
+                        else r.GetFieldValue<string array> ordinal |> List.ofArray
+
+                    GrantTarget.Routine(qualified (str r "schema_name") (str r "object_name"), arguments))
+
+            let columnLevel =
+                read CatalogQueries.columnGrants (fun r ->
+                    GrantTarget.RelationColumn(
+                        qualified (str r "schema_name") (str r "object_name"),
+                        Identifier.unquoted (str r "column_name")))
+
+            Ok(relations @ schemaLevel @ routineLevel @ columnLevel)
+        with ex ->
+            Error ex.Message
+
+    /// Row-level security state and policies, per table.
+    ///
+    /// A `Result` for the same reason the others are: a caller that could not
+    /// read this must not conclude row-level security is off. Concluding that
+    /// wrongly is the worst direction here — it reports a table as unprotected
+    /// when it is locked down, or, worse, says nothing about one that is
+    /// default-denying every row.
+    ///
+    /// Tables with neither the flag nor a policy do not appear at all: they
+    /// have nothing to say, and listing every ordinary table would bury the
+    /// three that do.
+    let readRowLevelSecurity (connectionString: string) : Result<RowLevelSecurity list, string> =
+        try
+            use connection = new NpgsqlConnection(connectionString)
+            connection.Open()
+            use command = new NpgsqlCommand(CatalogQueries.rowLevelSecurity, connection)
+            use reader = command.ExecuteReader() :?> NpgsqlDataReader
+
+            let optional (r: NpgsqlDataReader) (column: string) =
+                let ordinal = r.GetOrdinal column
+                if r.IsDBNull ordinal then None else Some(r.GetString ordinal)
+
+            // `polcmd` is a single char. Anything else is a PostgreSQL version
+            // that grew a command Strata has no case for, and guessing `All`
+            // would report a policy as applying to every statement when it
+            // applies to one. It is reported as unreadable instead.
+            let commandOf (code: string) =
+                match code with
+                | "*" -> Some PolicyCommand.All
+                | "r" -> Some PolicyCommand.Select
+                | "a" -> Some PolicyCommand.Insert
+                | "w" -> Some PolicyCommand.Update
+                | "d" -> Some PolicyCommand.Delete
+                | _ -> None
+
+            let rows =
+                [ while reader.Read() do
+                    let table = qualified (str reader "schema_name") (str reader "object_name")
+                    let enabled = reader.GetBoolean(reader.GetOrdinal "enabled")
+                    let forced = reader.GetBoolean(reader.GetOrdinal "forced")
+
+                    let policy =
+                        match optional reader "policy_name", optional reader "command" with
+                        | Some name, Some code ->
+                            commandOf code
+                            |> Option.map (fun cmd ->
+                                { Name = Identifier.unquoted name
+                                  Command = cmd
+                                  IsPermissive = reader.GetBoolean(reader.GetOrdinal "permissive")
+                                  Roles =
+                                    (let ordinal = reader.GetOrdinal "roles"
+
+                                     if reader.IsDBNull ordinal then []
+                                     else reader.GetFieldValue<string array> ordinal |> List.ofArray)
+                                  Using = optional reader "using_expr"
+                                  WithCheck = optional reader "check_expr" })
+                        // A row with no policy name is a table whose RLS flag is
+                        // set and which has none — the default-deny case, and
+                        // the whole reason the query left-joins.
+                        | _ -> None
+
+                    yield (QualifiedName.display table, table, enabled, forced), policy ]
+
+            rows
+            |> List.groupBy fst
+            |> List.map (fun ((_, table, enabled, forced), group) ->
+                { Table = table
+                  Enabled = enabled
+                  Forced = forced
+                  Policies = group |> List.choose snd |> List.sortBy (fun p -> Identifier.folded p.Name) })
+            |> Ok
+        with ex ->
+            Error ex.Message
+
+    /// Extensions installed in the database.
+    ///
+    /// A `Result` for the usual reason: a caller that could not read this must
+    /// not conclude an extension is absent and propose creating one, which on a
+    /// database that already has it fails the whole plan.
+    let readExtensions (connectionString: string) : Result<Extension list, string> =
+        try
+            use connection = new NpgsqlConnection(connectionString)
+            connection.Open()
+            use command = new NpgsqlCommand(CatalogQueries.extensions, connection)
+            use reader = command.ExecuteReader() :?> NpgsqlDataReader
+
+            Ok
+                [ while reader.Read() do
+                    yield
+                        { Name = Identifier.unquoted (str reader "name")
+                          Schema = Some(Identifier.unquoted (str reader "schema_name"))
+                          Version = Some(str reader "version")
+                          IsRelocatable = reader.GetBoolean(reader.GetOrdinal "relocatable") } ]
+        with ex ->
+            Error ex.Message
+
+    /// Schema names that exist in the database.
+    ///
+    /// Returned as a `Result` rather than folded into the snapshot, and the
+    /// distinction is load-bearing: a caller that cannot read this must not
+    /// conclude a schema is missing and propose creating one. An `Error` means
+    /// "could not tell", which is not "absent".
+    let readSchemas (connectionString: string) : Result<string list, string> =
+        try
+            use connection = new NpgsqlConnection(connectionString)
+            connection.Open()
+            use command = new NpgsqlCommand(CatalogQueries.schemas, connection)
+            use reader = command.ExecuteReader()
+
+            Ok [ while reader.Read() do
+                     if not (reader.IsDBNull 0) then
+                         yield reader.GetString 0 ]
+        with ex ->
+            Error ex.Message
 
     /// The effective search_path of a connection.
     ///

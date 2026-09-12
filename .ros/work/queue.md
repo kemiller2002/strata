@@ -31,4 +31,52 @@
 | WI-0026 | Spike D-3: seam correctness at a scale where reading everything is infeasible | complete | strata, spike | high |
 | WI-0027 | Correct the indexing-time figure in the scale evidence records | complete | strata, documentation | low |
 | WI-0028 | Spike D-4: messy corpus — unqualified names, shadowing, dynamic SQL, cross-schema collisions | complete | strata, spike | high |
-| WI-0029 | Build a deterministic pre-deployment gate and test HY-STRATA-2026-6F14 | ready | strata, slice-s4 | high |
+| WI-0029 | Build a deterministic pre-deployment gate and test HY-STRATA-2026-6F14 | complete | strata, slice-s4 | high |
+| WI-0030 | Profile and fix indexing cost: single-pass extraction and hand-written gap formatting | complete | strata, performance, profiling | high |
+| WI-0031 | Qualified operator reported as both a join and an unmodelled shape | complete | strata, parser, correctness | medium |
+| WI-0032 | Record Q-003 decision: desired state is DACPAC-style object files | complete | strata, desired-state, decision | high |
+| WI-0033 | Survey the declarative schema landscape and candidate fixtures | complete | strata, competitive-landscape, fixtures | high |
+| WI-0034 | Slice V: validate candidate SQL against the schema (PR-018) | complete | strata | high |
+| WI-0035 | Slice P: strata.json project file and desired-state loader (PR-025) | complete | strata | high |
+| WI-0036 | Slice D: diff desired against actual with dry-run output (PR-022, PR-023) | complete | strata | high |
+| WI-0037 | Slice X: execute a plan against the database (PR-024) | complete | strata | high |
+| WI-0038 | Requirements and decisions for validation and deployment capabilities | complete | strata, requirements | high |
+| WI-0039 | Record PostgreSQL-only scope and the dialect port's known leaks | complete | strata, dialect, scope | medium |
+| WI-0040 | Make the project manifest optional and require opt-in for removals | complete | strata, project | high |
+| WI-0041 | Validate SQL routine bodies instead of reporting them unverifiable | complete | strata, validation | high |
+| WI-0042 | Probe diff coverage: false clean on constraints, 96% of tables uncreatable | complete | strata, diff, coverage | high |
+| WI-0043 | Compare constraints and defaults; report what cannot be compared | complete | strata, diff | high |
+| WI-0044 | Create tables from the declaring file; canonicalise serial pseudo-types | complete | strata, deployment | high |
+| WI-0045 | Views and routines as desired state; disclose uncompared indexes | complete | strata, desired-state | high |
+| WI-0046 | Compare view definitions by normalising declared DDL through the server | complete | strata, diff | high |
+| WI-0047 | Compare routine bodies directly from prosrc | complete | strata, diff | high |
+| WI-0048 | Compare default and check expressions via shadow normalisation | complete | strata, diff | high |
+| WI-0049 | Rename detection via -- strata:renamed_from (Q-004) | complete | strata, rename | high |
+| WI-0050 | Indexes as desired state | complete | strata, desired-state | high |
+| WI-0051 | Triggers as desired state | complete | strata, desired-state | high |
+| WI-0052 | Table creations are not ordered by foreign key | complete | strata, diff | high |
+| WI-0053 | The live test fixture is not reproducible | complete | strata, testing | medium |
+| WI-0054 | An unnamed constraint never converges | complete | strata, diff | high |
+| WI-0055 | apply has no way to accept a requires-approval finding | complete | strata, deployment | high |
+| WI-0056 | Reference data as desired state | complete | strata, desired-state | high |
+| WI-0057 | A declared row colliding with an undeclared deployed row is caught late | complete | strata, reference-data | medium |
+| WI-0058 | Constraint differences cannot be applied | complete | strata, diff | high |
+| WI-0059 | CI builds nothing and runs no tests | complete | strata, ci | high |
+| WI-0060 | Every PR commit ran CI twice | complete | strata, ci | medium |
+| WI-0061 | ros work complete does not update queue.md when an item is captured and completed in the same run | blocked | ros, tooling | low |
+| WI-0062 | CLI help claims narrower behaviour than the code has | complete | strata, docs | low |
+| WI-0063 | Record metrics for the validation and deployment increment | complete | strata, metrics | medium |
+| WI-0064 | Strata cannot create a schema | complete | strata, desired-state | high |
+| WI-0065 | Sequences as desired state | complete | strata, desired-state | high |
+| WI-0066 | Grants as desired state | complete | strata, desired-state | high |
+| WI-0067 | A column-level GRANT was widened to the whole table | complete | strata, security | high |
+| WI-0068 | Awkward-forms corpus: the server as oracle for declaration reading | complete | testing, postgres, er-008 | high |
+| WI-0069 | Schema and routine grants as desired state | complete | postgres, privileges, er-008 | high |
+| WI-0070 | Attribute the awkward-forms corpus fixtures to a work item | complete | ros, process | medium |
+| WI-0071 | State each awkward-forms fixture's contract in the file itself | complete | ros, process | medium |
+| WI-0072 | Make local ROS validation match CI's scope | complete | ros, ci | high |
+| WI-0073 | Column-level privileges as desired state | complete | postgres, privileges, er-008 | high |
+| WI-0074 | SchemaDiff.run took sixteen positional arguments, two of them transposable | complete | refactor, safety | high |
+| WI-0075 | Report row-level security instead of not looking at it | complete | postgres, security, er-008 | high |
+| WI-0076 | Row-level security policies as desired state | complete | postgres, security, er-008 | high |
+| WI-0077 | Extensions as desired state | ready | postgres, er-008 | medium |

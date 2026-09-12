@@ -21,6 +21,9 @@
     <Compile Include="CorpusPipeline.fs" />
     <Compile Include="Retrieval.fs" />
     <Compile Include="DeploymentGate.fs" />
+    <Compile Include="Validation.fs" />
+    <Compile Include="DesiredState.fs" />
+    <Compile Include="SchemaDiff.fs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -84,7 +84,7 @@ conclusion (§144) is that the next useful step is empirical, not more design.
 | P2 | S3 graph + targeted retrieval | first user-visible leverage |
 | P2 | S4 validation + first policy profile | needs `Q-007` answered |
 | P3 | S5 agent leverage experiment | decides whether the agent thesis survives |
-| P4 | Schema diff / drift | needs `Q-003`, `Q-004`, `Q-010`, `Q-020` |
+| P4 | Schema diff / drift | `Q-003` answered (DF-STRATA-2026-B1E7, DF-STRATA-2026-A4D9); `Q-004` still open for renames |
 | P5 | Limited safe deployment | needs `Q-008`, `Q-030` |
 | P6 | Reference-data convergence | needs `Q-009`, `Q-025` |
 | P7 | Explicit transition engine | last |

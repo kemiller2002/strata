@@ -1,0 +1,5 @@
+-- GRANT ALL arrives with no privileges list at all. The owner's own privileges
+-- are not grants and must not appear on either side.
+CREATE TABLE t (id bigint PRIMARY KEY);
+GRANT SELECT, INSERT ON t TO strata_awkward_role;
+GRANT ALL ON t TO strata_awkward_role2;
