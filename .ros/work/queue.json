@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 55,
+  "nextSeq": 56,
   "items": [
     {
       "id": "WI-0001",
@@ -920,6 +920,23 @@
       "attachments": [],
       "createdAt": "2026-09-11T23:54:47Z",
       "updatedAt": "2026-09-12T00:02:21Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0055",
+      "title": "apply has no way to accept a requires-approval finding",
+      "description": "The gate asks a human to decide and the CLI offers no way to answer, so any change on a table with writers can never be applied. Add --approve, which satisfies requires-approval and never a block, and record each accepted finding in the run's output.",
+      "tags": [
+        "strata",
+        "deployment"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T00:05:16Z",
+      "updatedAt": "2026-09-12T00:05:16Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null

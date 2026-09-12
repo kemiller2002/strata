@@ -46,6 +46,12 @@ OPTIONS
   --corpus <dir>     Directory of .sql files to index (or set STRATA_CORPUS)
   --project <dir>    Project root: a directory of object files (default: .)
   --confirm          Required by `apply`. Without it, apply dry-runs and stops.
+  --approve          Accept the gate's requires-approval findings. This is the
+                     human decision the gate is asking for, so it is recorded
+                     in the output: each finding is restated as approved before
+                     anything runs. It NEVER overrides a block — a block is
+                     known breakage, not a judgement call — and it does not
+                     enable removals, which need --allow-drops as well.
   --allow-drops      Propose removals. Without it, objects present in the
                      database and absent from the project are REPORTED but
                      never proposed for dropping.
@@ -409,10 +415,35 @@ let main argv =
                 let unwritable =
                     diff.Statements |> List.filter (fun s -> s.Sql.IsNone)
 
-                if gate.Verdict <> DeploymentGate.Allow then
+                let approved = List.contains "--approve" args
+
+                // `--approve` answers requires-approval, which is precisely the
+                // question the gate asks a human. It never answers a BLOCK:
+                // that verdict means Strata found the breakage, not that it
+                // could not tell, and a flag that overrode both would make the
+                // three verdicts two.
+                let gateSatisfied =
+                    match gate.Verdict with
+                    | DeploymentGate.Allow -> true
+                    | DeploymentGate.RequiresApproval -> approved
+                    | DeploymentGate.Block -> false
+
+                if not gateSatisfied then
                     eprintfn ""
                     eprintfn "REFUSED: the gate did not allow this plan (%s)." (DeploymentGate.Verdict.tag gate.Verdict)
-                    eprintfn "         Nothing was executed. Address the findings above and re-run."
+
+                    match gate.Verdict with
+                    | DeploymentGate.RequiresApproval ->
+                        eprintfn "         Nothing was executed. Address the findings above, or pass --approve"
+                        eprintfn "         to record that a human accepted them."
+                    | DeploymentGate.Block ->
+                        // Saying this explicitly matters: someone who just
+                        // learned about --approve will reach for it here, and
+                        // the answer is that it does not apply.
+                        eprintfn "         Nothing was executed. A block is known breakage, not a judgement"
+                        eprintfn "         call, and --approve does not override it. Fix what the findings name."
+                    | DeploymentGate.Allow -> ()
+
                     DeploymentGate.Verdict.exitCode gate.Verdict
 
                 elif not (List.isEmpty unwritable) then
@@ -448,6 +479,17 @@ let main argv =
                     eprintfn "         The plan was built against a state that no longer exists. Re-run."
                     2
                 | Ok _ ->
+                    // An approval nobody can see afterwards is not a decision
+                    // anyone can review. Each finding the human accepted is
+                    // restated here, in the run's own output, before it runs.
+                    if approved && gate.Verdict = DeploymentGate.RequiresApproval then
+                        printfn ""
+                        printfn "APPROVED by --approve:"
+
+                        for f in gate.Findings do
+                            if f.Verdict = DeploymentGate.RequiresApproval then
+                                printfn "  %s" f.Detected
+
                     let statements = diff.Statements |> List.choose (fun s -> s.Sql)
                     let result = Execution.apply connectionString statements
 
