@@ -1035,14 +1035,13 @@
         "tooling"
       ],
       "priority": "low",
-      "status": "blocked",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-12T00:54:31Z",
-      "updatedAt": "2026-09-12T00:59:08Z",
+      "updatedAt": "2026-09-12T23:46:48Z",
       "createdBy": "claude",
       "source": "manual",
-      "sourceReference": null,
-      "blockedReason": "The ros CLI is an upstream self-contained binary fetched by ./ros, and queue.md is generated. Reported, not fixed here."
+      "sourceReference": null
     },
     {
       "id": "WI-0062",
@@ -1399,7 +1398,7 @@
       "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-12T19:16:35Z",
-      "updatedAt": "2026-09-12T23:38:16Z",
+      "updatedAt": "2026-09-12T23:45:03Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null

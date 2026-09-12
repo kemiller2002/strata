@@ -42,3 +42,8 @@ echo "validating against ${BASE} (merge base ${MERGE_BASE})"
 ROS_BASE_REF="$MERGE_BASE" ./ros validate
 ./ros registry check
 ./ros artifacts validate
+
+# queue.md is a generated mirror that none of the checks above look at, and it
+# is written one mutation behind (WI-0061) — so it is quietly wrong in exactly
+# the commit that changes it, which is the commit someone reads.
+scripts/check-queue-mirror.sh

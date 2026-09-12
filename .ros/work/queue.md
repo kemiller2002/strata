@@ -63,7 +63,7 @@
 | WI-0058 | Constraint differences cannot be applied | complete | strata, diff | high |
 | WI-0059 | CI builds nothing and runs no tests | complete | strata, ci | high |
 | WI-0060 | Every PR commit ran CI twice | complete | strata, ci | medium |
-| WI-0061 | ros work complete does not update queue.md when an item is captured and completed in the same run | blocked | ros, tooling | low |
+| WI-0061 | ros work complete does not update queue.md when an item is captured and completed in the same run | complete | ros, tooling | low |
 | WI-0062 | CLI help claims narrower behaviour than the code has | complete | strata, docs | low |
 | WI-0063 | Record metrics for the validation and deployment increment | complete | strata, metrics | medium |
 | WI-0064 | Strata cannot create a schema | complete | strata, desired-state | high |
@@ -83,7 +83,7 @@
 | WI-0078 | Destructive changes never receive an Allow verdict | complete | strata | high |
 | WI-0079 | Require an explicit include list in strata.json | complete | strata | high |
 | WI-0080 | Derive the managed schema set from directory names and remove managedSchemas | complete | strata | high |
-| WI-0081 | Project adoption and reconciliation commands | ready | strata | medium |
+| WI-0081 | Project adoption and reconciliation commands | complete | strata | medium |
 | WI-0082 | Hoist shadow normalisation out of the CLI ahead of the compile split | complete | strata | high |
 | WI-0083 | strata compile emits a deployable artifact | complete | strata | high |
 | WI-0084 | strata deploy reads an artifact rather than the source tree | complete | strata | high |
