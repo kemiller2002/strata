@@ -93,6 +93,32 @@ This follows the notebook's suggested P0–P7 pattern with one change: Spike B's
 remainder is pulled to P1, ahead of graph work, because its outcome determines
 whether dependency edges can be trusted at all.
 
+## The compile/deploy direction (2026-09-12)
+
+P4–P6 shipped, and a design conversation settled what comes after. Five records
+carry it; the ordering below is by dependency and by safety value per unit of
+work, not by the P-numbers above.
+
+| | work | records |
+|---|---|---|
+| 1 | Destructive changes never receive an `Allow` verdict | `DF-STRATA-2026-5E9F` |
+| 2 | Required `include` list; the project directory is closed | `DF-STRATA-2026-7D14` |
+| 3 | Managed schemas derived from directory names | `DF-STRATA-2026-C3A2` |
+| 4 | Hoist normalisation ahead of the compile split | `DF-STRATA-2026-2F6B` |
+| 5 | `compile` -> artifact; `deploy` reads the artifact | `DF-STRATA-2026-2F6B` |
+| 6 | `validate` against an artifact, with no database | `DF-STRATA-2026-2F6B`, `DF-STRATA-2026-8B60` |
+| 7 | `PREPARE`-based type checking; declared invariants | `DF-STRATA-2026-8B60` |
+
+Item 1 is first because it is the smallest change with the highest safety value
+and depends on nothing else: the gate currently promotes a clean corpus scan into
+clearance for `DROP TABLE`.
+
+The through-line is that **the source files are the system of record for a
+declared scope**, and the scope is explicit. `managedSchemas` made that scope a
+manifest field; deriving it from the directory tree makes deleting a schema's
+files leave the schema *unmanaged* rather than *empty* — fail-safe rather than
+fail-dangerous. `WI-0078` through `WI-0089` carry the work.
+
 ## Traceability structure
 
 ```

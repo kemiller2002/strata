@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 78,
+  "nextSeq": 91,
   "items": [
     {
       "id": "WI-0001",
@@ -1336,6 +1336,215 @@
       "attachments": [],
       "createdAt": "2026-09-12T11:01:40Z",
       "updatedAt": "2026-09-12T11:01:56Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0078",
+      "title": "Destructive changes never receive an Allow verdict",
+      "description": "DF-STRATA-2026-5E9F. cleanResultVerdict returns Allow when the corpus was indexed and found nothing, so DropColumn, DropTable, AlterColumnType, the rename cases, ReplaceView, ReplaceRoutine, the trigger cases and UpdateRow all reach Allow. Make the corpus decide Block vs RequiresApproval only, and add a property test over the whole Change vocabulary asserting isPotentiallyDestructive implies the verdict is not Allow. Smallest change here, highest safety value, and independent of the compile work.",
+      "tags": [
+        "strata"
+      ],
+      "priority": "high",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-12T19:16:35Z",
+      "updatedAt": "2026-09-12T19:16:35Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0079",
+      "title": "Require an explicit include list in strata.json",
+      "description": "DF-STRATA-2026-7D14. Every *.sql under the project directory must appear in include and every include path must exist; either mismatch fails the compile. No globs, no exclude list, no warnings. Listed-but-missing routes into the existing incomplete-desired-state path rather than a filesystem error.",
+      "tags": [
+        "strata"
+      ],
+      "priority": "high",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-12T19:16:35Z",
+      "updatedAt": "2026-09-12T19:16:35Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0080",
+      "title": "Derive the managed schema set from directory names and remove managedSchemas",
+      "description": "DF-STRATA-2026-C3A2. Directory name must equal pg_namespace.nspname byte for byte and match ^[a-z_][a-z0-9_]*$, excluding Windows device names. A non-matching schema is unmanaged and reported; a file declaring into one is a compile error. An empty schema directory is a compile error — that is what makes collapsing ManagedSchemas and DeclaredInSchemas safe.",
+      "tags": [
+        "strata"
+      ],
+      "priority": "high",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-12T19:16:35Z",
+      "updatedAt": "2026-09-12T19:16:35Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0081",
+      "title": "Project adoption and reconciliation commands",
+      "description": "DF-STRATA-2026-7D14. strata init --from-tree writes include from the current tree as a reviewable diff; strata add appends one entry; strata sync reconciles but prints what it would add and requires confirmation. Required, not optional: with zero leniency every new object needs a manifest line, and a silent sync is the directory walk again.",
+      "tags": [
+        "strata"
+      ],
+      "priority": "medium",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-12T19:16:35Z",
+      "updatedAt": "2026-09-12T19:16:35Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0082",
+      "title": "Hoist shadow normalisation out of the CLI ahead of the compile split",
+      "description": "DF-STRATA-2026-2F6B. Normalisation currently runs in Program.fs interleaved with diffing. Compile must produce rendered expressions in the artifact, so normalisation has to happen before the compile/deploy boundary. Prerequisite for the artifact and separable from it.",
+      "tags": [
+        "strata"
+      ],
+      "priority": "high",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-12T19:16:35Z",
+      "updatedAt": "2026-09-12T19:16:35Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0083",
+      "title": "strata compile emits a deployable artifact",
+      "description": "DF-STRATA-2026-2F6B. Artifact carries the resolved desired state with server-rendered expressions, the resolved file list with content hashes, the completeness state, the compiling server's major version, and the declared schema set. Rendered through Wire.fs for determinism — an artifact hash is meaningless without it. An incomplete compile must not produce a whole-looking artifact.",
+      "tags": [
+        "strata"
+      ],
+      "priority": "high",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-12T19:16:35Z",
+      "updatedAt": "2026-09-12T19:16:35Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0084",
+      "title": "strata deploy reads an artifact rather than the source tree",
+      "description": "DF-STRATA-2026-2F6B. Deploy diffs the artifact against a target and never reads the project directory. Refuses on a PostgreSQL major-version mismatch, because normalisation renders expressions the way the compiling server does. The same artifact deploys to staging and prod, which is what makes 'what we tested is what we shipped' a guarantee rather than a hope.",
+      "tags": [
+        "strata"
+      ],
+      "priority": "high",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-12T19:16:35Z",
+      "updatedAt": "2026-09-12T19:16:35Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0085",
+      "title": "strata validate against an artifact, with no database",
+      "description": "DF-STRATA-2026-2F6B and 8B60. The largest single gain from the artifact: every query checkable offline, in an editor or pre-commit hook, with no credentials. Also inverts validation authority correctly — a query valid against the artifact and failing against prod means prod is stale.",
+      "tags": [
+        "strata"
+      ],
+      "priority": "medium",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-12T19:16:35Z",
+      "updatedAt": "2026-09-12T19:16:35Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0086",
+      "title": "strata drift reports whether a server still matches an artifact",
+      "description": "DF-STRATA-2026-2F6B. Same computation as deploy, framed as monitoring: exit 0 if the server matches, non-zero if not. Needs no source tree and no deploy credentials, so it runs from a monitoring host.",
+      "tags": [
+        "strata"
+      ],
+      "priority": "low",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-12T19:16:35Z",
+      "updatedAt": "2026-09-12T19:16:35Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0087",
+      "title": "Type-check queries with PREPARE",
+      "description": "DF-STRATA-2026-8B60. PREPARE parses, resolves and plans without executing, catching type errors, ambiguous columns and bad function signatures. Inside the rolled-back transaction ShadowNormalisation already uses it is free and side-effect-free. Takes validate from tier 2 to tier 3. The offline and PREPARE tiers must not disagree silently.",
+      "tags": [
+        "strata"
+      ],
+      "priority": "medium",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-12T19:16:35Z",
+      "updatedAt": "2026-09-12T19:16:35Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0088",
+      "title": "Declared project invariants as compile-time checks",
+      "description": "DF-STRATA-2026-8B60. Let a project assert rules — every table has a primary key, no object grants to PUBLIC, every table has created_at — and refuse violations the way the loader refuses WITH GRANT OPTION. Gives the consistency a code generator would enforce without imposing a grammar smaller than SQL.",
+      "tags": [
+        "strata"
+      ],
+      "priority": "low",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-12T19:16:35Z",
+      "updatedAt": "2026-09-12T19:16:35Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0089",
+      "title": "Sign the compiled artifact",
+      "description": "DF-STRATA-2026-2F6B. The artifact is target-independent, so one signature covers every environment while the gate still evaluates at deploy time against the real target. Converts --approve from a flag an agent can pass into an artifact it cannot forge. Depends on compile and deploy landing first.",
+      "tags": [
+        "strata"
+      ],
+      "priority": "low",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-12T19:16:35Z",
+      "updatedAt": "2026-09-12T19:16:35Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0090",
+      "title": "Record the compile/deploy design decisions",
+      "description": "A design conversation settled the direction after the validate/plan/apply slices shipped: compile to a deployable artifact, a closed project directory with a required include list, schemas derived from directory names, destructive changes never Allow, and a bounded compile-time-safety claim. All of it existed only in conversation. Write it as decision records with the rejected alternatives recorded alongside, and capture the implementation backlog.",
+      "tags": [
+        "strata",
+        "decisions"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T19:17:00Z",
+      "updatedAt": "2026-09-12T19:17:06Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
