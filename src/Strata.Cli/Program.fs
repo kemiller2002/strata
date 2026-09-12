@@ -518,21 +518,20 @@ let main argv =
 
                 let diff =
                     SchemaDiff.run
-                        allowDrops
-                        project.Manifest.ManagedSchemas
-                        declared.Declarations
-                        declared.TriggerDeclarations
-                        existingSchemas
-                        (DesiredState.schemasDeclaredIn declared)
-                        declared.Grants
-                        actualGrants
-                        resolvedData
-                        dataFailures
-                        normalisedViews
-                        normalisedTables
-                        renames
-                        desired
-                        actual
+                        { SchemaDiff.Inputs.between desired actual with
+                            AllowDrops = allowDrops
+                            ManagedSchemas = project.Manifest.ManagedSchemas
+                            Declarations = declared.Declarations
+                            TriggerDeclarations = declared.TriggerDeclarations
+                            ExistingSchemas = existingSchemas
+                            DeclaredInSchemas = DesiredState.schemasDeclaredIn declared
+                            DeclaredGrants = declared.Grants
+                            ActualGrants = actualGrants
+                            Data = resolvedData
+                            DataFailures = dataFailures
+                            NormalisedViews = normalisedViews
+                            NormalisedTables = normalisedTables
+                            Renames = renames }
                 let gate = DeploymentGate.run graph scope diff.Changes
 
                 if List.contains "--json" args then

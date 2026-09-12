@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 74,
+  "nextSeq": 75,
   "items": [
     {
       "id": "WI-0001",
@@ -1266,6 +1266,23 @@
       "attachments": [],
       "createdAt": "2026-09-12T10:10:11Z",
       "updatedAt": "2026-09-12T10:10:20Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0074",
+      "title": "SchemaDiff.run took sixteen positional arguments, two of them transposable",
+      "description": "run's desired and actual parameters were ADJACENT and both SchemaSnapshot. Transposing them compiles cleanly and inverts the entire diff: every declared object becomes a proposed drop and every deployed one a proposed create. Two more parameters were both string list. Replace the parameter list with a named record so the transposition cannot be written.",
+      "tags": [
+        "refactor",
+        "safety"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T10:22:07Z",
+      "updatedAt": "2026-09-12T10:22:08Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null

@@ -2023,6 +2023,67 @@ module SchemaDiff =
                   Detail = sprintf "declared rows were NOT compared: %s" f.Reason })
 
         changes, undeclared @ unresolved
+    /// Everything `run` compares.
+    ///
+    /// A record rather than a parameter list, and not for tidiness. `run` took
+    /// sixteen positional arguments, of which `desired` and `actual` were
+    /// ADJACENT and both `SchemaSnapshot`: transposing them compiled cleanly
+    /// and inverted the entire diff, turning every declared object into a
+    /// proposed drop and every deployed one into a proposed create. Two more
+    /// were both `string list`. Named fields make that transposition impossible
+    /// to write, and a new input a field rather than a positional insertion
+    /// that renumbers every call site.
+    type Inputs =
+        { AllowDrops: bool
+          ManagedSchemas: string list
+          /// The verbatim text that declared each object.
+          Declarations: (QualifiedName * string) list
+          TriggerDeclarations: ((QualifiedName * Identifier) * string) list
+          /// Schemas that exist in the database, or `None` when the list could
+          /// not be read. `None` is not an empty list.
+          ExistingSchemas: string list option
+          /// Schemas the project actually declared objects in.
+          DeclaredInSchemas: string list
+          /// Privileges the project declares.
+          DeclaredGrants: Grant list
+          /// Privileges the database holds, or `None` when they could not be
+          /// read.
+          ActualGrants: Grant list option
+          /// Declared and deployed reference rows, already rendered by the
+          /// server. Empty when the project declares no data files.
+          Data: ResolvedData list
+          DataFailures: DataFailure list
+          NormalisedViews: (string * string) list
+          NormalisedTables: NormalisedTable list
+          Renames: DeclaredRename list
+          Desired: SchemaSnapshot
+          Actual: SchemaSnapshot }
+
+    [<RequireQualifiedAccess>]
+    module Inputs =
+
+        /// The two snapshots and nothing else.
+        ///
+        /// Every other input defaults to the state that proposes the LEAST: no
+        /// managed schemas, no drops, and `None` — could not be read — rather
+        /// than `[]` wherever the two differ, so a caller that forgets to
+        /// supply something gets silence instead of a confident wrong answer.
+        let between (desired: SchemaSnapshot) (actual: SchemaSnapshot) =
+            { AllowDrops = false
+              ManagedSchemas = []
+              Declarations = []
+              TriggerDeclarations = []
+              ExistingSchemas = None
+              DeclaredInSchemas = []
+              DeclaredGrants = []
+              ActualGrants = None
+              Data = []
+              DataFailures = []
+              NormalisedViews = []
+              NormalisedTables = []
+              Renames = []
+              Desired = desired
+              Actual = actual }
 
     /// Compare desired state against actual state.
     ///
@@ -2035,30 +2096,24 @@ module SchemaDiff =
     /// pg-schema-diff requires --allow-hazards. A removal that is not enabled
     /// is still REPORTED, as a suppression — the difference is real and the
     /// user needs to see it; what is withheld is the proposal, not the fact.
-    let run
-        (allowDrops: bool)
-        (managedSchemas: string list)
-        (declarations: (QualifiedName * string) list)
-        (triggerDeclarations: ((QualifiedName * Identifier) * string) list)
-        /// Schemas that exist in the database, or `None` when the list could
-        /// not be read. `None` is not an empty list.
-        (existingSchemas: string list option)
-        /// Schemas the project actually declared objects in.
-        (declaredInSchemas: string list)
-        /// Privileges the project declares.
-        (declaredGrants: Grant list)
-        /// Privileges the database holds, or `None` when they could not be read.
-        (actualGrants: Grant list option)
-        /// Declared and deployed reference rows, already rendered by the
-        /// server. Empty when the project declares no data files.
-        (data: ResolvedData list)
-        (dataFailures: DataFailure list)
-        (normalisedViews: (string * string) list)
-        (normalisedTables: NormalisedTable list)
-        (renames: DeclaredRename list)
-        (desired: SchemaSnapshot)
-        (actual: SchemaSnapshot)
-        : DiffResult =
+    let run (inputs: Inputs) : DiffResult =
+
+        // Bound once, so the body below reads as it always did.
+        let allowDrops = inputs.AllowDrops
+        let managedSchemas = inputs.ManagedSchemas
+        let declarations = inputs.Declarations
+        let triggerDeclarations = inputs.TriggerDeclarations
+        let existingSchemas = inputs.ExistingSchemas
+        let declaredInSchemas = inputs.DeclaredInSchemas
+        let declaredGrants = inputs.DeclaredGrants
+        let actualGrants = inputs.ActualGrants
+        let data = inputs.Data
+        let dataFailures = inputs.DataFailures
+        let normalisedViews = inputs.NormalisedViews
+        let normalisedTables = inputs.NormalisedTables
+        let renames = inputs.Renames
+        let desired = inputs.Desired
+        let actual = inputs.Actual
 
         // A drop is only ever as trustworthy as the desired state that implies
         // it, so this single flag gates every removal below.

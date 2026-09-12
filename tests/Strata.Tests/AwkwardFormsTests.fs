@@ -219,24 +219,17 @@ let ``Strata reads the declaration the way the server does`` (name: string) =
 
         let result =
             SchemaDiff.run
-                // Drops ENABLED. A declaration Strata reads as something the
-                // server did not build shows up as a removal, and this must see
-                // it rather than have it suppressed.
-                true
-                [ Fixture.schema ]
-                []
-                []
-                (Some [ Fixture.schema ])
-                [ Fixture.schema ]
-                grants
-                actualGrants
-                []
-                []
-                []
-                normalisedTables
-                []
-                desired
-                (inScratch actual)
+                { SchemaDiff.Inputs.between desired (inScratch actual) with
+                    // Drops ENABLED. A declaration Strata reads as something the
+                    // server did not build shows up as a removal, and this must
+                    // see it rather than have it suppressed.
+                    AllowDrops = true
+                    ManagedSchemas = [ Fixture.schema ]
+                    ExistingSchemas = Some [ Fixture.schema ]
+                    DeclaredInSchemas = [ Fixture.schema ]
+                    DeclaredGrants = grants
+                    ActualGrants = actualGrants
+                    NormalisedTables = normalisedTables }
 
         // Rendered so a failure names what diverged rather than just counting.
         // `SchemaDiff.describe` is private, and it stays that way: widening

@@ -57,7 +57,10 @@ let private managed = [ "sales" ]
 /// These tests build snapshots directly and have no files, so they pass none
 /// and exercise the reconstruction path deliberately.
 let private run allowDrops managedSchemas desired actual =
-    Strata.Application.SchemaDiff.run allowDrops managedSchemas [] [] None [] [] None [] [] [] [] [] desired actual
+    Strata.Application.SchemaDiff.run
+        { Strata.Application.SchemaDiff.Inputs.between desired actual with
+            AllowDrops = allowDrops
+            ManagedSchemas = managedSchemas }
 
 /// Existing guard tests pass allowDrops=true deliberately: a test that left
 /// drops globally disabled would pass even if the guard it names were deleted.
@@ -634,7 +637,11 @@ let private viewDefined name definition =
           Scope = Managed }
 
 let private runWithViews normalised desired actual =
-    Strata.Application.SchemaDiff.run true managed [] [] None [] [] None [] [] normalised [] [] desired actual
+    Strata.Application.SchemaDiff.run
+        { Strata.Application.SchemaDiff.Inputs.between desired actual with
+            AllowDrops = true
+            ManagedSchemas = managed
+            NormalisedViews = normalised }
 
 [<Fact>]
 let ``a view whose normalised definition differs is redefined`` () =
@@ -777,7 +784,11 @@ let private tableWithDefault name column deployedDefault =
           Scope = Managed }
 
 let private runWithTables normalisedTables desired actual =
-    Strata.Application.SchemaDiff.run true managed [] [] None [] [] None [] [] [] normalisedTables [] desired actual
+    Strata.Application.SchemaDiff.run
+        { Strata.Application.SchemaDiff.Inputs.between desired actual with
+            AllowDrops = true
+            ManagedSchemas = managed
+            NormalisedTables = normalisedTables }
 
 let private normalisedTable name defaults checks : Strata.Application.SchemaDiff.NormalisedTable =
     { Table = name; Defaults = defaults; Checks = checks }
@@ -862,7 +873,11 @@ let ``a table that could not be normalised keeps its disclosure`` () =
 // ---- renames --------------------------------------------------------------
 
 let private runWithRenames renames desired actual =
-    Strata.Application.SchemaDiff.run true managed [] [] None [] [] None [] [] [] [] renames desired actual
+    Strata.Application.SchemaDiff.run
+        { Strata.Application.SchemaDiff.Inputs.between desired actual with
+            AllowDrops = true
+            ManagedSchemas = managed
+            Renames = renames }
 
 let private declaredRename object' renamedFrom columns : Strata.Application.SchemaDiff.DeclaredRename =
     { Object = object'; RenamedFrom = renamedFrom; Columns = columns }
@@ -1472,7 +1487,12 @@ let private resolved declaredRows deployedRows : ResolvedData =
       Deployed = deployedRows }
 
 let private runWithData data failures desired actual =
-    Strata.Application.SchemaDiff.run true managed [] [] None [] [] None data failures [] [] [] desired actual
+    Strata.Application.SchemaDiff.run
+        { Strata.Application.SchemaDiff.Inputs.between desired actual with
+            AllowDrops = true
+            ManagedSchemas = managed
+            Data = data
+            DataFailures = failures }
 
 let private accountType = tbl Managed "sales" "account_type" [ "id", false; "label", false ]
 
@@ -1599,7 +1619,11 @@ let ``an update never assigns the key it matches on`` () =
 
 let private runWithSchemas existing declaredIn desired actual =
     Strata.Application.SchemaDiff.run
-        true managed [] [] existing declaredIn [] None [] [] [] [] [] desired actual
+        { Strata.Application.SchemaDiff.Inputs.between desired actual with
+            AllowDrops = true
+            ManagedSchemas = managed
+            ExistingSchemas = existing
+            DeclaredInSchemas = declaredIn }
 
 [<Fact>]
 let ``a declared schema the database does not have is created`` () =
@@ -1764,9 +1788,13 @@ let private grant object' grantee privileges : Grant =
 
 let private runWithGrants allowDrops declared actual =
     Strata.Application.SchemaDiff.run
-        allowDrops managed [] [] None [] declared actual [] [] [] [] []
-        (complete [ tbl Managed "sales" "orders" orders ])
-        (complete [ tbl Observed "sales" "orders" orders ])
+        { Strata.Application.SchemaDiff.Inputs.between
+              (complete [ tbl Managed "sales" "orders" orders ])
+              (complete [ tbl Observed "sales" "orders" orders ]) with
+            AllowDrops = allowDrops
+            ManagedSchemas = managed
+            DeclaredGrants = declared
+            ActualGrants = actual }
 
 [<Fact>]
 let ``a declared privilege the grantee does not hold is granted`` () =
@@ -2004,10 +2032,14 @@ let ``unreadable privileges propose nothing and say so`` () =
 let ``grants run after the objects they name exist`` () =
     let result =
         Strata.Application.SchemaDiff.run
-            true managed [] [] (Some [ "sales" ]) [] [ grant "orders" "app_user" [ "SELECT" ] ] (Some [])
-            [] [] [] [] []
-            (complete [ tbl Managed "sales" "orders" orders ])
-            (complete [])
+            { Strata.Application.SchemaDiff.Inputs.between
+                  (complete [ tbl Managed "sales" "orders" orders ])
+                  (complete []) with
+                AllowDrops = true
+                ManagedSchemas = managed
+                ExistingSchemas = Some [ "sales" ]
+                DeclaredGrants = [ grant "orders" "app_user" [ "SELECT" ] ]
+                ActualGrants = Some [] }
 
     let tags = result.Changes |> List.map Change.tag
     Assert.True(
