@@ -57,19 +57,81 @@ module ShadowNormalisation =
           /// Constraint name -> check definition, as the catalog renders it.
           Checks: (string * string) list }
 
+    /// If a construct that hides text from SQL's lexer starts at `i`, the offset
+    /// just past it.
+    ///
+    /// Authority for: which parts of a SQL string are text and which are code.
+    ///
+    /// The four things PostgreSQL's lexer hides: a line comment, a block comment
+    /// (which NESTS, unlike C), single- and double-quoted text with doubled
+    /// quotes as the escape, and a dollar-quoted string. Everything else is
+    /// code, and everything that reshapes DDL in this module has to know the
+    /// difference.
+    ///
+    /// `None` means `i` is ordinary code.
+    let private hiddenEnd (sql: string) (i: int) : int option =
+        let n = sql.Length
+
+        // `$tag$` opens a dollar-quoted string and `$$` is the empty tag.
+        // Anything else beginning with `$` is an ordinary character —
+        // PostgreSQL identifiers may contain one.
+        let dollarTag () =
+            let rec tagEnd j =
+                if j >= n then None
+                elif sql.[j] = '$' then Some j
+                elif Char.IsLetterOrDigit sql.[j] || sql.[j] = '_' then tagEnd (j + 1)
+                else None
+
+            tagEnd (i + 1) |> Option.map (fun j -> sql.Substring(i, j - i + 1))
+
+        let rec blockEnd j level =
+            if j >= n then n
+            elif j + 1 < n && sql.[j] = '/' && sql.[j + 1] = '*' then blockEnd (j + 2) (level + 1)
+            elif j + 1 < n && sql.[j] = '*' && sql.[j + 1] = '/' then
+                if level = 1 then j + 2 else blockEnd (j + 2) (level - 1)
+            else
+                blockEnd (j + 1) level
+
+        let rec quotedEnd j quote =
+            if j >= n then n
+            elif sql.[j] = quote then
+                // A doubled quote is an escaped quote, not the end.
+                if j + 1 < n && sql.[j + 1] = quote then quotedEnd (j + 2) quote else j + 1
+            else
+                quotedEnd (j + 1) quote
+
+        if i >= n then
+            None
+        elif i + 1 < n && sql.[i] = '-' && sql.[i + 1] = '-' then
+            match sql.IndexOf('\n', i) with
+            | -1 -> Some n
+            | e -> Some(e + 1)
+        elif i + 1 < n && sql.[i] = '/' && sql.[i + 1] = '*' then
+            Some(blockEnd (i + 2) 1)
+        elif sql.[i] = '\'' || sql.[i] = '"' then
+            Some(quotedEnd (i + 1) sql.[i])
+        elif sql.[i] = '$' then
+            match dollarTag () with
+            | Some tag ->
+                match sql.IndexOf(tag, i + tag.Length, StringComparison.Ordinal) with
+                | -1 -> Some n
+                | e -> Some(e + tag.Length)
+            | None -> None
+        else
+            None
+
     /// The first offset in a SQL string where a predicate holds, considering
-    /// only text that is NOT inside a string literal, a quoted identifier, a
-    /// dollar-quoted string or a comment, and telling the predicate what
+    /// only text that `hiddenEnd` does not hide, and telling the predicate what
     /// parenthesis depth it is looking at.
     ///
     /// Authority for: where a piece of SQL text can be split without a parser.
     ///
-    /// ## Why this is worth eighty lines
+    /// ## Why this is worth the lines
     ///
     /// Everything in this module reshapes declared DDL into a statement the
-    /// shadow schema can execute, and every reshaping needs one offset: where a
+    /// shadow schema can execute, and every reshaping needs an offset: where a
     /// view's body begins, where a table's column list begins. Both were found
-    /// with a naive substring search, and both are wrong the same way — the
+    /// with a naive substring search, and both were wrong the same way — the
     /// search does not know that a match inside a comment, a quoted name or a
     /// string is not the thing it is looking for, nor that a match at the wrong
     /// nesting depth is a different thing entirely.
@@ -88,7 +150,7 @@ module ShadowNormalisation =
     /// The tier rules keep the parser out of this project
     /// (`DF-STRATA-2026-D3F8`: the catalog adapter does not parse SQL), so the
     /// answer cannot be "use the parse tree". It can be a scanner that knows the
-    /// four things PostgreSQL's lexer knows about hiding text, which is this.
+    /// four things PostgreSQL's lexer knows, which is this.
     ///
     /// The depth passed to the predicate is the depth BEFORE the character is
     /// applied, so the `(` that opens a column list reads as depth zero.
@@ -100,61 +162,68 @@ module ShadowNormalisation =
     let private scanFor (isMatch: int -> char -> int -> bool) (sql: string) : int option =
         let n = sql.Length
 
-        // `$tag$` opens a dollar-quoted string and `$$` is the empty tag.
-        // Anything else beginning with `$` is an ordinary character —
-        // PostgreSQL identifiers may contain one.
-        let dollarTag i =
-            let rec tagEnd j =
-                if j >= n then None
-                elif sql.[j] = '$' then Some j
-                elif Char.IsLetterOrDigit sql.[j] || sql.[j] = '_' then tagEnd (j + 1)
-                else None
-
-            if i >= n || sql.[i] <> '$' then None
-            else tagEnd (i + 1) |> Option.map (fun j -> sql.Substring(i, j - i + 1))
-
         let rec scan i depth =
-            if i >= n then None
-            elif i + 1 < n && sql.[i] = '-' && sql.[i + 1] = '-' then
-                let e = sql.IndexOf('\n', i)
-                scan (if e < 0 then n else e + 1) depth
-            elif i + 1 < n && sql.[i] = '/' && sql.[i + 1] = '*' then
-                // Block comments nest in PostgreSQL, unlike C.
-                block (i + 2) 1 depth
-            elif sql.[i] = '\'' || sql.[i] = '"' then
-                quoted (i + 1) sql.[i] depth
-            elif sql.[i] = '$' && (dollarTag i).IsSome then
-                let tag = (dollarTag i).Value
-                let e = sql.IndexOf(tag, i + tag.Length, StringComparison.Ordinal)
-                scan (if e < 0 then n else e + tag.Length) depth
-            elif isMatch i sql.[i] depth then
-                Some i
+            if i >= n then
+                None
             else
-                let next =
-                    if sql.[i] = '(' then depth + 1
-                    elif sql.[i] = ')' then max 0 (depth - 1)
-                    else depth
+                match hiddenEnd sql i with
+                | Some e -> scan e depth
+                | None ->
+                    if isMatch i sql.[i] depth then
+                        Some i
+                    else
+                        let next =
+                            if sql.[i] = '(' then depth + 1
+                            elif sql.[i] = ')' then max 0 (depth - 1)
+                            else depth
 
-                scan (i + 1) next
-
-        and block i level depth =
-            if i >= n then None
-            elif i + 1 < n && sql.[i] = '/' && sql.[i + 1] = '*' then block (i + 2) (level + 1) depth
-            elif i + 1 < n && sql.[i] = '*' && sql.[i + 1] = '/' then
-                if level = 1 then scan (i + 2) depth else block (i + 2) (level - 1) depth
-            else
-                block (i + 1) level depth
-
-        and quoted i quote depth =
-            if i >= n then None
-            elif sql.[i] = quote then
-                // A doubled quote is an escaped quote, not the end.
-                if i + 1 < n && sql.[i + 1] = quote then quoted (i + 2) quote depth
-                else scan (i + 1) depth
-            else
-                quoted (i + 1) quote depth
+                        scan (i + 1) next
 
         scan 0 0
+
+    /// Replace any of `spellings` with `target`, but ONLY where the text is code.
+    ///
+    /// Authority for: rewriting a name in declared SQL without rewriting the
+    /// data.
+    ///
+    /// A policy's expression can legitimately contain the name of its own table
+    /// as a string: `USING (note <> 'see shop.product')`. Rewriting that to the
+    /// shadow's name changes what the policy MEANS, so the shadow renders a
+    /// different expression than the file declares, and the two compare unequal
+    /// on every run — a policy the author never touched, proposed for
+    /// replacement forever. The same applies to a name inside a comment.
+    ///
+    /// Longest spelling first, so `"a"."b"` is never half-matched by `a.b`.
+    ///
+    /// A match is tried BEFORE the text is checked for hiding, and the order is
+    /// the whole difference between a name and a string. A double-quoted
+    /// identifier is CODE — `"shop"."product"` is the name, spelled carefully —
+    /// so a spelling that begins with a quote has to be allowed to match it. A
+    /// single-quoted or dollar-quoted string is DATA, and no spelling begins
+    /// with those, so trying first costs nothing and the literal is then skipped
+    /// whole. A quoted identifier that is NOT the name is skipped whole too, so
+    /// a table called `"my shop.product notes"` keeps its own name.
+    let replaceSignificant (spellings: string list) (target: string) (sql: string) : string =
+        let n = sql.Length
+        let ordered = spellings |> List.sortByDescending String.length
+
+        let matchAt i =
+            ordered
+            |> List.tryFind (fun spelling ->
+                i + spelling.Length <= n && String.CompareOrdinal(sql, i, spelling, 0, spelling.Length) = 0)
+
+        let rec go i (acc: string list) =
+            if i >= n then
+                acc |> List.rev |> String.concat ""
+            else
+                match matchAt i with
+                | Some spelling -> go (i + spelling.Length) (target :: acc)
+                | None ->
+                    match hiddenEnd sql i with
+                    | Some e -> go e (sql.Substring(i, e - i) :: acc)
+                    | None -> go (i + 1) (string sql.[i] :: acc)
+
+        go 0 []
 
     /// PostgreSQL identifiers may contain `$`, so a word boundary is not
     /// `Char.IsLetterOrDigit` alone.
@@ -559,13 +628,13 @@ module ShadowNormalisation =
                                 if schemaPart = "" then
                                     text
                                 else
-                                    [ sprintf "\"%s\".\"%s\"" schemaPart tablePart
-                                      sprintf "\"%s\".%s" schemaPart tablePart
-                                      sprintf "%s.\"%s\"" schemaPart tablePart
-                                      sprintf "%s.%s" schemaPart tablePart ]
-                                    |> List.fold
-                                        (fun (acc: string) spelling -> acc.Replace(spelling, target))
-                                        text
+                                    text
+                                    |> replaceSignificant
+                                        [ sprintf "\"%s\".\"%s\"" schemaPart tablePart
+                                          sprintf "\"%s\".%s" schemaPart tablePart
+                                          sprintf "%s.\"%s\"" schemaPart tablePart
+                                          sprintf "%s.%s" schemaPart tablePart ]
+                                        target
 
                             let results =
                                 policies

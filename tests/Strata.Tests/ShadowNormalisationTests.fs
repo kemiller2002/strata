@@ -204,3 +204,72 @@ let ``a view named view does not match its own keyword`` () =
 let ``the name end is past the whole qualified name`` () =
     let ddl = "CREATE VIEW shop.v (a) AS SELECT 1"
     Assert.Equal(Some(ddl.IndexOf " (a)"), ShadowNormalisation.viewNameEnd ddl)
+
+/// Rewriting a name without rewriting the data.
+///
+/// A policy's table has to be renamed to the shadow's before the policy can be
+/// created there, and that was done with a plain `String.Replace`. A policy
+/// expression can legitimately contain its own table's name as a string —
+/// `USING (note <> 'see shop.product')` — and rewriting that changes what the
+/// policy MEANS. The shadow then renders a different expression than the file
+/// declares, the two compare unequal on every run, and a policy nobody touched
+/// is proposed for replacement forever.
+
+let private rewrite (text: string) =
+    ShadowNormalisation.replaceSignificant
+        [ "\"shop\".\"product\""; "\"shop\".product"; "shop.\"product\""; "shop.product" ]
+        "_shadow.\"product\""
+        text
+
+[<Fact>]
+let ``a name in code is rewritten`` () =
+    Assert.Equal(
+        "CREATE POLICY p ON _shadow.\"product\" USING (a)",
+        rewrite "CREATE POLICY p ON shop.product USING (a)")
+
+[<Fact>]
+let ``every spelling of the name is rewritten`` () =
+    Assert.Equal(
+        "_shadow.\"product\" _shadow.\"product\" _shadow.\"product\" _shadow.\"product\"",
+        rewrite "shop.product \"shop\".product shop.\"product\" \"shop\".\"product\"")
+
+[<Fact>]
+let ``a name inside a string literal is left alone`` () =
+    // The defect. The literal is data; changing it changes the policy.
+    Assert.Equal(
+        "CREATE POLICY p ON _shadow.\"product\" USING (note <> 'see shop.product')",
+        rewrite "CREATE POLICY p ON shop.product USING (note <> 'see shop.product')")
+
+[<Fact>]
+let ``a name inside a comment is left alone`` () =
+    Assert.Equal(
+        "-- guards shop.product\nCREATE POLICY p ON _shadow.\"product\" USING (a)",
+        rewrite "-- guards shop.product\nCREATE POLICY p ON shop.product USING (a)")
+
+[<Fact>]
+let ``a name inside a dollar-quoted string is left alone`` () =
+    Assert.Equal(
+        "SELECT $tag$shop.product$tag$ FROM _shadow.\"product\"",
+        rewrite "SELECT $tag$shop.product$tag$ FROM shop.product")
+
+[<Fact>]
+let ``a doubled quote inside a literal does not end it`` () =
+    Assert.Equal(
+        "USING (note <> 'it''s shop.product')",
+        rewrite "USING (note <> 'it''s shop.product')")
+
+[<Fact>]
+let ``the longest spelling wins so a quoted name is not half-rewritten`` () =
+    Assert.Equal("_shadow.\"product\"", rewrite "\"shop\".\"product\"")
+
+[<Fact>]
+let ``text with no occurrence is returned unchanged`` () =
+    Assert.Equal("SELECT 1 FROM other.thing", rewrite "SELECT 1 FROM other.thing")
+
+[<Fact>]
+let ``a quoted name that merely contains the spelling keeps its own name`` () =
+    // The quoted identifier is skipped whole because no spelling matches at the
+    // quote. A table really can be called this.
+    Assert.Equal(
+        "SELECT \"my shop.product notes\" FROM _shadow.\"product\"",
+        rewrite "SELECT \"my shop.product notes\" FROM shop.product")

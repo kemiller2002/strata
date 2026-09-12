@@ -1597,10 +1597,10 @@
       "description": "ShadowNormalisation.normalisePolicies rewrites a policy's table references with acc.Replace(spelling, target), which is the same lexically-unaware surgery WI-0092 removed from the two body-offset searches. A table name appearing inside a string literal in the policy expression -- USING (note = 'see shop.product') -- is rewritten too, so the shadow policy carries a different literal than the declared one and its rendered expression compares unequal forever. Route it through the scanner added in WI-0092 so replacement happens only in significant text.",
       "tags": [],
       "priority": "medium",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-12T22:23:36Z",
-      "updatedAt": "2026-09-12T22:23:36Z",
+      "updatedAt": "2026-09-12T22:39:31Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null
