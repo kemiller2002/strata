@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 68,
+  "nextSeq": 69,
   "items": [
     {
       "id": "WI-0001",
@@ -1142,6 +1142,24 @@
       "attachments": [],
       "createdAt": "2026-09-12T09:19:49Z",
       "updatedAt": "2026-09-12T09:19:49Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0068",
+      "title": "Awkward-forms corpus: the server as oracle for declaration reading",
+      "description": "Two defects shipped green in one afternoon (IDENTITY read as nullable, column-level GRANT widened to table-wide) because every round-trip used the shapes the author had in mind. Add a fixture SQL corpus per object type containing awkward forms, executed against a live PostgreSQL in CI, asserting each form is either read the way the server reads it or refused explicitly, never silently reinterpreted.",
+      "tags": [
+        "testing",
+        "postgres",
+        "er-008"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T09:32:34Z",
+      "updatedAt": "2026-09-12T09:32:41Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null

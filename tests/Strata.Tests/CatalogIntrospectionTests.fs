@@ -1,3 +1,9 @@
+/// Shares the live database with AwkwardFormsTests, which creates and drops a
+/// scratch schema. xUnit runs distinct test classes in PARALLEL, and an F#
+/// module's tests compile to one such class — so without a shared collection
+/// that scratch schema can appear between the two reads of `introspection is
+/// deterministic across runs` and fail it for no reason at all.
+[<Xunit.Collection("live-database")>]
 module Strata.Tests.CatalogIntrospectionTests
 
 open System

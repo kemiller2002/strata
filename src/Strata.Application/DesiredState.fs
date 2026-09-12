@@ -324,12 +324,28 @@ module DesiredState =
         // One object per file is the layout contract. More than one is not an
         // error, but it does mean "which file owns this object" has two
         // answers, so it is reported.
+        // Keyed on the object's IDENTITY, not its name. PostgreSQL allows
+        // overloads, so `f(integer)` and `f(text)` are two objects that share a
+        // name — `SchemaDiff` has always known this and matched routines on name
+        // plus argument types for the same reason.
+        //
+        // Keying on the name alone reported every overloaded pair as "declared
+        // 2 times", which is a load failure, which marks desired state
+        // incomplete, which suppresses EVERY drop in the project. A project
+        // using a perfectly ordinary overload could not propose a removal at
+        // all. Found by the awkward-forms corpus on its first run.
+        let identityOf (o: SchemaObject) =
+            match o with
+            | RoutineObject r ->
+                sprintf "routine:%s(%s)" (QualifiedName.display r.Name) (String.concat "," r.ArgumentTypes)
+            | other -> QualifiedName.display (SchemaObject.name other)
+
         let duplicates =
             loaded
-            |> List.countBy (fun o -> QualifiedName.display (SchemaObject.name o))
+            |> List.countBy identityOf
             |> List.filter (fun (_, count) -> count > 1)
-            |> List.map (fun (name, count) ->
-                { Path = name
+            |> List.map (fun (identity, count) ->
+                { Path = identity
                   Reason = sprintf "declared %d times across the project" count })
 
         let allFailures = loadFailures @ duplicates @ orphanIndexes @ orphanTriggers @ orphanData

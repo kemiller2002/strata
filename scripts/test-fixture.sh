@@ -20,6 +20,11 @@ PASSWORD="${STRATA_TEST_PASSWORD:-strata_local_test}"
 
 # The test role must NOT be a superuser: a superuser can read the `hidden`
 # schema, and three tests exist precisely because the connected role cannot.
+# The grantee roles exist for the awkward-forms grant cases. They live here
+# rather than in the test because creating a role needs a superuser, and the test
+# role deliberately is not one — three other tests depend on it not being one.
+# They are never dropped: a role is cluster-wide and another fixture may hold
+# grants to it.
 psql -v ON_ERROR_STOP=1 -q -d postgres <<SQL
 DO \$\$
 BEGIN
@@ -27,6 +32,14 @@ BEGIN
         CREATE ROLE ${ROLE} LOGIN PASSWORD '${PASSWORD}';
     ELSE
         ALTER ROLE ${ROLE} LOGIN NOSUPERUSER PASSWORD '${PASSWORD}';
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'strata_awkward_role') THEN
+        CREATE ROLE strata_awkward_role;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'strata_awkward_role2') THEN
+        CREATE ROLE strata_awkward_role2;
     END IF;
 END
 \$\$;

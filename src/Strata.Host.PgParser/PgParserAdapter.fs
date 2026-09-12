@@ -540,6 +540,21 @@ module PgParserAdapter =
 
     /// A type name as written, flattened from libpg_query's name path and
     /// rendered the way the catalog renders it.
+    /// A type name with any modifier removed: `numeric(12,2)` -> `numeric`.
+    ///
+    /// Used only for a routine's ARGUMENT types. A column keeps its modifier,
+    /// because there the modifier is part of the declaration; a routine's
+    /// identity ignores it entirely.
+    let private stripTypeModifier (rendered: string) =
+        match rendered.IndexOf '(' with
+        | -1 -> rendered
+        | i ->
+            // `timestamp(3) with time zone` keeps its tail: the modifier sits
+            // inside the phrase, so only the bracketed part is dropped.
+            let closing = rendered.IndexOf(')', i)
+            if closing < 0 then rendered.Substring(0, i).Trim()
+            else (rendered.Substring(0, i) + rendered.Substring(closing + 1)).Trim()
+
     let private typeNameOf (typeName: TypeName) =
         if isNull (box typeName) then QualifiedName.unqualified (identifierOf "unknown")
         else
@@ -915,7 +930,16 @@ module PgParserAdapter =
                 || p.Mode = FunctionParameterMode.FuncParamIn
                 || p.Mode = FunctionParameterMode.FuncParamInout
                 || p.Mode = FunctionParameterMode.FuncParamVariadic)
-            |> List.map (fun p -> QualifiedName.display (typeNameOf p.ArgType))
+            // WITHOUT type modifiers, unlike a column type where the modifier
+            // is part of what is being declared. A modifier is not part of a
+            // routine's identity: PostgreSQL rejects `f(numeric)` as "function
+            // f already exists with same argument types" when `f(numeric(12,2))`
+            // exists, and the catalog stores the argument as plain `numeric`.
+            // Carrying `(12,2)` here made the declared signature differ from the
+            // deployed one, so the routine was proposed as a create AND its
+            // deployed twin as a removal, forever. Found by the awkward-forms
+            // corpus; verified against a live server.
+            |> List.map (fun p -> QualifiedName.display (typeNameOf p.ArgType) |> stripTypeModifier)
 
         let language =
             if isNull (box stmt.Options) then "unknown"

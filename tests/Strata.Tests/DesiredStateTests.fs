@@ -772,3 +772,57 @@ let ``a schema or routine GRANT says which it was, not "no resolvable object"`` 
 
     Assert.Contains(schemaGrant.Failures, fun f -> f.Reason.Contains "GRANT ON SCHEMA")
     Assert.Contains(routineGrant.Failures, fun f -> f.Reason.Contains "GRANT ON FUNCTION")
+
+[<Fact>]
+let ``overloaded routines are two objects, not one declared twice`` () =
+    // Keyed on the name alone, `f(integer)` and `f(text)` looked like the same
+    // object declared twice. That is a load failure, which marks desired state
+    // incomplete, which suppresses EVERY drop in the project — so an ordinary
+    // overload made removals impossible anywhere. Found by the awkward-forms
+    // corpus on its first run.
+    let loaded =
+        load
+            [ "f.sql",
+              "CREATE FUNCTION s.f(a integer) RETURNS integer LANGUAGE sql AS $$ SELECT a $$;\n\
+               CREATE FUNCTION s.f(a text) RETURNS text LANGUAGE sql AS $$ SELECT a $$;" ]
+
+    Assert.Empty loaded.Failures
+    Assert.Equal(Complete, Completeness.stateOf "relations" loaded.Snapshot.Completeness)
+
+[<Fact>]
+let ``the same routine really declared twice is still reported`` () =
+    // The guard must key on identity, not merely stop checking.
+    let loaded =
+        load
+            [ "f.sql",
+              "CREATE FUNCTION s.f(a integer) RETURNS integer LANGUAGE sql AS $$ SELECT a $$;\n\
+               CREATE FUNCTION s.f(a integer) RETURNS integer LANGUAGE sql AS $$ SELECT 1 $$;" ]
+
+    Assert.Contains(loaded.Failures, fun f -> f.Reason.Contains "declared 2 times")
+
+[<Fact>]
+let ``a routine's argument types carry no modifier`` () =
+    // A modifier is not part of a routine's identity. PostgreSQL rejects
+    // `f(numeric)` as "already exists with same argument types" when
+    // `f(numeric(12,2))` exists, and the catalog stores plain `numeric` — so
+    // carrying (12,2) made the declared signature differ from the deployed one
+    // and the routine was proposed as a create AND a removal, forever.
+    let loaded =
+        load
+            [ "f.sql",
+              "CREATE FUNCTION s.f(a numeric(12,2), b varchar(50)) RETURNS numeric LANGUAGE sql AS $$ SELECT a $$;" ]
+
+    let routine =
+        loaded.Snapshot.Objects
+        |> List.pick (function RoutineObject r -> Some r | _ -> None)
+
+    Assert.Equal<string list>([ "numeric"; "character varying" ], routine.ArgumentTypes)
+
+[<Fact>]
+let ``a column keeps the modifier a routine argument drops`` () =
+    // The two rules pull opposite ways and both matter: a column's modifier is
+    // part of what is declared, a routine argument's is not.
+    let loaded = load [ "t.sql", "CREATE TABLE s.t (a numeric(12,2))" ]
+    let column = (tableNamed loaded "s.t").Value.Columns |> List.head
+
+    Assert.Equal("numeric(12,2)", QualifiedName.display column.Type.TypeName)

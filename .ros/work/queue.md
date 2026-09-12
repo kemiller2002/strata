@@ -69,4 +69,5 @@
 | WI-0064 | Strata cannot create a schema | complete | strata, desired-state | high |
 | WI-0065 | Sequences as desired state | complete | strata, desired-state | high |
 | WI-0066 | Grants as desired state | complete | strata, desired-state | high |
-| WI-0067 | A column-level GRANT was widened to the whole table | ready | strata, security | high |
+| WI-0067 | A column-level GRANT was widened to the whole table | complete | strata, security | high |
+| WI-0068 | Awkward-forms corpus: the server as oracle for declaration reading | ready | testing, postgres, er-008 | high |
