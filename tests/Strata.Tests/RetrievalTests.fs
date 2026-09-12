@@ -26,11 +26,11 @@ let private orders =
     TableObject
         { Name = qn "sales" "orders"
           Columns = [ col "order_id" 1; col "customer_id" 2 ]
-          PrimaryKey = Some { ConstraintName = id' "pk"; Columns = [ id' "order_id" ] }
+          PrimaryKey = Some { ConstraintName = Some(id' "pk"); Columns = [ id' "order_id" ] }
           UniqueConstraints = []
           CheckConstraints = []
           ForeignKeys =
-            [ { ConstraintName = id' "fk"
+            [ { ConstraintName = Some(id' "fk")
                 Columns = [ id' "customer_id" ]
                 ReferencedTable = qn "sales" "customer"
                 ReferencedColumns = [ id' "id" ] } ]
@@ -325,10 +325,10 @@ let ``inspect includes constraints and indexes, not just columns and keys`` () =
         TableObject
             { Name = qn "sales" "orders"
               Columns = [ col "order_id" 1; col "status" 2 ]
-              PrimaryKey = Some { ConstraintName = id' "pk"; Columns = [ id' "order_id" ] }
-              UniqueConstraints = [ { ConstraintName = id' "uq_status"; Columns = [ id' "status" ] } ]
+              PrimaryKey = Some { ConstraintName = Some(id' "pk"); Columns = [ id' "order_id" ] }
+              UniqueConstraints = [ { ConstraintName = Some(id' "uq_status"); Columns = [ id' "status" ] } ]
               CheckConstraints =
-                [ { ConstraintName = id' "ck_status"
+                [ { ConstraintName = Some(id' "ck_status")
                     Expression = "CHECK (status IN ('open','closed'))" } ]
               ForeignKeys = []
               Indexes =

@@ -54,5 +54,6 @@
 | WI-0049 | Rename detection via -- strata:renamed_from (Q-004) | complete | strata, rename | high |
 | WI-0050 | Indexes as desired state | complete | strata, desired-state | high |
 | WI-0051 | Triggers as desired state | complete | strata, desired-state | high |
-| WI-0052 | Table creations are not ordered by foreign key | ready | strata, diff | high |
+| WI-0052 | Table creations are not ordered by foreign key | complete | strata, diff | high |
 | WI-0053 | The live test fixture is not reproducible | captured | strata, testing | medium |
+| WI-0054 | An unnamed constraint never converges | ready | strata, diff | high |

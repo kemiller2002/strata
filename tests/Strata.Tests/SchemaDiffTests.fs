@@ -192,7 +192,7 @@ let ``an index backing a constraint is not reported as uncompared`` () =
         TableObject
             { Name = qn "sales" "orders"
               Columns = [ col 1 "id" false ]
-              PrimaryKey = Some { ConstraintName = id' "orders_pkey"; Columns = [ id' "id" ] }
+              PrimaryKey = Some { ConstraintName = Some(id' "orders_pkey"); Columns = [ id' "id" ] }
               UniqueConstraints = []
               CheckConstraints = []
               ForeignKeys = []
@@ -204,7 +204,7 @@ let ``an index backing a constraint is not reported as uncompared`` () =
         TableObject
             { Name = qn "sales" "orders"
               Columns = [ col 1 "id" false ]
-              PrimaryKey = Some { ConstraintName = id' "orders_pkey"; Columns = [ id' "id" ] }
+              PrimaryKey = Some { ConstraintName = Some(id' "orders_pkey"); Columns = [ id' "id" ] }
               UniqueConstraints = []
               CheckConstraints = []
               ForeignKeys = []
@@ -294,7 +294,7 @@ let ``a created table carries its primary key`` () =
         TableObject
             { Name = qn "sales" "t"
               Columns = [ col 1 "id" false ]
-              PrimaryKey = Some { ConstraintName = id' "t_pkey"; Columns = [ id' "id" ] }
+              PrimaryKey = Some { ConstraintName = Some(id' "t_pkey"); Columns = [ id' "id" ] }
               UniqueConstraints = []
               CheckConstraints = []
               ForeignKeys = []
@@ -330,7 +330,7 @@ let ``a table with a check constraint is NOT emitted`` () =
               Columns = [ col 1 "id" false ]
               PrimaryKey = None
               UniqueConstraints = []
-              CheckConstraints = [ { ConstraintName = id' "ck"; Expression = "" } ]
+              CheckConstraints = [ { ConstraintName = Some(id' "ck"); Expression = "" } ]
               ForeignKeys = []
               Indexes = []
               Triggers = []
@@ -406,7 +406,7 @@ let private tableWith schema name columns pk uniques checks fks =
           Scope = Managed }
 
 let private fk name cols target targetCols =
-    { ConstraintName = id' name
+    { ConstraintName = Some(id' name)
       Columns = cols |> List.map id'
       ReferencedTable = qn "sales" target
       ReferencedColumns = targetCols |> List.map id' }
@@ -428,12 +428,12 @@ let ``a foreign key in desired state and not in the database is added`` () =
     let withFk = tableWith "sales" "orders" orders None [] [] [ fk "fk_o_c" [ "id" ] "customers" [ "id" ] ]
     let result = run true managed (complete [ withFk ]) (complete [ plain ])
 
-    Assert.Contains(result.Changes, fun c -> c = AddConstraint(qn "sales" "orders", id' "fk_o_c"))
+    Assert.Contains(result.Changes, fun c -> c = AddConstraint(qn "sales" "orders", Some(id' "fk_o_c")))
 
 [<Fact>]
 let ``a check constraint present on one side only is reported`` () =
     let withCheck =
-        tableWith "sales" "orders" orders None [] [ { ConstraintName = id' "ck_x"; Expression = "" } ] []
+        tableWith "sales" "orders" orders None [] [ { ConstraintName = Some(id' "ck_x"); Expression = "" } ] []
 
     let result = run true managed (complete [ plain ]) (complete [ withCheck ])
 
@@ -445,7 +445,7 @@ let ``a check constraint present on one side only is reported`` () =
 [<Fact>]
 let ``a primary key covering different columns is reported`` () =
     let pkOn cols =
-        Some { PrimaryKey.ConstraintName = id' "pk"; Columns = cols |> List.map id' }
+        Some { PrimaryKey.ConstraintName = Some(id' "pk"); Columns = cols |> List.map id' }
 
     let result =
         run true managed
@@ -499,7 +499,7 @@ let ``expressions Strata cannot read are reported as not-compared`` () =
     // reports its own normalised rendering. Saying nothing would render "I did
     // not look" identically to "they are equal".
     let withCheck =
-        tableWith "sales" "orders" orders None [] [ { ConstraintName = id' "ck"; Expression = "x > 0" } ] []
+        tableWith "sales" "orders" orders None [] [ { ConstraintName = Some(id' "ck"); Expression = "x > 0" } ] []
 
     let result = run true managed (complete [ withCheck ]) (complete [ withCheck ])
 
@@ -513,8 +513,8 @@ let ``an identical table still proposes nothing`` () =
     // every run reports churn and the signal is worthless.
     let full =
         tableWith "sales" "orders" orders
-            (Some { PrimaryKey.ConstraintName = id' "pk"; Columns = [ id' "id" ] })
-            [ { UniqueConstraint.ConstraintName = id' "uq"; Columns = [ id' "total" ] } ]
+            (Some { PrimaryKey.ConstraintName = Some(id' "pk"); Columns = [ id' "id" ] })
+            [ { UniqueConstraint.ConstraintName = Some(id' "uq"); Columns = [ id' "total" ] } ]
             []
             [ fk "fk" [ "id" ] "customers" [ "id" ] ]
 
@@ -803,7 +803,7 @@ let ``a check whose rendered definition differs is reported`` () =
               Columns = [ col 1 "id" false ]
               PrimaryKey = None
               UniqueConstraints = []
-              CheckConstraints = [ { ConstraintName = id' "ck"; Expression = expression } ]
+              CheckConstraints = [ { ConstraintName = Some(id' "ck"); Expression = expression } ]
               ForeignKeys = []
               Indexes = []
               Triggers = []
@@ -1228,7 +1228,7 @@ let private tableWithFks name columns fks =
           ForeignKeys =
             fks
             |> List.map (fun (constraintName, column, target) ->
-                { ConstraintName = id' constraintName
+                { ConstraintName = Some(id' constraintName)
                   Columns = [ id' column ]
                   ReferencedTable = qn "sales" target
                   ReferencedColumns = [ id' "id" ] })
@@ -1310,3 +1310,114 @@ let ``two tables referencing each other are withheld with a reason`` () =
     Assert.DoesNotContain(result.Changes, fun c -> c = CreateTable(qn "sales" "a"))
     Assert.DoesNotContain(result.Changes, fun c -> c = CreateTable(qn "sales" "b"))
     Assert.Contains(result.Suppressed, fun s -> s.Detail.Contains "form a cycle")
+
+
+// ---- a constraint the declaring file did not name --------------------------
+//
+// CREATE TABLE t (order_id bigint REFERENCES orders (id)) names nothing. The
+// server assigns t_order_id_fkey at CREATE time. A previous version fabricated
+// the name "foreign_key" on the declared side, so every re-plan proposed adding
+// one constraint and dropping the other, forever — and no project written the
+// ordinary way could ever converge. Found by a live round-trip.
+
+let private unnamedFk cols target targetCols =
+    { ConstraintName = None
+      Columns = cols |> List.map id'
+      ReferencedTable = qn "sales" target
+      ReferencedColumns = targetCols |> List.map id' }
+
+[<Fact>]
+let ``an unnamed declared foreign key matches a deployed one by what it does`` () =
+    let declared =
+        tableWith "sales" "orders" orders None [] [] [ unnamedFk [ "id" ] "customers" [ "id" ] ]
+
+    let deployed =
+        tableWith "sales" "orders" orders None [] [] [ fk "orders_id_fkey" [ "id" ] "customers" [ "id" ] ]
+
+    let result = run true managed (complete [ declared ]) (complete [ deployed ])
+
+    Assert.Empty result.Changes
+
+[<Fact>]
+let ``an unnamed declared foreign key pointing somewhere else is still a difference`` () =
+    // The point of matching on the definition is that the definition is what
+    // is being matched. Two constraints that do different things must not be
+    // treated as one because neither was named.
+    let declared =
+        tableWith "sales" "orders" orders None [] [] [ unnamedFk [ "id" ] "suppliers" [ "id" ] ]
+
+    let deployed =
+        tableWith "sales" "orders" orders None [] [] [ fk "orders_id_fkey" [ "id" ] "customers" [ "id" ] ]
+
+    let result = run true managed (complete [ declared ]) (complete [ deployed ])
+
+    Assert.Contains(result.Changes, fun c -> c = AddConstraint(qn "sales" "orders", None))
+    Assert.Contains(result.Changes, fun c -> Change.tag c = "unclassified")
+
+[<Fact>]
+let ``a named declared constraint is still matched by its name`` () =
+    // A project that named a constraint asked for that name. It must not be
+    // satisfied by a differently-named one that happens to share its shape.
+    let declared =
+        tableWith "sales" "orders" orders None [] [] [ fk "fk_wanted" [ "id" ] "customers" [ "id" ] ]
+
+    let deployed =
+        tableWith "sales" "orders" orders None [] [] [ fk "fk_other" [ "id" ] "customers" [ "id" ] ]
+
+    let result = run true managed (complete [ declared ]) (complete [ deployed ])
+
+    Assert.Contains(result.Changes, fun c -> c = AddConstraint(qn "sales" "orders", Some(id' "fk_wanted")))
+
+[<Fact>]
+let ``a name match wins over a definition match`` () =
+    // Two deployed constraints, one sharing the declared name and one sharing
+    // only the declared shape. The named declaration must claim the named one,
+    // leaving the other as the difference.
+    let declared =
+        tableWith "sales" "orders" orders None [] []
+            [ fk "fk_named" [ "id" ] "customers" [ "id" ]
+              unnamedFk [ "id" ] "customers" [ "id" ] ]
+
+    let deployed =
+        tableWith "sales" "orders" orders None [] []
+            [ fk "fk_named" [ "id" ] "customers" [ "id" ]
+              fk "orders_id_fkey" [ "id" ] "customers" [ "id" ] ]
+
+    let result = run true managed (complete [ declared ]) (complete [ deployed ])
+
+    Assert.Empty result.Changes
+
+[<Fact>]
+let ``two identical unnamed declarations claim two deployed constraints`` () =
+    // Matched one for one, not counted twice: a single deployed constraint
+    // cannot satisfy two declarations that both ask for it.
+    let declared =
+        tableWith "sales" "orders" orders None [] []
+            [ unnamedFk [ "id" ] "customers" [ "id" ]
+              unnamedFk [ "id" ] "customers" [ "id" ] ]
+
+    let deployed =
+        tableWith "sales" "orders" orders None [] [] [ fk "orders_id_fkey" [ "id" ] "customers" [ "id" ] ]
+
+    let result = run true managed (complete [ declared ]) (complete [ deployed ])
+
+    Assert.Contains(result.Changes, fun c -> c = AddConstraint(qn "sales" "orders", None))
+
+[<Fact>]
+let ``an unnamed check with no shadow rendering is not compared, in either direction`` () =
+    // An unnamed check has no name AND no expression from the parse tree, so
+    // without a rendering nothing can attribute a deployed check to it.
+    // Reporting the deployed one as absent from desired state would be a
+    // difference Strata invented.
+    let declared =
+        tableWith "sales" "orders" orders None []
+            [ { ConstraintName = None; Expression = "" } ] []
+
+    let deployed =
+        tableWith "sales" "orders" orders None []
+            [ { ConstraintName = Some(id' "orders_total_check"); Expression = "(total >= 0)" } ] []
+
+    let result = run true managed (complete [ declared ]) (complete [ deployed ])
+
+    Assert.DoesNotContain(result.Changes, fun c -> Change.tag c = "unclassified")
+    Assert.Contains(result.Suppressed, fun s -> s.Detail.Contains "unnamed and the declared DDL could not be normalised")

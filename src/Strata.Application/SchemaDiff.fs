@@ -333,12 +333,21 @@ module SchemaDiff =
             | Some table ->
                 let columns = table.Columns |> List.map columnDdl
 
+                // An unnamed constraint is written WITHOUT a CONSTRAINT clause,
+                // so the server assigns the name it would have assigned had the
+                // file been executed directly. Inventing one here would create
+                // an object the project did not ask for.
+                let namedAs (name: ConstraintName) =
+                    match name with
+                    | Some n -> sprintf "CONSTRAINT %s " (quote n)
+                    | None -> ""
+
                 let primaryKey =
                     match table.PrimaryKey with
                     | Some pk ->
                         [ sprintf
-                            "CONSTRAINT %s PRIMARY KEY (%s)"
-                            (quote pk.ConstraintName)
+                            "%sPRIMARY KEY (%s)"
+                            (namedAs pk.ConstraintName)
                             (pk.Columns |> List.map quote |> String.concat ", ") ]
                     | None -> []
 
@@ -346,16 +355,16 @@ module SchemaDiff =
                     table.UniqueConstraints
                     |> List.map (fun u ->
                         sprintf
-                            "CONSTRAINT %s UNIQUE (%s)"
-                            (quote u.ConstraintName)
+                            "%sUNIQUE (%s)"
+                            (namedAs u.ConstraintName)
                             (u.Columns |> List.map quote |> String.concat ", "))
 
                 let foreignKeys =
                     table.ForeignKeys
                     |> List.map (fun f ->
                         sprintf
-                            "CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s)"
-                            (quote f.ConstraintName)
+                            "%sFOREIGN KEY (%s) REFERENCES %s (%s)"
+                            (namedAs f.ConstraintName)
                             (f.Columns |> List.map quote |> String.concat ", ")
                             (quoteName f.ReferencedTable)
                             (f.ReferencedColumns |> List.map quote |> String.concat ", "))
@@ -608,19 +617,83 @@ module SchemaDiff =
 
         let named (name: Identifier) = Identifier.folded name
 
-        // Constraints are matched by NAME, because that is the identity the
-        // catalog and the file agree on. A constraint present on one side only
-        // is a real difference whatever its definition says.
-        let compareSet kind (desiredNames: (string * string) list) (actualNames: (string * string) list) =
+        /// One constraint, reduced to the two things a comparison can use.
+        ///
+        /// `Name` is `None` for a constraint the declaring file did not name.
+        /// `Definition` is what it does — its columns, or its target — which is
+        /// the only handle an unnamed one has.
+        let entry (name: ConstraintName) (definition: string) =
+            (name |> Option.map named), definition
+
+        /// Compare two sets of constraints.
+        ///
+        /// A NAMED declared constraint is matched by name, because a name is
+        /// the identity the catalog and the file agree on and the project asked
+        /// for that specific name. An UNNAMED one is matched by definition: the
+        /// file asked for a constraint that does this, and did not care what
+        /// the server calls it. Matching an unnamed one by a fabricated name is
+        /// what made every project using `REFERENCES u (id)` inline
+        /// unconvergeable — the declared side said `foreign_key` forever and
+        /// the catalog said `t_a_fkey` forever.
+        ///
+        /// Names are claimed first so a name match always wins over a
+        /// definition match: a project that named a constraint gets that
+        /// constraint, not whichever one happens to share its shape.
+        let compareSet
+            kind
+            (desiredEntries: (string option * string) list)
+            (actualEntries: (string option * string) list)
+            =
+            let byName =
+                desiredEntries
+                |> List.choose (fun (n, d) -> n |> Option.map (fun n -> n, d))
+
+            let claimedNames =
+                byName
+                |> List.filter (fun (n, _) -> actualEntries |> List.exists (fun (m, _) -> m = Some n))
+                |> List.map fst
+
+            // Definitions still free after the name matches, matched one for
+            // one so two identical unnamed constraints do not both match the
+            // same deployed one.
+            let unmatchedActual =
+                actualEntries
+                |> List.filter (fun (n, _) ->
+                    match n with
+                    | Some n -> not (claimedNames |> List.contains n)
+                    | None -> true)
+
+            let unnamedDesired = desiredEntries |> List.filter (fun (n, _) -> Option.isNone n)
+
+            // Removes the FIRST structural match, not every equal one: two
+            // declarations that do the same thing need two deployed
+            // constraints, not one counted twice.
+            let removeFirst (definition: string) (from: (string option * string) list) =
+                let rec go acc rest =
+                    match rest with
+                    | [] -> None
+                    | (n, d) :: tail when d = definition -> Some(List.rev acc @ tail, (n, d))
+                    | head :: tail -> go (head :: acc) tail
+
+                go [] from
+
+            let unnamedAdded, leftoverActual =
+                unnamedDesired
+                |> List.fold
+                    (fun (added, pool) (_, definition) ->
+                        match removeFirst definition pool with
+                        | Some (rest, _) -> added, rest
+                        | None -> added @ [ definition ], pool)
+                    ([], unmatchedActual)
+
             let added =
-                desiredNames
-                |> List.filter (fun (n, _) -> not (actualNames |> List.exists (fun (m, _) -> m = n)))
-                |> List.map (fun (n, _) ->
-                    Ok(AddConstraint(desired.Name, Identifier.unquoted n)))
+                (byName
+                 |> List.filter (fun (n, _) -> not (actualEntries |> List.exists (fun (m, _) -> m = Some n)))
+                 |> List.map (fun (n, _) -> Ok(AddConstraint(desired.Name, Some(Identifier.unquoted n)))))
+                @ (unnamedAdded |> List.map (fun _ -> Ok(AddConstraint(desired.Name, None))))
 
             let removed =
-                actualNames
-                |> List.filter (fun (n, _) -> not (desiredNames |> List.exists (fun (m, _) -> m = n)))
+                leftoverActual
                 |> List.map (fun (n, _) ->
                     // The change vocabulary has no DropConstraint case.
                     // Unclassified is judged as potentially destructive, which
@@ -631,14 +704,14 @@ module SchemaDiff =
                                 "%s: %s '%s' exists in the database and not in desired state"
                                 (QualifiedName.display desired.Name)
                                 kind
-                                n)))
+                                (defaultArg n "(unnamed)"))))
 
             // Same name on both sides, different membership.
             let redefined =
-                desiredNames
+                byName
                 |> List.choose (fun (n, dcols) ->
-                    actualNames
-                    |> List.tryFind (fun (m, _) -> m = n)
+                    actualEntries
+                    |> List.tryFind (fun (m, _) -> m = Some n)
                     |> Option.bind (fun (_, acols) ->
                         if dcols <> acols then
                             Some(
@@ -673,15 +746,15 @@ module SchemaDiff =
                         sprintf
                             "%s: primary key '%s' exists in the database and not in desired state"
                             (QualifiedName.display desired.Name)
-                            a.ConstraintName.Text)) ]
+                            (match a.ConstraintName with Some n -> n.Text | None -> "(unnamed)"))) ]
             | Some _, Some _
             | None, None -> []
 
         let uniques =
             compareSet
                 "unique constraint"
-                (desired.UniqueConstraints |> List.map (fun u -> named u.ConstraintName, columnList u.Columns))
-                (actual.UniqueConstraints |> List.map (fun u -> named u.ConstraintName, columnList u.Columns))
+                (desired.UniqueConstraints |> List.map (fun u -> entry u.ConstraintName (columnList u.Columns)))
+                (actual.UniqueConstraints |> List.map (fun u -> entry u.ConstraintName (columnList u.Columns)))
 
         let foreignKeys =
             let describe (f: ForeignKey) =
@@ -693,18 +766,76 @@ module SchemaDiff =
 
             compareSet
                 "foreign key"
-                (desired.ForeignKeys |> List.map (fun f -> named f.ConstraintName, describe f))
-                (actual.ForeignKeys |> List.map (fun f -> named f.ConstraintName, describe f))
+                (desired.ForeignKeys |> List.map (fun f -> entry f.ConstraintName (describe f)))
+                (actual.ForeignKeys |> List.map (fun f -> entry f.ConstraintName (describe f)))
 
         // A check's PRESENCE is comparable by name. Its EXPRESSION is not: the
         // declared side does not carry one, and the catalog reports its own
         // normalised rendering. Presence is therefore compared and equality of
         // expression is explicitly not claimed, below.
+        // An unnamed check has neither a name to match on nor, from the parse
+        // tree, an expression — so unlike an unnamed foreign key it has no
+        // shape of its own to compare. The shadow rendering supplies one: the
+        // same DDL executed in a rolled-back transaction, which keeps an
+        // explicit constraint name and lets the server invent one for a check
+        // the file did not name. A rendering whose name the file never used is
+        // therefore the rendering of an unnamed declaration, and its EXPRESSION
+        // is directly comparable with the deployed one.
+        let namedChecks (t: Table) =
+            t.CheckConstraints |> List.filter (fun c -> Option.isSome c.ConstraintName)
+
+        let unnamedDeclaredChecks =
+            desired.CheckConstraints |> List.filter (fun c -> Option.isNone c.ConstraintName)
+
+        let declaredCheckNames =
+            namedChecks desired |> List.choose (fun c -> c.ConstraintName |> Option.map named)
+
+        let unnamedRenderings =
+            match rendered with
+            | None -> []
+            | Some n ->
+                n.Checks
+                |> List.filter (fun (name, _) ->
+                    not (declaredCheckNames |> List.contains (named (Identifier.unquoted name))))
+                |> List.map snd
+
+        /// Deployed checks explained by an unnamed declaration, removed one for
+        /// one so two identical declarations claim two deployed constraints.
+        let unmatchedUnnamedChecks, deployedChecksToCompare =
+            let removeFirst (expression: string) (pool: CheckConstraint list) =
+                let rec go acc rest =
+                    match rest with
+                    | [] -> None
+                    | (c: CheckConstraint) :: tail when c.Expression.Trim() = expression.Trim() ->
+                        Some(List.rev acc @ tail)
+                    | head :: tail -> go (head :: acc) tail
+
+                go [] pool
+
+            unnamedRenderings
+            |> List.fold
+                (fun (unmatched, pool) expression ->
+                    match removeFirst expression pool with
+                    | Some rest -> unmatched, rest
+                    | None -> expression :: unmatched, pool)
+                ([], actual.CheckConstraints)
+
+        // No shadow rendering and an unnamed declaration: Strata holds nothing
+        // that could attribute a deployed check to it, so it compares none of
+        // them rather than reporting every one as absent from desired state.
+        let checksUnattributable =
+            List.isEmpty unnamedRenderings && not (List.isEmpty unnamedDeclaredChecks)
+
         let checks =
-            compareSet
-                "check constraint"
-                (desired.CheckConstraints |> List.map (fun c -> named c.ConstraintName, ""))
-                (actual.CheckConstraints |> List.map (fun c -> named c.ConstraintName, ""))
+            if checksUnattributable then
+                []
+            else
+                compareSet
+                    "check constraint"
+                    (namedChecks desired |> List.map (fun c -> entry c.ConstraintName ""))
+                    (deployedChecksToCompare |> List.map (fun c -> entry c.ConstraintName ""))
+                @ (unmatchedUnnamedChecks
+                   |> List.map (fun _ -> Ok(AddConstraint(desired.Name, None))))
 
         let defaults =
             desired.Columns
@@ -754,7 +885,10 @@ module SchemaDiff =
                 |> List.choose (fun a ->
                     n.Checks
                     |> List.tryPick (fun (name, definition) ->
-                        if named (Identifier.unquoted name) = named a.ConstraintName then Some definition else None)
+                        match a.ConstraintName with
+                        | Some actualName when named (Identifier.unquoted name) = named actualName ->
+                            Some definition
+                        | _ -> None)
                     |> Option.bind (fun declared ->
                         if declared.Trim() <> a.Expression.Trim() then
                             Some(
@@ -763,7 +897,9 @@ module SchemaDiff =
                                         sprintf
                                             "%s: check constraint '%s' is %s in desired state and %s in the database"
                                             (QualifiedName.display desired.Name)
-                                            a.ConstraintName.Text
+                                            (match a.ConstraintName with
+                                             | Some n -> n.Text
+                                             | None -> "(unnamed)")
                                             declared
                                             a.Expression)))
                         else
@@ -773,9 +909,13 @@ module SchemaDiff =
         // constraint, naming it after the constraint. Those are compared as
         // CONSTRAINTS above, so they are excluded here — proposing to drop one
         // would be proposing to drop its constraint by a side door.
+        // Every catalog constraint has a name, so `choose` drops nothing here;
+        // it is how the shared optional type is read on the actual side.
         let constraintBackedNames =
-            (match actual.PrimaryKey with Some pk -> [ named pk.ConstraintName ] | None -> [])
-            @ (actual.UniqueConstraints |> List.map (fun u -> named u.ConstraintName))
+            (match actual.PrimaryKey with
+             | Some pk -> pk.ConstraintName |> Option.map named |> Option.toList
+             | None -> [])
+            @ (actual.UniqueConstraints |> List.choose (fun u -> u.ConstraintName |> Option.map named))
 
         let secondaryIndexes (t: Table) =
             t.Indexes |> List.filter (fun i -> not (constraintBackedNames |> List.contains (named i.Name)))
@@ -953,10 +1093,11 @@ module SchemaDiff =
                 | Some n -> n.Checks |> List.exists (fun (c, _) -> named (Identifier.unquoted c) = named name)
 
             let sharedChecks =
-                desired.CheckConstraints
+                namedChecks desired
                 |> List.filter (fun d ->
-                    actual.CheckConstraints |> List.exists (fun a -> named a.ConstraintName = named d.ConstraintName)
-                    && not (comparedCheck d.ConstraintName))
+                    actual.CheckConstraints
+                    |> List.exists (fun a -> a.ConstraintName |> Option.map named = (d.ConstraintName |> Option.map named))
+                    && not (d.ConstraintName |> Option.map comparedCheck |> Option.defaultValue false))
 
             let sharedDefaults =
                 desired.Columns
@@ -1004,6 +1145,13 @@ module SchemaDiff =
                       sprintf
                           "%d trigger(s) exist in the database and this project declares none, so triggers were NOT compared. Declaring any trigger file takes ownership of them."
                           (List.length uncomparedTriggers) }
+              if checksUnattributable then
+                  { Object = desired.Name
+                    Reason = NotCompared
+                    Detail =
+                      sprintf
+                          "%d check constraint(s) in the declaring file are unnamed and the declared DDL could not be normalised through the server, so no deployed check could be attributed to them and NONE were compared. Name them, or restore normalisation, to have them compared."
+                          (List.length unnamedDeclaredChecks) }
               if not (List.isEmpty uncomparedConditions) then
                   { Object = desired.Name
                     Reason = NotCompared
@@ -1476,7 +1624,10 @@ module SchemaDiff =
         | AddColumn (table, column) ->
             sprintf "add-column         %s.%s" (QualifiedName.display table) column.Text
         | AddConstraint (table, name) ->
-            sprintf "add-constraint     %s %s" (QualifiedName.display table) name.Text
+            sprintf
+                "add-constraint     %s %s"
+                (QualifiedName.display table)
+                (match name with Some n -> n.Text | None -> "(unnamed in the declaring file)")
         | DropTable table -> sprintf "drop-table         %s" (QualifiedName.display table)
         | CreateTable table -> sprintf "create-table       %s" (QualifiedName.display table)
         | RenameTable (from, to') ->

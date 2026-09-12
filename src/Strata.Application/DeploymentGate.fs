@@ -343,7 +343,13 @@ module DeploymentGate =
             { Change = change
               Verdict = RequiresApproval
               Detected =
-                sprintf "adds constraint %s to %s" constraintName.Display (QualifiedName.display table)
+                sprintf
+                    "adds %s to %s"
+                    (match constraintName with
+                     | Some name -> sprintf "constraint %s" name.Display
+                     // The file did not name it; the server will.
+                     | None -> "an unnamed constraint")
+                    (QualifiedName.display table)
               // Breaks no reader, but can fail outright against rows that already
               // violate it — which Strata cannot check without querying data.
               Rationale =

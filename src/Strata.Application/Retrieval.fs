@@ -65,6 +65,15 @@ module Retrieval =
         | ScopeOnly -> "(analysis scope)"
 
     /// Render a table compactly: enough to act on, not the whole snapshot.
+    /// A constraint name for display.
+    ///
+    /// An unnamed declared constraint has none. Rendering an empty string would
+    /// read as a constraint called nothing; this says which it is.
+    let private constraintNameText (name: ConstraintName) =
+        match name with
+        | Some n -> n.Display
+        | None -> "(unnamed in the declaring file)"
+
     let private tableSummary (t: Table) =
         JObject [ "name", JString(QualifiedName.display t.Name)
                   "kind", JString "table"
@@ -102,14 +111,14 @@ module Retrieval =
                   JArray(
                       t.UniqueConstraints
                       |> List.map (fun uc ->
-                          JObject [ "name", JString uc.ConstraintName.Display
+                          JObject [ "name", JString(constraintNameText uc.ConstraintName)
                                     "columns", JArray(uc.Columns |> List.map (fun c -> JString c.Display)) ])
                   )
                   "checkConstraints",
                   JArray(
                       t.CheckConstraints
                       |> List.map (fun cc ->
-                          JObject [ "name", JString cc.ConstraintName.Display
+                          JObject [ "name", JString(constraintNameText cc.ConstraintName)
                                     // The expression text as the catalog renders
                                     // it. Strata does not parse it and does not
                                     // pretend to understand it.

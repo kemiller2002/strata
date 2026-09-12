@@ -82,7 +82,12 @@ module ProposedChange =
         | ReplaceTrigger of table: QualifiedName * trigger: Identifier
         /// Adds a constraint. Can fail against existing data, but breaks no
         /// reader.
-        | AddConstraint of table: QualifiedName * constraintName: Identifier
+        ///
+        /// `None` for a constraint the declaring file did not name: the server
+        /// assigns the name, so there is none to report yet. It is not a
+        /// constraint called nothing, and it must never be given a placeholder
+        /// — see `Schema.ConstraintName`.
+        | AddConstraint of table: QualifiedName * constraintName: Identifier option
         /// Removes every row. No schema change, total data loss.
         | TruncateTable of table: QualifiedName
         /// Strata parsed the statement but does not model its consequences.
@@ -200,8 +205,7 @@ module ProposedChange =
                             | "add-column", Some column -> AddColumn(table, column)
                             | "drop-column", Some column -> DropColumn(table, column)
                             | "alter-column-type", Some column -> AlterColumnType(table, column, "changed")
-                            | "add-constraint", name ->
-                                AddConstraint(table, defaultArg name (Identifier.unquoted "unnamed"))
+                            | "add-constraint", name -> AddConstraint(table, name)
                             | kind, _ ->
                                 // A subcommand Strata does not model. Explicitly
                                 // unclassified, never silently ignored.

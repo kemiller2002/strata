@@ -689,9 +689,15 @@ module PgParserAdapter =
             columnDefs
             |> List.collect (fun c -> constraintsOf c |> List.map (fun con -> identifierOf c.Colname, con))
 
-        let constraintName (c: Constraint) fallback =
-            if isNull (box c) || String.IsNullOrEmpty c.Conname then identifierOf fallback
-            else identifierOf c.Conname
+        /// The name the file gave the constraint, if it gave one.
+        ///
+        /// `None`, never a fabricated placeholder. An unnamed constraint's name
+        /// is assigned by the server at CREATE time, so inventing one here made
+        /// the declared side permanently disagree with the catalog — see
+        /// `Schema.ConstraintName`.
+        let constraintName (c: Constraint) : ConstraintName =
+            if isNull (box c) || String.IsNullOrEmpty c.Conname then None
+            else Some(identifierOf c.Conname)
 
         // PrimaryKey and UniqueConstraint are structurally identical, so these
         // are annotated: without it F# infers the later-declared type and the
@@ -701,7 +707,7 @@ module PgParserAdapter =
                 tableConstraints
                 |> List.tryFind (fun c -> c.Contype = ConstrType.ConstrPrimary)
                 |> Option.map (fun c ->
-                    { PrimaryKey.ConstraintName = constraintName c "primary_key"
+                    { PrimaryKey.ConstraintName = constraintName c
                       Columns = keyNames c.Keys })
 
             match fromTable with
@@ -710,26 +716,26 @@ module PgParserAdapter =
                 inlineConstraints
                 |> List.tryFind (fun (_, c) -> c.Contype = ConstrType.ConstrPrimary)
                 |> Option.map (fun (column, c) ->
-                    { PrimaryKey.ConstraintName = constraintName c "primary_key"
+                    { PrimaryKey.ConstraintName = constraintName c
                       Columns = [ column ] })
 
         let uniques: UniqueConstraint list =
             (tableConstraints
              |> List.filter (fun c -> c.Contype = ConstrType.ConstrUnique)
              |> List.map (fun c ->
-                 { ConstraintName = constraintName c "unique"
+                 { ConstraintName = constraintName c
                    Columns = keyNames c.Keys }))
             @ (inlineConstraints
                |> List.filter (fun (_, c) -> c.Contype = ConstrType.ConstrUnique)
                |> List.map (fun (column, c) ->
-                   { ConstraintName = constraintName c "unique"
+                   { ConstraintName = constraintName c
                      Columns = [ column ] }))
 
         let checks =
             (tableConstraints |> List.filter (fun c -> c.Contype = ConstrType.ConstrCheck)
-             |> List.map (fun c -> constraintName c "check", c))
+             |> List.map (fun c -> constraintName c, c))
             @ (inlineConstraints |> List.filter (fun (_, c) -> c.Contype = ConstrType.ConstrCheck)
-               |> List.map (fun (_, c) -> constraintName c "check", c))
+               |> List.map (fun (_, c) -> constraintName c, c))
             |> List.map (fun (name, _) ->
                 // The predicate TEXT is not recoverable from the parse tree
                 // without deparsing, and the catalog reports it already
@@ -751,7 +757,7 @@ module PgParserAdapter =
                     | Some column -> [ column ]
                     | None -> keyNames c.FkAttrs
 
-                { ConstraintName = constraintName c "foreign_key"
+                { ConstraintName = constraintName c
                   Columns = columns
                   ReferencedTable =
                     if isNull (box c.Pktable) then QualifiedName.unqualified (identifierOf "unknown")

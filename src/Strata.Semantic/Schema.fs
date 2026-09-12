@@ -38,22 +38,42 @@ module Schema =
           IsGenerated: bool
           IsIdentity: bool }
 
+    /// A constraint's name, where there is one.
+    ///
+    /// `None` is what an UNNAMED declared constraint has, and it is a real
+    /// state rather than a missing value. `CREATE TABLE t (a bigint REFERENCES
+    /// u (id))` names nothing; the server assigns `t_a_fkey` when the table is
+    /// created. Filling that in with a fabricated placeholder is what a
+    /// previous version did, and it made every such project unconvergeable: the
+    /// declared side said `foreign_key`, the catalog said `t_a_fkey`, and every
+    /// re-plan proposed adding one and dropping the other, forever.
+    ///
+    /// The two states also mean different things to a diff. A NAMED declared
+    /// constraint says "a constraint with this name and this meaning must
+    /// exist"; an unnamed one says "a constraint with this meaning must exist,
+    /// and I do not care what it is called". So a name is matched on when there
+    /// is one, and the definition is matched on when there is not.
+    ///
+    /// An INTROSPECTED constraint always has a name — the catalog has no
+    /// nameless ones — so `None` on the actual side never occurs.
+    type ConstraintName = Identifier option
+
     type PrimaryKey =
-        { ConstraintName: Identifier
+        { ConstraintName: ConstraintName
           Columns: Identifier list }
 
     type UniqueConstraint =
-        { ConstraintName: Identifier
+        { ConstraintName: ConstraintName
           Columns: Identifier list }
 
     type CheckConstraint =
-        { ConstraintName: Identifier
+        { ConstraintName: ConstraintName
           /// The expression as the catalog renders it. Strata does not parse it
           /// yet; storing the text with no pretence of understanding is honest.
           Expression: string }
 
     type ForeignKey =
-        { ConstraintName: Identifier
+        { ConstraintName: ConstraintName
           Columns: Identifier list
           ReferencedTable: QualifiedName
           ReferencedColumns: Identifier list }

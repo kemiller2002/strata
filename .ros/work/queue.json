@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 54,
+  "nextSeq": 55,
   "items": [
     {
       "id": "WI-0001",
@@ -903,6 +903,23 @@
       "attachments": [],
       "createdAt": "2026-09-11T23:51:15Z",
       "updatedAt": "2026-09-11T23:51:15Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0054",
+      "title": "An unnamed constraint never converges",
+      "description": "CREATE TABLE t (order_id bigint REFERENCES orders (id)) makes the parser fabricate the constraint name 'foreign_key'; the catalog reports order_audit_order_id_fkey. Every re-plan proposes add-constraint plus an unclassified drop, forever. A declared constraint with no name has an UNKNOWN name, not a name of 'foreign_key' — model it as such and match it by what it does.",
+      "tags": [
+        "strata",
+        "diff"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:54:47Z",
+      "updatedAt": "2026-09-12T00:02:21Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null

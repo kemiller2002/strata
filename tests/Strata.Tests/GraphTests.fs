@@ -39,7 +39,7 @@ let private snapshot =
         [ tableWithFk
               "sales"
               "orders"
-              [ { ConstraintName = id' "fk_orders_customer"
+              [ { ConstraintName = Some(id' "fk_orders_customer")
                   Columns = [ id' "customer_id" ]
                   ReferencedTable = qn "sales" "customer"
                   ReferencedColumns = [ id' "id" ] } ]

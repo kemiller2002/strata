@@ -337,19 +337,19 @@ module CatalogIntrospection =
                             cons
                             |> List.tryFind (fun c -> c.Type = 'p')
                             |> Option.map (fun c ->
-                                { ConstraintName = identifierOf c.Name
+                                { ConstraintName = Some(identifierOf c.Name)
                                   Columns = c.Columns |> List.map identifierOf })
                           UniqueConstraints =
                             cons
                             |> List.filter (fun c -> c.Type = 'u')
                             |> List.map (fun c ->
-                                { ConstraintName = identifierOf c.Name
+                                { ConstraintName = Some(identifierOf c.Name)
                                   Columns = c.Columns |> List.map identifierOf })
                           CheckConstraints =
                             cons
                             |> List.filter (fun c -> c.Type = 'c')
                             |> List.map (fun c ->
-                                { ConstraintName = identifierOf c.Name
+                                { ConstraintName = Some(identifierOf c.Name)
                                   Expression = c.Definition })
                           ForeignKeys =
                             cons
@@ -358,7 +358,7 @@ module CatalogIntrospection =
                                 match c.ReferencedSchema, c.ReferencedRelation with
                                 | Some refSchema, Some refRelation ->
                                     Some
-                                        { ConstraintName = identifierOf c.Name
+                                        { ConstraintName = Some(identifierOf c.Name)
                                           Columns = c.Columns |> List.map identifierOf
                                           ReferencedTable = qualified refSchema refRelation
                                           ReferencedColumns = c.ReferencedColumns |> List.map identifierOf }

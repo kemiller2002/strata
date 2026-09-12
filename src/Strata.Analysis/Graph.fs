@@ -129,7 +129,14 @@ module Graph =
                           Certainty = Certain
                           EvidenceCount = 1
                           Evidence =
-                            [ { Source = ForeignKeyConstraint fk.ConstraintName.Text
+                            [ { Source =
+                                  ForeignKeyConstraint(
+                                      // An unnamed declared constraint has no
+                                      // name to cite, and saying so beats
+                                      // citing one that does not exist.
+                                      match fk.ConstraintName with
+                                      | Some name -> name.Text
+                                      | None -> "(unnamed)")
                                 Detail =
                                   sprintf
                                       "%s (%s) references %s (%s)"

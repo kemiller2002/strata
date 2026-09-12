@@ -74,7 +74,7 @@ let ``constraints written at table level are read`` () =
     let orders = (load [ "f.sql", ordersSql ] |> fun l -> tableNamed l "sales.orders").Value
 
     Assert.True(orders.PrimaryKey.IsSome)
-    Assert.Equal("pk_orders", orders.PrimaryKey.Value.ConstraintName.Text)
+    Assert.Equal(Some "pk_orders", orders.PrimaryKey.Value.ConstraintName |> Option.map (fun n -> n.Text))
     Assert.Equal<string list>([ "id" ], orders.PrimaryKey.Value.Columns |> List.map (fun c -> c.Text))
     Assert.Single orders.CheckConstraints |> ignore
     Assert.Single orders.ForeignKeys |> ignore
