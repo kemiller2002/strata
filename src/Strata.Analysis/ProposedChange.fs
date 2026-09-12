@@ -1,6 +1,7 @@
 namespace Strata.Analysis
 
 open Strata.Semantic.Identity
+open Strata.Semantic.Schema
 open Strata.Analysis.StatementReferences
 
 /// What a proposed DDL statement would change.
@@ -77,13 +78,17 @@ module ProposedChange =
         /// Additive in the sense that nothing breaks — but it widens who can
         /// reach the data, which is a decision rather than a mechanical
         /// consequence, and a grant to PUBLIC is a different decision again.
-        | GrantPrivileges of object': QualifiedName * grantee: string * privileges: string list
+        /// The target is a `GrantTarget` and not a name, because the three
+        /// kinds take three different `GRANT` spellings. Rendering a schema
+        /// grant with a relation's spelling would grant on a table that
+        /// happens to share the name, or fail — never the intended thing.
+        | GrantPrivileges of target: GrantTarget * grantee: string * privileges: string list
         /// Takes privileges away from one grantee on one object.
         ///
         /// Destructive, and invisible until it bites: whatever ran as that role
         /// starts failing on its next statement. Strata cannot say what that
         /// is, because the corpus records SQL and not the role that runs it.
-        | RevokePrivileges of object': QualifiedName * grantee: string * privileges: string list
+        | RevokePrivileges of target: GrantTarget * grantee: string * privileges: string list
         /// Creates a sequence. Additive: nothing can already draw from one that
         /// does not exist.
         | CreateSequence of sequence: QualifiedName
@@ -234,8 +239,6 @@ module ProposedChange =
             | AddColumn (table, _)
             | CreateTable table
             | CreateSequence table
-            | GrantPrivileges (table, _, _)
-            | RevokePrivileges (table, _, _)
             | DropSequence table
             | AlterSequence table
             | RenameTable (table, _)
@@ -254,6 +257,12 @@ module ProposedChange =
             | AddConstraint (table, _, _, _)
             | DropConstraint (table, _, _)
             | TruncateTable table -> Some table
+            // Reported through `GrantTarget.name`, which is lossy: a routine's
+            // arguments are dropped and a schema comes back unqualified. That
+            // is fine for a report and wrong for DDL, which is why the SQL
+            // writer matches on the target itself rather than calling this.
+            | GrantPrivileges (target, _, _)
+            | RevokePrivileges (target, _, _) -> Some(GrantTarget.name target)
             // A schema is not an object IN a schema, so there is no qualified
             // target to report. Saying None beats inventing one.
             | CreateSchema _

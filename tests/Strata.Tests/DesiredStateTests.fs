@@ -18,6 +18,9 @@ let private parser =
 
 let private load files = DesiredState.load parser files
 
+let private qn schema name =
+    QualifiedName.qualified (Identifier.unquoted schema) (Identifier.unquoted name)
+
 let private tableNamed (loaded: DesiredState.Loaded) name =
     loaded.Snapshot.Objects
     |> List.tryPick (fun o ->
@@ -763,15 +766,82 @@ let ``a table-wide GRANT on the same object is still read`` () =
     Assert.Equal<string list>([ "SELECT" ], (List.head loaded.Grants).Privileges)
 
 [<Fact>]
-let ``a schema or routine GRANT says which it was, not "no resolvable object"`` () =
-    // Both parse fine; they name their object as a String or an ObjectWithArgs
-    // rather than a RangeVar, so they reach the same branch a malformed
-    // statement would. The message has to tell them apart.
-    let schemaGrant = load [ "g.sql", "GRANT USAGE ON SCHEMA ref TO app_user;" ]
-    let routineGrant = load [ "g.sql", "GRANT EXECUTE ON FUNCTION ref.f(int) TO app_user;" ]
+let ``a schema GRANT is read as a grant on the schema, not on a relation`` () =
+    // The object arrives as a bare String rather than a RangeVar. A version that
+    // read only the RangeVar saw no object at all and refused the statement; one
+    // that read the name without its KIND would emit `GRANT USAGE ON ref`, which
+    // grants on a TABLE called `ref` and is a different object entirely.
+    let loaded = load [ "g.sql", "GRANT USAGE ON SCHEMA ref TO app_user;" ]
 
-    Assert.Contains(schemaGrant.Failures, fun f -> f.Reason.Contains "GRANT ON SCHEMA")
-    Assert.Contains(routineGrant.Failures, fun f -> f.Reason.Contains "GRANT ON FUNCTION")
+    Assert.Empty loaded.Failures
+    Assert.Equal<GrantTarget>(GrantTarget.Schema(Identifier.unquoted "ref"), (List.head loaded.Grants).Target)
+
+[<Fact>]
+let ``GRANT ALL ON SCHEMA means USAGE and CREATE, not a table's privileges`` () =
+    // `ALL` carries no privileges list, so the set has to be known per object
+    // kind. A schema's ALL is two privileges and a table's is seven; using the
+    // table list here would propose granting SELECT on a schema forever.
+    let loaded = load [ "g.sql", "GRANT ALL ON SCHEMA ref TO app_user;" ]
+
+    Assert.Empty loaded.Failures
+    Assert.Equal<string list>([ "CREATE"; "USAGE" ], (List.head loaded.Grants).Privileges)
+
+[<Fact>]
+let ``a routine GRANT carries the argument types, rendered as the routine's are`` () =
+    // The grant has to key on the same spelling the routine's own signature
+    // produces, or it can never be matched to the routine it is on: `int` folds
+    // to `integer`, and a modifier is dropped from an argument type.
+    let loaded =
+        load
+            [ "g.sql",
+              "GRANT EXECUTE ON FUNCTION ref.f(int) TO app_user;\n\
+               GRANT EXECUTE ON ROUTINE ref.g(numeric(12,2)) TO app_user;\n\
+               GRANT EXECUTE ON PROCEDURE ref.p() TO app_user;" ]
+
+    Assert.Empty loaded.Failures
+
+    let targets = loaded.Grants |> List.map (fun g -> g.Target) |> List.sortBy GrantTarget.key
+
+    Assert.Equal<GrantTarget list>(
+        [ GrantTarget.Routine(qn "ref" "f", [ "integer" ])
+          GrantTarget.Routine(qn "ref" "g", [ "numeric" ])
+          GrantTarget.Routine(qn "ref" "p", []) ],
+        targets)
+
+[<Fact>]
+let ``a routine GRANT without argument types is refused, not read as zero-argument`` () =
+    // `args_unspecified` is its own state. PostgreSQL resolves the name against
+    // whatever is deployed, so the FILE does not say which overload it means —
+    // and read without the flag it is indistinguishable from `f()`, so the
+    // grant would land on a routine the file never named.
+    let loaded = load [ "g.sql", "GRANT EXECUTE ON FUNCTION ref.f TO app_user;" ]
+
+    Assert.Empty loaded.Grants
+    Assert.Contains(loaded.Failures, fun f -> f.Reason.Contains "argument types")
+
+[<Fact>]
+let ``a GRANT WITH GRANT OPTION is refused, never read as a plain grant`` () =
+    // The same shape as the column-level refusal. The model holds which
+    // privileges a grantee has, not the power to pass them on, so reading this
+    // as plain would have the plan understate what the file asks for — and the
+    // diff could never take the grant option away again.
+    let loaded = load [ "g.sql", "GRANT SELECT ON ref.a TO app_user WITH GRANT OPTION;" ]
+
+    Assert.Empty loaded.Grants
+    Assert.Contains(loaded.Failures, fun f -> f.Reason.Contains "GRANT OPTION")
+
+[<Fact>]
+let ``a GRANT on a kind Strata does not model names the kind`` () =
+    // A database is not in any schema, so the managed-schema rule cannot reason
+    // about it at all. "no resolvable object" reads like a malformed statement;
+    // naming the kind says it is a real grant Strata does not model.
+    let loaded = load [ "g.sql", "GRANT CONNECT ON DATABASE app TO app_user;" ]
+
+    Assert.Empty loaded.Grants
+    // Spelled the way SQL spells it. A message reading "GRANT on ObjectDatabase"
+    // leaks the parser library's own C# enum name to someone trying to fix
+    // their file.
+    Assert.Contains(loaded.Failures, fun f -> f.Reason.Contains "GRANT on DATABASE")
 
 [<Fact>]
 let ``overloaded routines are two objects, not one declared twice`` () =

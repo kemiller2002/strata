@@ -71,10 +71,27 @@ PROJECT LAYOUT
   the directory name and is yours to choose; tables/, views/, routines/,
   indexes/, triggers/, sequences/ and grants/ are the conventional ones.
 
-  grants/<object>.sql holds GRANT statements. Declaring one takes ownership of
-  THAT GRANTEE's privileges on THAT object — a grantee the project never names
-  keeps what it has and is reported, so managing app_user cannot silently
-  revoke a replication or monitoring role.
+  grants/<object>.sql holds GRANT statements, on a table, view or sequence, on
+  a SCHEMA, or on a function or procedure:
+
+      GRANT USAGE ON SCHEMA ref TO app_user;
+      GRANT SELECT, INSERT ON ref.account TO app_user;
+      GRANT EXECUTE ON FUNCTION ref.balance(bigint) TO app_user;
+
+  USAGE on the schema is what makes the names inside it reachable, so a project
+  that grants on a table and nothing on its schema has granted nothing usable.
+  A routine grant must name its argument types: without them PostgreSQL picks
+  whichever overload is deployed, which is not something a file can declare.
+
+  Declaring a grant takes ownership of THAT GRANTEE's privileges on THAT
+  object — a grantee the project never names keeps what it has and is reported,
+  so managing app_user cannot silently revoke a replication or monitoring role.
+
+  Two things about privileges are reported and never changed. Every function
+  starts with EXECUTE granted to PUBLIC, so a project that does not declare
+  PUBLIC is told that PUBLIC can still call its functions. And WITH GRANT
+  OPTION is not modelled: a file cannot ask for it, and a grantee that already
+  has it is disclosed rather than left to look like an ordinary grant.
 
   The <schema> directory names the schema, and Strata CREATES it if the
   database does not have it — so a project applies against an empty database.

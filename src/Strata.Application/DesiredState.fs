@@ -411,7 +411,7 @@ module DesiredState =
           // on separate lines mean the grantee should hold both.
           Grants =
             List.ofSeq grants
-            |> List.groupBy (fun g -> QualifiedName.display g.Object, g.Grantee.ToLowerInvariant())
+            |> List.groupBy (fun g -> GrantTarget.key g.Target, g.Grantee.ToLowerInvariant())
             |> List.map (fun (_, gs) ->
                 { (List.head gs) with
                     Privileges = gs |> List.collect (fun g -> g.Privileges) |> List.distinct |> List.sort }) }

@@ -193,7 +193,17 @@ let ``Strata reads the declaration the way the server does`` (name: string) =
                         ({ Table = n.Table; Defaults = n.Defaults; Checks = n.Checks }: SchemaDiff.NormalisedTable))
                 | Microsoft.FSharp.Core.Error _ -> []
 
-        let grants = declared.Grants |> List.map (fun g -> { g with Object = qualify g.Object })
+        // The loader sees unqualified names, so a declared grant is qualified
+        // with the scratch schema the same way an object is. A SCHEMA grant
+        // already names its schema and needs no qualifying — qualifying it
+        // would name a schema inside a schema, which does not exist.
+        let grants =
+            declared.Grants
+            |> List.map (fun g ->
+                match g.Target with
+                | GrantTarget.Relation n -> { g with Target = GrantTarget.Relation(qualify n) }
+                | GrantTarget.Routine (n, args) -> { g with Target = GrantTarget.Routine(qualify n, args) }
+                | GrantTarget.Schema _ -> g)
 
         let actualGrants =
             match CatalogIntrospection.readGrants connection with
@@ -201,7 +211,7 @@ let ``Strata reads the declaration the way the server does`` (name: string) =
                 Some(
                     gs
                     |> List.filter (fun g ->
-                        match g.Object.Schema with
+                        match GrantTarget.schema g.Target with
                         | Some s -> Identifier.folded s = Fixture.schema
                         | None -> false))
             | Microsoft.FSharp.Core.Error _ -> None

@@ -202,6 +202,79 @@ module Schema =
           Cycle: bool
           Scope: ManagementScope }
 
+    /// What kind of object a grant is on.
+    ///
+    /// A discriminator rather than a flag on a flat record, because the three
+    /// are not variations on one thing. They live in three different catalogs
+    /// (`pg_class.relacl`, `pg_namespace.nspacl`, `pg_proc.proacl`), they take
+    /// three different `GRANT` spellings, and their identities have different
+    /// shapes: a schema has no schema to be qualified by, and a routine is not
+    /// identified by name alone.
+    ///
+    /// A single `QualifiedName` could hold the first two by convention, and
+    /// that convention is exactly the kind of thing that reads a schema grant
+    /// as a table grant once and hands out the wrong access.
+    [<RequireQualifiedAccess>]
+    type GrantTarget =
+        /// A table, view, materialized view or sequence. `pg_class.relacl`.
+        | Relation of QualifiedName
+        /// A schema itself. `pg_namespace.nspacl`.
+        ///
+        /// An `Identifier`, not a `QualifiedName`: a schema is not inside
+        /// anything. `USAGE` here is what makes every qualified name inside the
+        /// schema reachable at all, so a project that grants on a table and not
+        /// on its schema has granted nothing usable.
+        | Schema of Identifier
+        /// A function or procedure. `pg_proc.proacl`.
+        ///
+        /// The argument types are part of the identity and not decoration:
+        /// `GRANT EXECUTE ON FUNCTION f(integer)` and `f(text)` name two
+        /// different functions, and granting on the wrong one is silent.
+        ///
+        /// Rendered the way `Routine.ArgumentTypes` is rendered — without type
+        /// modifiers, as `format_type(typid, NULL)` produces — because a grant
+        /// that spells its types differently from the routine it is on can
+        /// never be matched to it.
+        | Routine of QualifiedName * string list
+
+    [<RequireQualifiedAccess>]
+    module GrantTarget =
+
+        /// The name to REPORT a grant against.
+        ///
+        /// Lossy on purpose, and only for display: a routine's arguments are
+        /// dropped and a schema is rendered unqualified. Nothing that builds
+        /// DDL may use this — `GRANT ... ON s` and `GRANT ... ON SCHEMA s` are
+        /// different statements.
+        let name (t: GrantTarget) =
+            match t with
+            | GrantTarget.Relation n -> n
+            | GrantTarget.Schema s -> QualifiedName.unqualified s
+            | GrantTarget.Routine (n, _) -> n
+
+        /// The schema the grant's object lives in, where that is a question.
+        ///
+        /// For a schema grant the object IS the schema, so it answers itself.
+        /// This is what decides whether a grant lies inside the managed
+        /// schemas, and a schema grant that reported `None` here would put
+        /// every `GRANT USAGE` permanently outside Strata's remit.
+        let schema (t: GrantTarget) =
+            match t with
+            | GrantTarget.Relation n -> n.Schema
+            | GrantTarget.Schema s -> Some s
+            | GrantTarget.Routine (n, _) -> n.Schema
+
+        /// A stable key for matching a declared grant to a deployed one.
+        ///
+        /// Includes the kind, so a schema named `orders` and a table named
+        /// `orders` are never the same key.
+        let key (t: GrantTarget) =
+            match t with
+            | GrantTarget.Relation n -> sprintf "relation:%s" (QualifiedName.display n)
+            | GrantTarget.Schema s -> sprintf "schema:%s" (Identifier.folded s)
+            | GrantTarget.Routine (n, args) ->
+                sprintf "routine:%s(%s)" (QualifiedName.display n) (String.concat "," args)
+
     /// Privileges one grantee holds on one object.
     ///
     /// The grantee is a role NAME, or the literal `PUBLIC`. PostgreSQL stores
@@ -214,10 +287,26 @@ module Schema =
     /// (`postgres=arwdDxt/postgres`), and reading those as grants would have
     /// Strata propose revoking the owner's own access to its own table.
     type Grant =
-        { Object: QualifiedName
+        { Target: GrantTarget
           Grantee: string
           /// Uppercase and sorted, so two sides that agree compare equal.
-          Privileges: string list }
+          Privileges: string list
+          /// The subset of `Privileges` the grantee may in turn grant to
+          /// others — `WITH GRANT OPTION`, `aclexplode`'s `is_grantable`.
+          ///
+          /// Always empty on a DECLARED grant: a file asking for `WITH GRANT
+          /// OPTION` is refused rather than read as a plain grant, for the same
+          /// reason a column-level grant is. Reading it as plain would let a
+          /// file hand out the power to re-grant while the plan said nothing
+          /// about it.
+          ///
+          /// Populated on an INTROSPECTED grant, and it is not compared. It
+          /// exists so that a deployed grantable privilege is DISCLOSED rather
+          /// than silently matched against a declared plain one — the privilege
+          /// itself does converge, and the extra power nobody declared is
+          /// reported instead of vanishing (ER-008: "holds SELECT" and "holds
+          /// SELECT and can pass it on" are different states).
+          Grantable: string list }
 
     type SchemaObject =
         | TableObject of Table

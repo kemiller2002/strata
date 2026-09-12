@@ -145,6 +145,19 @@ module SchemaDiff =
             managedSchemas
             |> List.exists (fun m -> Identifier.sameName (Identifier.unquoted m) schema)
 
+    /// Whether a grant's object lies inside the schemas the project manages.
+    ///
+    /// A SCHEMA grant is managed when the schema itself is managed, not when
+    /// some enclosing schema is: a schema is not inside anything. Getting this
+    /// wrong in the lenient direction would let Strata revoke privileges on a
+    /// schema the project never claimed.
+    let private isManagedGrant (managedSchemas: string list) (target: GrantTarget) =
+        match GrantTarget.schema target with
+        | None -> false
+        | Some schema ->
+            managedSchemas
+            |> List.exists (fun m -> Identifier.sameName (Identifier.unquoted m) schema)
+
     /// Objects present in the database and absent from desired state.
     ///
     /// This is the dangerous direction and the only one that can destroy data,
@@ -404,7 +417,11 @@ module SchemaDiff =
                      Detail = "the database's privileges could not be read, so declared grants were NOT compared" } ])
         | Some deployed ->
 
-        let key (g: Grant) = QualifiedName.display g.Object, g.Grantee.ToLowerInvariant()
+        // The kind is part of the key. A schema named `orders` and a table named
+        // `orders` are two different things to grant on, and a key that could
+        // not tell them apart would match a declared schema grant against a
+        // deployed table grant and propose revoking privileges nobody declared.
+        let key (g: Grant) = GrantTarget.key g.Target, g.Grantee.ToLowerInvariant()
         let deployedByKey = deployed |> List.map (fun g -> key g, g) |> Map.ofList
         let declaredKeys = declared |> List.map key |> Set.ofList
 
@@ -420,16 +437,16 @@ module SchemaDiff =
                 let extra = held |> List.filter (fun p -> not (List.contains p d.Privileges))
 
                 [ if not (List.isEmpty missing) then
-                      Ok(GrantPrivileges(d.Object, d.Grantee, missing))
+                      Ok(GrantPrivileges(d.Target, d.Grantee, missing))
                   if not (List.isEmpty extra) then
-                      if not (isManaged managedSchemas d.Object) then
+                      if not (isManagedGrant managedSchemas d.Target) then
                           Microsoft.FSharp.Core.Error
-                              { Object = d.Object
+                              { Object = GrantTarget.name d.Target
                                 Reason = OutsideManagedSchemas
                                 Detail = sprintf "privileges held by %s lie outside the managed schemas" d.Grantee }
                       elif not desiredComplete then
                           Microsoft.FSharp.Core.Error
-                              { Object = d.Object
+                              { Object = GrantTarget.name d.Target
                                 Reason = DesiredStateIncomplete
                                 Detail =
                                   sprintf
@@ -438,7 +455,7 @@ module SchemaDiff =
                                       (String.concat ", " extra) }
                       elif not allowDrops then
                           Microsoft.FSharp.Core.Error
-                              { Object = d.Object
+                              { Object = GrantTarget.name d.Target
                                 Reason = DropsNotEnabled
                                 Detail =
                                   sprintf
@@ -446,7 +463,7 @@ module SchemaDiff =
                                       d.Grantee
                                       (String.concat ", " extra) }
                       else
-                          Ok(RevokePrivileges(d.Object, d.Grantee, extra)) ])
+                          Ok(RevokePrivileges(d.Target, d.Grantee, extra)) ])
 
         // Grantees the project never mentions. Reported, never revoked — this
         // is the whole point of the per-grantee rule, so it is stated in the
@@ -454,9 +471,9 @@ module SchemaDiff =
         let unclaimed =
             deployed
             |> List.filter (fun a -> not (Set.contains (key a) declaredKeys))
-            |> List.groupBy (fun a -> QualifiedName.display a.Object)
+            |> List.groupBy (fun a -> GrantTarget.key a.Target)
             |> List.map (fun (_, gs) ->
-                { Object = (List.head gs).Object
+                { Object = GrantTarget.name (List.head gs).Target
                   Reason = NotModelled
                   Detail =
                     sprintf
@@ -466,7 +483,32 @@ module SchemaDiff =
                          |> List.map (fun g -> sprintf "%s=%s" g.Grantee (String.concat "," g.Privileges))
                          |> String.concat "; ") })
 
-        changes, unclaimed
+        // Privileges held WITH GRANT OPTION.
+        //
+        // These are NOT a difference: the privilege itself matches what the
+        // file declares, so nothing is proposed and the project converges. What
+        // does not match is the power to pass the privilege on, which the model
+        // does not hold — a file cannot ask for it (the loader refuses `WITH
+        // GRANT OPTION`) and so the diff can never take it away.
+        //
+        // Reported for exactly that reason. "r holds SELECT" and "r holds
+        // SELECT and can give it to anyone" are different states (ER-008), and
+        // silently treating the second as the first would have Strata report a
+        // converged project while a grantee widens access on its own.
+        let grantable =
+            deployed
+            |> List.filter (fun a -> not (List.isEmpty a.Grantable))
+            |> List.map (fun a ->
+                { Object = GrantTarget.name a.Target
+                  Reason = NotModelled
+                  Detail =
+                    sprintf
+                        "%s holds %s WITH GRANT OPTION and can pass %s on to others; Strata does not model the grant option, so this was NOT compared and nothing removes it"
+                        a.Grantee
+                        (String.concat ", " a.Grantable)
+                        (if List.length a.Grantable = 1 then "it" else "them") })
+
+        changes, unclaimed @ grantable
 
     /// Compare desired state against actual state.
     // ---- DDL emission -------------------------------------------------------
@@ -484,6 +526,24 @@ module SchemaDiff =
         match name.Schema with
         | Some schema -> sprintf "%s.%s" (quote schema) (quote name.Name)
         | None -> quote name.Name
+
+    /// How a grant's object is SPELLED in `GRANT` and `REVOKE`.
+    ///
+    /// Not `quoteName`: the three kinds take three different statements.
+    /// `GRANT USAGE ON app` grants on a TABLE called `app`, which is a
+    /// different object from the schema of that name and may not exist at all;
+    /// `GRANT EXECUTE ON f` without a signature resolves against whatever is
+    /// deployed rather than what the file named.
+    ///
+    /// Argument types are emitted unquoted because they are type names rather
+    /// than identifiers — `integer`, `character varying`, `timestamp without
+    /// time zone` — and quoting one would name a type that does not exist.
+    let private grantTargetSql (target: GrantTarget) =
+        match target with
+        | GrantTarget.Relation name -> quoteName name
+        | GrantTarget.Schema schema -> sprintf "SCHEMA %s" (quote schema)
+        | GrantTarget.Routine (name, arguments) ->
+            sprintf "ROUTINE %s(%s)" (quoteName name) (String.concat ", " arguments)
 
     /// A column as it appears in DDL.
     ///
@@ -634,20 +694,20 @@ module SchemaDiff =
         // PUBLIC is a keyword, not a role name, so it is never quoted — quoting
         // it would name a role called "PUBLIC" that almost certainly does not
         // exist. Privileges are keywords too and are already uppercase.
-        | GrantPrivileges (object', grantee, privileges) ->
+        | GrantPrivileges (target, grantee, privileges) ->
             Some(
                 sprintf
                     "GRANT %s ON %s TO %s"
                     (String.concat ", " privileges)
-                    (quoteName object')
+                    (grantTargetSql target)
                     (granteeSql grantee))
 
-        | RevokePrivileges (object', grantee, privileges) ->
+        | RevokePrivileges (target, grantee, privileges) ->
             Some(
                 sprintf
                     "REVOKE %s ON %s FROM %s"
                     (String.concat ", " privileges)
-                    (quoteName object')
+                    (grantTargetSql target)
                     (granteeSql grantee))
 
         | CreateTable name when (declaredText name).IsSome -> declaredText name
@@ -2203,6 +2263,18 @@ module SchemaDiff =
 
     // ---- output -------------------------------------------------------------
 
+    /// A grant's object, for a human reading a plan.
+    ///
+    /// Says the KIND out loud. A plan line reading `grant USAGE on orders` does
+    /// not tell a reader whether the schema or a table of that name is about to
+    /// become reachable, and that is the one thing they need to know.
+    let private describeGrantTarget (target: GrantTarget) =
+        match target with
+        | GrantTarget.Relation name -> QualifiedName.display name
+        | GrantTarget.Schema schema -> sprintf "schema %s" schema.Text
+        | GrantTarget.Routine (name, arguments) ->
+            sprintf "routine %s(%s)" (QualifiedName.display name) (String.concat ", " arguments)
+
     /// One line describing a change, for a human reading a plan.
     let private describe (change: Change) =
         match change with
@@ -2228,10 +2300,10 @@ module SchemaDiff =
         | DropTable table -> sprintf "drop-table         %s" (QualifiedName.display table)
         | CreateSchema schema -> sprintf "create-schema      %s" schema.Text
         | CreateSequence n -> sprintf "create-sequence    %s" (QualifiedName.display n)
-        | GrantPrivileges (o, g, p) ->
-            sprintf "grant              %s on %s to %s" (String.concat "," p) (QualifiedName.display o) g
-        | RevokePrivileges (o, g, p) ->
-            sprintf "revoke             %s on %s from %s" (String.concat "," p) (QualifiedName.display o) g
+        | GrantPrivileges (t, g, p) ->
+            sprintf "grant              %s on %s to %s" (String.concat "," p) (describeGrantTarget t) g
+        | RevokePrivileges (t, g, p) ->
+            sprintf "revoke             %s on %s from %s" (String.concat "," p) (describeGrantTarget t) g
         | DropSequence n -> sprintf "drop-sequence      %s" (QualifiedName.display n)
         | AlterSequence n -> sprintf "alter-sequence     %s" (QualifiedName.display n)
         | CreateTable table -> sprintf "create-table       %s" (QualifiedName.display table)

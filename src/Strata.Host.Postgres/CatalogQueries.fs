@@ -330,14 +330,97 @@ module CatalogQueries =
                c.relname AS object_name,
                CASE WHEN a.grantee = 0 THEN 'PUBLIC'
                     ELSE pg_catalog.pg_get_userbyid(a.grantee) END AS grantee,
-               a.privilege_type
+               a.privilege_type,
+               a.is_grantable
         FROM pg_catalog.pg_class c
         JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-        CROSS JOIN LATERAL pg_catalog.aclexplode(c.relacl) a
+        CROSS JOIN LATERAL
+            pg_catalog.aclexplode(COALESCE(c.relacl, pg_catalog.acldefault('r', c.relowner))) a
         WHERE c.relkind IN ('r', 'p', 'v', 'm', 'S')
           AND n.nspname NOT IN ('pg_catalog', 'information_schema')
           AND a.grantee <> c.relowner
         ORDER BY n.nspname, c.relname, grantee, a.privilege_type
+        """
+
+    /// Privileges granted on schemas. `pg_namespace.nspacl`.
+    ///
+    /// A schema grant is not a nicety. `USAGE` on the schema is what makes every
+    /// qualified name inside it reachable at all, so a project that grants
+    /// `SELECT` on a table and nothing on its schema has granted nothing usable.
+    ///
+    /// `public` arrives with a real, explicit ACL rather than a NULL one
+    /// (`{pg_database_owner=UC/pg_database_owner,=U/pg_database_owner}` on a
+    /// fresh PostgreSQL 16), so PUBLIC genuinely holds `USAGE` there and it is
+    /// reported as the grant it is.
+    let schemaGrants =
+        """
+        SELECT n.nspname AS schema_name,
+               CASE WHEN a.grantee = 0 THEN 'PUBLIC'
+                    ELSE pg_catalog.pg_get_userbyid(a.grantee) END AS grantee,
+               a.privilege_type,
+               a.is_grantable
+        FROM pg_catalog.pg_namespace n
+        CROSS JOIN LATERAL
+            pg_catalog.aclexplode(COALESCE(n.nspacl, pg_catalog.acldefault('n', n.nspowner))) a
+        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+          -- `left(...) <> 'pg_'` rather than `NOT LIKE 'pg\_%'`: in LIKE the
+          -- underscore is a wildcard and escaping it correctly through an F#
+          -- string as well as SQL's own backslash rules is a trap. This has one
+          -- reading.
+          AND left(n.nspname, 3) <> 'pg_'
+          AND a.grantee <> n.nspowner
+        ORDER BY n.nspname, grantee, a.privilege_type
+        """
+
+    /// Privileges granted on functions and procedures. `pg_proc.proacl`.
+    ///
+    /// `COALESCE(proacl, acldefault(...))` is the whole point of this query and
+    /// not defensive padding. A function nobody has granted on has `proacl`
+    /// NULL, and `aclexplode(NULL)` yields no rows — which reads as "nobody
+    /// holds anything". That is false: PostgreSQL's default for a function is
+    /// `EXECUTE` to PUBLIC, so on a fresh function every role that can connect
+    /// can already call it. Verified on a live server: a role granted nothing
+    /// returns true from `has_function_privilege(..., 'EXECUTE')`.
+    ///
+    /// `acldefault('f', proowner)` materialises that default
+    /// (`{=X/owner,owner=X/owner}`), so PUBLIC's `EXECUTE` is reported as the
+    /// grant it effectively is. Without it a project declaring
+    /// `GRANT EXECUTE ... TO PUBLIC` would never converge, and a reader of the
+    /// plan would be told nobody could execute anything.
+    ///
+    /// The same `COALESCE` on relations and schemas resolves to owner-only, which
+    /// the owner filter then removes — so it changes nothing there and the three
+    /// queries can be read the same way.
+    ///
+    /// Argument types come from `proargtypes` through `format_type(typid, NULL)`
+    /// and NOT from `pg_get_function_identity_arguments`, which renders
+    /// parameter NAMES as well as types (`a integer`). A grant keyed on that
+    /// could never match the routine it is on.
+    let routineGrants =
+        """
+        SELECT n.nspname AS schema_name,
+               p.proname AS object_name,
+               COALESCE(
+                 (SELECT array_agg(pg_catalog.format_type(k.typid, NULL) ORDER BY k.ord)
+                  FROM unnest(p.proargtypes) WITH ORDINALITY AS k(typid, ord)),
+                 '{}') AS argument_types,
+               CASE WHEN a.grantee = 0 THEN 'PUBLIC'
+                    ELSE pg_catalog.pg_get_userbyid(a.grantee) END AS grantee,
+               a.privilege_type,
+               a.is_grantable
+        FROM pg_catalog.pg_proc p
+        JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+        CROSS JOIN LATERAL
+            pg_catalog.aclexplode(COALESCE(p.proacl, pg_catalog.acldefault('f', p.proowner))) a
+        WHERE p.prokind IN ('f', 'p')
+          AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+          AND a.grantee <> p.proowner
+          AND NOT EXISTS (
+                SELECT 1 FROM pg_catalog.pg_depend d
+                WHERE d.objid = p.oid
+                  AND d.classid = 'pg_proc'::regclass
+                  AND d.deptype = 'e')
+        ORDER BY n.nspname, p.proname, grantee, a.privilege_type
         """
 
     let serverVersion = "SELECT current_setting('server_version')"

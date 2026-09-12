@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 69,
+  "nextSeq": 70,
   "items": [
     {
       "id": "WI-0001",
@@ -1160,6 +1160,24 @@
       "attachments": [],
       "createdAt": "2026-09-12T09:32:34Z",
       "updatedAt": "2026-09-12T09:32:41Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0069",
+      "title": "Schema and routine grants as desired state",
+      "description": "GRANT USAGE ON SCHEMA and GRANT EXECUTE ON FUNCTION were refused by the loader, which made the grants feature unusable in practice: USAGE on the schema is what makes the names inside it reachable at all. Read all three grant kinds, keyed correctly, and disclose the two privilege states Strata sees and does not manage (PUBLIC's default EXECUTE on every function, and WITH GRANT OPTION).",
+      "tags": [
+        "postgres",
+        "privileges",
+        "er-008"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T09:49:02Z",
+      "updatedAt": "2026-09-12T09:49:08Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null

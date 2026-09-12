@@ -1757,9 +1757,10 @@ let ``a sequence outside the managed schemas is never dropped`` () =
 // the replication role's access along with the drift it was aimed at.
 
 let private grant object' grantee privileges : Grant =
-    { Object = qn "sales" object'
+    { Target = GrantTarget.Relation(qn "sales" object')
       Grantee = grantee
-      Privileges = privileges |> List.sort }
+      Privileges = privileges |> List.sort
+      Grantable = [] }
 
 let private runWithGrants allowDrops declared actual =
     Strata.Application.SchemaDiff.run
@@ -1773,7 +1774,7 @@ let ``a declared privilege the grantee does not hold is granted`` () =
 
     Assert.Contains(
         result.Changes,
-        fun c -> c = GrantPrivileges(qn "sales" "orders", "app_user", [ "SELECT" ]))
+        fun c -> c = GrantPrivileges(GrantTarget.Relation(qn "sales" "orders"), "app_user", [ "SELECT" ]))
 
 [<Fact>]
 let ``privileges that match exactly produce no change`` () =
@@ -1792,7 +1793,7 @@ let ``a privilege held beyond what is declared is revoked`` () =
 
     Assert.Contains(
         result.Changes,
-        fun c -> c = RevokePrivileges(qn "sales" "orders", "app_user", [ "DELETE" ]))
+        fun c -> c = RevokePrivileges(GrantTarget.Relation(qn "sales" "orders"), "app_user", [ "DELETE" ]))
 
 [<Fact>]
 let ``a revoke is suppressed rather than proposed when drops are off`` () =
@@ -1818,6 +1819,109 @@ let ``a grantee the project never names is reported and never revoked`` () =
 
     Assert.Empty result.Changes
     Assert.Contains(result.Suppressed, fun s -> s.Detail.Contains "replication" && s.Detail.Contains "nothing is revoked")
+
+// ---- privileges on schemas and routines ------------------------------------
+//
+// The three kinds live in three catalogs and take three `GRANT` spellings, so
+// the thing under test here is that they are never confused for one another.
+
+let private schemaGrant name grantee privileges : Grant =
+    { Target = GrantTarget.Schema(Identifier.unquoted name)
+      Grantee = grantee
+      Privileges = privileges |> List.sort
+      Grantable = [] }
+
+let private routineGrant name arguments grantee privileges : Grant =
+    { Target = GrantTarget.Routine(qn "sales" name, arguments)
+      Grantee = grantee
+      Privileges = privileges |> List.sort
+      Grantable = [] }
+
+[<Fact>]
+let ``a schema grant and a relation grant of the same name are different grants`` () =
+    // Both are `sales`-ish names and a key built from the name alone would match
+    // them. It would then read the declared schema grant as satisfied by the
+    // table's privileges, and revoke the table's as undeclared.
+    let result =
+        runWithGrants
+            true
+            [ schemaGrant "sales" "app_user" [ "USAGE" ] ]
+            (Some [ grant "sales" "app_user" [ "SELECT" ] ])
+
+    // The schema grant is missing and proposed; the relation grant belongs to a
+    // grantee/object pair the project does not declare, so it is disclosed.
+    Assert.Contains(
+        result.Changes,
+        fun c -> c = GrantPrivileges(GrantTarget.Schema(Identifier.unquoted "sales"), "app_user", [ "USAGE" ]))
+
+    Assert.DoesNotContain(result.Changes, fun c -> Change.tag c = "revoke")
+
+[<Fact>]
+let ``a schema grant is managed when the schema itself is managed`` () =
+    // A schema is not inside anything, so asking for its enclosing schema
+    // answers None — and a version that did would put every GRANT USAGE
+    // permanently outside the project's remit.
+    let result =
+        runWithGrants
+            true
+            [ schemaGrant "sales" "app_user" [ "USAGE" ] ]
+            (Some [ schemaGrant "sales" "app_user" [ "CREATE"; "USAGE" ] ])
+
+    Assert.Contains(
+        result.Changes,
+        fun c -> c = RevokePrivileges(GrantTarget.Schema(Identifier.unquoted "sales"), "app_user", [ "CREATE" ]))
+
+[<Fact>]
+let ``a grant on an unmanaged schema is suppressed, not revoked`` () =
+    let result =
+        runWithGrants
+            true
+            [ schemaGrant "other" "app_user" [ "USAGE" ] ]
+            (Some [ schemaGrant "other" "app_user" [ "CREATE"; "USAGE" ] ])
+
+    Assert.Empty result.Changes
+    Assert.Contains(result.Suppressed, fun s -> s.Reason = OutsideManagedSchemas)
+
+[<Fact>]
+let ``a routine grant is keyed on its argument types`` () =
+    // `f(integer)` and `f(text)` are two functions. Keyed on the name alone, a
+    // grant declared for one would count as held because the other has it, and
+    // the overload the file named would silently never be granted.
+    let result =
+        runWithGrants
+            true
+            [ routineGrant "f" [ "integer" ] "app_user" [ "EXECUTE" ] ]
+            (Some [ routineGrant "f" [ "text" ] "app_user" [ "EXECUTE" ] ])
+
+    Assert.Contains(
+        result.Changes,
+        fun c -> c = GrantPrivileges(GrantTarget.Routine(qn "sales" "f", [ "integer" ]), "app_user", [ "EXECUTE" ]))
+
+[<Fact>]
+let ``a routine grant that matches exactly proposes nothing`` () =
+    let g = routineGrant "f" [ "integer" ] "app_user" [ "EXECUTE" ]
+    let result = runWithGrants true [ g ] (Some [ g ])
+
+    Assert.Empty result.Changes
+
+[<Fact>]
+let ``a privilege held WITH GRANT OPTION converges but is disclosed`` () =
+    // Both halves matter. The privilege itself matches what the file declares,
+    // so proposing anything would be churn on a project that is correct. But
+    // "holds SELECT" and "holds SELECT and can give it to anyone" are different
+    // states, and the model holds only the first — so the second is reported
+    // rather than silently treated as the first.
+    let result =
+        runWithGrants
+            true
+            [ grant "orders" "app_user" [ "SELECT" ] ]
+            (Some [ { grant "orders" "app_user" [ "SELECT" ] with Grantable = [ "SELECT" ] } ])
+
+    Assert.Empty result.Changes
+
+    Assert.Contains(
+        result.Suppressed,
+        fun s -> s.Reason = NotModelled && s.Detail.Contains "WITH GRANT OPTION" && s.Detail.Contains "nothing removes it")
 
 [<Fact>]
 let ``unreadable privileges propose nothing and say so`` () =

@@ -1265,7 +1265,85 @@ module PgParserAdapter =
         match objectType with
         | ObjectType.ObjectSequence -> [ "USAGE"; "SELECT"; "UPDATE" ]
         | ObjectType.ObjectSchema -> [ "USAGE"; "CREATE" ]
+        | ObjectType.ObjectFunction
+        | ObjectType.ObjectProcedure
+        | ObjectType.ObjectRoutine -> [ "EXECUTE" ]
         | _ -> [ "SELECT"; "INSERT"; "UPDATE"; "DELETE"; "TRUNCATE"; "REFERENCES"; "TRIGGER" ]
+
+    /// A grant's object kind, spelled as SQL spells it.
+    ///
+    /// The protobuf enum name (`ObjectTablespace`, `ObjectFdw`) is an internal
+    /// detail of the parser library. A refusal a person has to act on should
+    /// name the thing they wrote, so it says `TABLESPACE` rather than leaking a
+    /// C# identifier into the output.
+    let private grantObjectKindSql (objectType: ObjectType) =
+        match objectType with
+        | ObjectType.ObjectDatabase -> "DATABASE"
+        | ObjectType.ObjectTablespace -> "TABLESPACE"
+        | ObjectType.ObjectLanguage -> "LANGUAGE"
+        | ObjectType.ObjectType -> "TYPE"
+        | ObjectType.ObjectDomain -> "DOMAIN"
+        | ObjectType.ObjectFdw -> "FOREIGN DATA WRAPPER"
+        | ObjectType.ObjectForeignServer -> "FOREIGN SERVER"
+        | ObjectType.ObjectLargeobject -> "LARGE OBJECT"
+        | ObjectType.ObjectParameterAcl -> "PARAMETER"
+        | other ->
+            // Not a fallback that pretends to know: it says plainly that the
+            // kind is one Strata has no name for, rather than inventing SQL
+            // that does not exist.
+            sprintf "an object kind Strata has no name for (%s)" (string other)
+
+    /// The routine signature a `GRANT ON FUNCTION` names.
+    ///
+    /// `Ok` carries the argument types rendered exactly as a routine's own
+    /// `ArgumentTypes` are rendered — same `typeNameOf`, same modifier
+    /// stripping — because a grant whose types are spelled differently from the
+    /// routine it is on can never be matched to that routine.
+    ///
+    /// `args_unspecified` is its own state and gets its own refusal.
+    /// `GRANT EXECUTE ON FUNCTION f TO r` carries NO argument list at all and
+    /// sets that flag; PostgreSQL then resolves it only if exactly one `f`
+    /// exists. Read without the flag it looks identical to `f()`, a
+    /// zero-argument routine — so the grant would silently land on the wrong
+    /// overload, or on a routine that is not the one meant. Which overload is
+    /// intended depends on what is deployed, so a FILE cannot say, and a
+    /// desired-state file that cannot say must not be guessed at.
+    let private grantRoutineOf (o: ObjectWithArgs) =
+        let name =
+            if isNull (box o.Objname) then []
+            else
+                o.Objname
+                |> Seq.choose (fun n ->
+                    if isNull (box n.String) || String.IsNullOrEmpty n.String.Sval then None
+                    else Some n.String.Sval)
+                |> List.ofSeq
+
+        if o.ArgsUnspecified then
+            Microsoft.FSharp.Core.Error
+                "a GRANT on a routine named without its argument types is not read as declared state: PostgreSQL resolves it against whatever is deployed, so the file does not say which overload it means"
+        else
+
+        // `objfuncargs` in preference to `objargs`: the same reason
+        // `CREATE FUNCTION` reads its parameters from there, and it carries the
+        // parameter MODE, so OUT parameters can be excluded the way they are
+        // excluded from a routine's identity.
+        let arguments =
+            if isNull (box o.Objfuncargs) then []
+            else
+                o.Objfuncargs
+                |> Seq.choose (fun n -> if isNull (box n.FunctionParameter) then None else Some n.FunctionParameter)
+                |> Seq.filter (fun fp ->
+                    fp.Mode = FunctionParameterMode.FuncParamDefault
+                    || fp.Mode = FunctionParameterMode.FuncParamIn
+                    || fp.Mode = FunctionParameterMode.FuncParamInout
+                    || fp.Mode = FunctionParameterMode.FuncParamVariadic)
+                |> Seq.map (fun fp -> QualifiedName.display (typeNameOf fp.ArgType) |> stripTypeModifier)
+                |> List.ofSeq
+
+        match name with
+        | [ schema; routine ] -> Ok(GrantTarget.Routine(qualifiedNameOf schema routine, arguments))
+        | [ routine ] -> Ok(GrantTarget.Routine(QualifiedName.unqualified (identifierOf routine), arguments))
+        | _ -> Microsoft.FSharp.Core.Error "a GRANT on a routine whose name Strata cannot resolve" 
 
     /// Grants a file declares, one per object/grantee pair.
     let private grantsOf (stmt: GrantStmt) : Result<Grant list, string> =
@@ -1325,44 +1403,83 @@ module PgParserAdapter =
                         | _ -> None)
                 |> List.ofSeq
 
-        let objects =
+        // Each object type carries its name in a DIFFERENT node, and that is
+        // the encoding rather than an inconsistency: a relation arrives as a
+        // RangeVar, a schema as a bare String, a routine as an ObjectWithArgs.
+        // Reading only the RangeVar (which is what a previous version did) made
+        // every schema and routine grant look like a statement with no
+        // resolvable object.
+        let objects : Result<GrantTarget, string> list =
             if isNull (box stmt.Objects) then []
             else
                 stmt.Objects
-                |> Seq.choose (fun n ->
-                    if isNull (box n.RangeVar) then None
-                    else Some(qualifiedNameOf n.RangeVar.Schemaname n.RangeVar.Relname))
+                |> Seq.map (fun n ->
+                    match stmt.Objtype with
+                    | ObjectType.ObjectSchema ->
+                        if isNull (box n.String) || String.IsNullOrEmpty n.String.Sval then
+                            Microsoft.FSharp.Core.Error "a GRANT ON SCHEMA whose schema name Strata cannot resolve"
+                        else
+                            Ok(GrantTarget.Schema(identifierOf n.String.Sval))
+                    | ObjectType.ObjectFunction
+                    | ObjectType.ObjectProcedure
+                    | ObjectType.ObjectRoutine ->
+                        if isNull (box n.ObjectWithArgs) then
+                            Microsoft.FSharp.Core.Error "a GRANT on a routine Strata cannot resolve"
+                        else
+                            grantRoutineOf n.ObjectWithArgs
+                    | ObjectType.ObjectTable
+                    | ObjectType.ObjectSequence ->
+                        if isNull (box n.RangeVar) then
+                            Microsoft.FSharp.Core.Error "a GRANT on a relation Strata cannot resolve"
+                        else
+                            Ok(GrantTarget.Relation(qualifiedNameOf n.RangeVar.Schemaname n.RangeVar.Relname))
+                    | other ->
+                        // A database, tablespace, language, type, foreign
+                        // server and so on. Each is a real GRANT that Strata
+                        // does not model, and naming which beats a blanket
+                        // "unresolvable object".
+                        Microsoft.FSharp.Core.Error(
+                            sprintf
+                                "GRANT on %s is not read as declared state: Strata models privileges on relations, schemas and routines"
+                                (grantObjectKindSql other)))
                 |> List.ofSeq
+
+        let objectErrors = objects |> List.choose (function Microsoft.FSharp.Core.Error e -> Some e | Ok _ -> None)
+        let targets = objects |> List.choose (function Ok t -> Some t | Microsoft.FSharp.Core.Error _ -> None)
 
         if columnScoped then
             Microsoft.FSharp.Core.Error
                 "a column-level GRANT is not yet read as declared state: Strata does not model column privileges, and reading one as a table-wide grant would hand out more access than the file asked for"
-        elif List.isEmpty objects then
-            // A schema or routine grant parses fine but names its object as a
-            // String or an ObjectWithArgs rather than a RangeVar, so it lands
-            // here. Saying which it was beats "no resolvable object", which
-            // reads like a malformed statement.
-            match stmt.Objtype with
-            | ObjectType.ObjectSchema ->
-                Microsoft.FSharp.Core.Error "GRANT ON SCHEMA is not yet read as declared state"
-            | ObjectType.ObjectFunction
-            | ObjectType.ObjectProcedure
-            | ObjectType.ObjectRoutine ->
-                Microsoft.FSharp.Core.Error "GRANT ON FUNCTION, PROCEDURE or ROUTINE is not yet read as declared state"
-            | other ->
-                Microsoft.FSharp.Core.Error(
-                    sprintf "GRANT on %s is not read as declared state: no resolvable object" (string other))
+        elif stmt.GrantOption then
+            // The same shape as the column-level refusal, and it exists for the
+            // same reason. `WITH GRANT OPTION` lets the grantee pass the
+            // privilege on to anyone; the model holds the privilege and not
+            // that power, so reading this as a plain grant would have the plan
+            // say "grants SELECT to r" while r can hand SELECT to the world.
+            // The catalog side DOES read it (`aclexplode`'s `is_grantable`) and
+            // discloses it, so the two halves agree that this is a state Strata
+            // sees and does not manage.
+            Microsoft.FSharp.Core.Error
+                "a GRANT ... WITH GRANT OPTION is not read as declared state: Strata models which privileges a grantee holds, not the power to pass them on, and reading this as a plain grant would understate what the file asks for"
+        elif not (List.isEmpty objectErrors) then
+            Microsoft.FSharp.Core.Error(objectErrors |> List.distinct |> String.concat "; ")
+        elif List.isEmpty targets then
+            Microsoft.FSharp.Core.Error "GRANT with no resolvable object"
         elif List.isEmpty grantees then
             Microsoft.FSharp.Core.Error "GRANT with no grantee a file can fix (CURRENT_USER and SESSION_USER are not declarable)"
         elif List.isEmpty privileges then
             Microsoft.FSharp.Core.Error "GRANT with no recognised privilege"
         else
             Ok
-                [ for object' in objects do
+                [ for target in targets do
                     for grantee in grantees do
-                        { Object = object'
+                        { Target = target
                           Grantee = grantee
-                          Privileges = privileges |> List.distinct |> List.sort } ]
+                          Privileges = privileges |> List.distinct |> List.sort
+                          // A file that asked for `WITH GRANT OPTION` never
+                          // reaches here: it is refused above. So a declared
+                          // grant has nothing grantable, always.
+                          Grantable = [] } ]
 
     let private errorOf (e: PgSqlParser.Error) =
         { Message = e.Message

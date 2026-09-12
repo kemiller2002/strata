@@ -1,6 +1,7 @@
 namespace Strata.Application
 
 open Strata.Semantic.Identity
+open Strata.Semantic.Schema
 open Strata.Semantic.AnalysisScope
 open Strata.Semantic.Wire
 open Strata.Analysis.Graph
@@ -85,6 +86,19 @@ module DeploymentGate =
           Scope: Scope }
 
     /// Judge one change against the graph.
+    /// A grant's object, for a finding a human reads before approving.
+    ///
+    /// The kind is stated because it changes the decision. "grants USAGE on
+    /// schema app" is a different question from "grants USAGE on app" — one
+    /// opens a namespace, the other a sequence — and an approver cannot tell
+    /// them apart from a bare name.
+    let private grantTargetDisplay (target: GrantTarget) =
+        match target with
+        | GrantTarget.Relation name -> QualifiedName.display name
+        | GrantTarget.Schema schema -> sprintf "schema %s" schema.Text
+        | GrantTarget.Routine (name, arguments) ->
+            sprintf "routine %s(%s)" (QualifiedName.display name) (String.concat ", " arguments)
+
     let private judge (graph: SemanticGraph) (scope: Scope) (change: Change) : Finding =
         // An absence claim is only trustworthy if the scope supports one.
         // This single check is what stops the gate approving a drop because it
@@ -319,7 +333,7 @@ module DeploymentGate =
               AffectedSources = []
               NextSafeMove = "Proceed." }
 
-        | GrantPrivileges (object', grantee, privileges) ->
+        | GrantPrivileges (target, grantee, privileges) ->
             // Nothing breaks, so nothing here is looking for breakage. What it
             // weighs is who can now reach the data — and PUBLIC is a different
             // question from a named role, because PUBLIC includes every role
@@ -332,7 +346,7 @@ module DeploymentGate =
                 sprintf
                     "grants %s on %s to %s"
                     (String.concat ", " privileges)
-                    (QualifiedName.display object')
+                    (grantTargetDisplay target)
                     grantee
               Rationale =
                 if toPublic then
@@ -343,7 +357,7 @@ module DeploymentGate =
               AffectedSources = []
               NextSafeMove = if toPublic then "Confirm the data is meant to be readable by any role, then approve." else "Proceed." }
 
-        | RevokePrivileges (object', grantee, privileges) ->
+        | RevokePrivileges (target, grantee, privileges) ->
             // There is nothing to find, and that is the finding. The corpus
             // records SQL, not the role that runs it, so Strata cannot say
             // which code runs as this grantee. An empty AffectedSources here
@@ -354,7 +368,7 @@ module DeploymentGate =
                 sprintf
                     "revokes %s on %s from %s"
                     (String.concat ", " privileges)
-                    (QualifiedName.display object')
+                    (grantTargetDisplay target)
                     grantee
               Rationale =
                 "Whatever runs as this grantee starts failing on its next statement, with no warning before \

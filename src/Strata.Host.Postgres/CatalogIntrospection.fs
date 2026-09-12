@@ -460,31 +460,69 @@ module CatalogIntrospection =
           ServerVersion = serverVersion
           Completeness = completeness }
 
-    /// Privileges granted on relations and sequences.
+    /// Privileges granted on relations, schemas and routines.
     ///
     /// Returned as a `Result` for the same reason `readSchemas` is: a caller
     /// that could not read the ACLs must not conclude a privilege is absent
     /// and propose granting it, nor conclude one is undeclared and revoke it.
+    ///
+    /// All three catalogs are read in ONE connection and one `Result`. Reading
+    /// them separately would allow a partial answer — relations read, routines
+    /// not — and a partial answer here is the dangerous kind: it looks like a
+    /// complete one in which nobody holds anything.
     let readGrants (connectionString: string) : Result<Grant list, string> =
         try
             use connection = new NpgsqlConnection(connectionString)
             connection.Open()
-            use command = new NpgsqlCommand(CatalogQueries.grants, connection)
-            use reader = command.ExecuteReader() :?> NpgsqlDataReader
 
-            let rows =
-                [ while reader.Read() do
-                    yield
-                        (str reader "schema_name", str reader "object_name", str reader "grantee"),
-                        str reader "privilege_type" ]
+            /// One ACL query's rows, keyed by target and grantee.
+            ///
+            /// `is_grantable` is carried rather than compared. A privilege held
+            /// WITH GRANT OPTION is still that privilege, so it converges
+            /// against a declared plain grant; the power to pass it on is
+            /// something Strata sees and does not manage, and it is disclosed
+            /// rather than dropped on the floor.
+            let read (sql: string) (targetOf: NpgsqlDataReader -> GrantTarget) =
+                use command = new NpgsqlCommand(sql, connection)
+                use reader = command.ExecuteReader() :?> NpgsqlDataReader
 
-            rows
-            |> List.groupBy fst
-            |> List.map (fun ((schema, object', grantee), privileges) ->
-                { Object = qualified schema object'
-                  Grantee = grantee
-                  Privileges = privileges |> List.map snd |> List.distinct |> List.sort })
-            |> Ok
+                let rows =
+                    [ while reader.Read() do
+                        yield
+                            (targetOf reader, str reader "grantee"),
+                            (str reader "privilege_type", reader.GetBoolean(reader.GetOrdinal "is_grantable")) ]
+
+                rows
+                |> List.groupBy fst
+                |> List.map (fun ((target, grantee), privileges) ->
+                    { Target = target
+                      Grantee = grantee
+                      Privileges = privileges |> List.map (snd >> fst) |> List.distinct |> List.sort
+                      Grantable =
+                        privileges
+                        |> List.filter (snd >> snd)
+                        |> List.map (snd >> fst)
+                        |> List.distinct
+                        |> List.sort })
+
+            let relations =
+                read CatalogQueries.grants (fun r ->
+                    GrantTarget.Relation(qualified (str r "schema_name") (str r "object_name")))
+
+            let schemaLevel =
+                read CatalogQueries.schemaGrants (fun r ->
+                    GrantTarget.Schema(Identifier.unquoted (str r "schema_name")))
+
+            let routineLevel =
+                read CatalogQueries.routineGrants (fun r ->
+                    let arguments =
+                        let ordinal = r.GetOrdinal "argument_types"
+                        if r.IsDBNull ordinal then []
+                        else r.GetFieldValue<string array> ordinal |> List.ofArray
+
+                    GrantTarget.Routine(qualified (str r "schema_name") (str r "object_name"), arguments))
+
+            Ok(relations @ schemaLevel @ routineLevel)
         with ex ->
             Error ex.Message
 
