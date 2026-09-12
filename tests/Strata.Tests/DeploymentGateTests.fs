@@ -2,6 +2,7 @@ module Strata.Tests.DeploymentGateTests
 
 open Xunit
 open Strata.Semantic.Identity
+open Strata.Semantic.Schema
 open Strata.Semantic.AnalysisScope
 open Strata.Analysis.Graph
 open Strata.Analysis.ProposedChange
@@ -60,12 +61,24 @@ let ``a clean result under an INCOMPLETE scope is not clearance`` () =
     Assert.Contains("not clearance", (List.head result.Findings).Rationale)
 
 [<Fact>]
-let ``a clean result under a COMPLETE scope is allowed`` () =
-    // Control: the gate must be capable of saying yes, or it is useless.
+let ``a clean result under a COMPLETE scope still requires approval, and says why`` () =
+    // This asserted `Allow` until `DF-STRATA-2026-5E9F`. A clean scan under a
+    // supporting scope no longer clears a DESTRUCTIVE change — the scope proves
+    // the search was meaningful, not that it was complete.
+    //
+    // What the scope still decides is what the finding SAYS, and that
+    // distinction is worth keeping: this rationale and the "not clearance" one
+    // above are different claims about the same verdict, and a reader deciding
+    // whether to approve needs to know which they are looking at.
     let result = run SemanticGraph.empty completeScope [ DropColumn(orders, id' "note") ]
 
-    Assert.Equal(Allow, result.Verdict)
-    Assert.Equal(0, Verdict.exitCode result.Verdict)
+    Assert.Equal(RequiresApproval, result.Verdict)
+    Assert.Contains("supports that conclusion", (List.head result.Findings).Rationale)
+    Assert.DoesNotContain("not clearance", (List.head result.Findings).Rationale)
+
+    // The gate must still be capable of saying yes, or it is useless. It says it
+    // for additive changes — see the two tests below.
+    Assert.Equal(Allow, (run SemanticGraph.empty completeScope [ AddColumn(orders, id' "note") ]).Verdict)
 
 [<Fact>]
 let ``additive changes are allowed even under an incomplete scope`` () =
@@ -149,3 +162,106 @@ let ``exit codes distinguish all three verdicts`` () =
     Assert.Equal(0, Verdict.exitCode Allow)
     Assert.Equal(1, Verdict.exitCode Block)
     Assert.Equal(2, Verdict.exitCode RequiresApproval)
+
+
+// ---- the destructive-verdict property ---------------------------------------
+//
+// `DF-STRATA-2026-5E9F`. Before this, a clean corpus scan under a scope that
+// supported absence claims returned `Allow` for `DropColumn`, `DropTable`,
+// `AlterColumnType`, both renames, `ReplaceView`, `ReplaceRoutine`, the three
+// trigger cases and `UpdateRow` — every one of them destructive.
+//
+// `scopeSupportsAbsence` proves the search was MEANINGFUL. It does not prove it
+// was COMPLETE: dynamic SQL, an ORM, a BI tool, another service and a cron job
+// are all outside anything Strata indexes. That was the one place in the design
+// where a bounded result became an unbounded conclusion, and it sat at the
+// highest-stakes change in the vocabulary.
+//
+// A single example test would pin one case. This pins the whole vocabulary,
+// which is the point: six cases were added to `Change` in one session, and
+// nothing would have caught one of them being misclassified.
+
+/// One representative value per case in the `Change` vocabulary.
+///
+/// Hand-written rather than reflected, because every case needs a payload. The
+/// coverage test below is what keeps this honest: a new case fails there until
+/// someone adds it here, and then the property runs over it automatically.
+let private everyChange : Change list =
+    [ DropColumn(orders, id' "c")
+      DropTable orders
+      AlterColumnType(orders, id' "c", "bigint")
+      AddColumn(orders, id' "c")
+      RenameTable(orders, qn "sales" "orders_v2")
+      RenameColumn(orders, id' "a", id' "b")
+      CreateSchema(id' "sales")
+      GrantPrivileges(GrantTarget.Relation orders, "app_user", [ "SELECT" ])
+      RevokePrivileges(GrantTarget.Relation orders, "app_user", [ "SELECT" ])
+      CreateExtension(id' "citext")
+      UpdateExtension(id' "citext", "1.7")
+      SetExtensionSchema(id' "citext", id' "ext")
+      CreatePolicy(orders, id' "p")
+      ReplacePolicy(orders, id' "p")
+      EnableRowLevelSecurity orders
+      DisableRowLevelSecurity orders
+      ForceRowLevelSecurity orders
+      NoForceRowLevelSecurity orders
+      CreateSequence(qn "sales" "s")
+      DropSequence(qn "sales" "s")
+      AlterSequence(qn "sales" "s")
+      CreateTable orders
+      CreateIndex(orders, id' "ix")
+      DropIndex(orders, id' "ix")
+      CreateView(qn "sales" "v")
+      ReplaceView(qn "sales" "v")
+      ReplaceRoutine(qn "sales" "f")
+      CreateRoutine(qn "sales" "f")
+      CreateTrigger(orders, id' "t")
+      DropTrigger(orders, id' "t")
+      ReplaceTrigger(orders, id' "t")
+      InsertRow(orders, "1")
+      UpdateRow(orders, "1")
+      AddConstraint(orders, Some(id' "ck"), ConstraintKind.Check, [ id' "c" ])
+      DropConstraint(orders, id' "ck", ConstraintKind.Check)
+      TruncateTable orders
+      UnclassifiedChange "something Strata does not model" ]
+
+[<Fact>]
+let ``every change case has a representative in the property corpus`` () =
+    // Without this the property below silently stops covering new cases, which
+    // is exactly how the gap it pins was introduced.
+    let nameOf (change: Change) =
+        fst (Microsoft.FSharp.Reflection.FSharpValue.GetUnionFields(change, typeof<Change>))
+        |> fun case -> case.Name
+
+    let declared =
+        Microsoft.FSharp.Reflection.FSharpType.GetUnionCases typeof<Change>
+        |> Array.map (fun c -> c.Name)
+        |> Set.ofArray
+
+    let covered = everyChange |> List.map nameOf |> Set.ofList
+
+    Assert.Equal<Set<string>>(Set.empty, Set.difference declared covered)
+
+[<Fact>]
+let ``a destructive change never receives an Allow verdict`` () =
+    // Deliberately the scope that DOES support absence claims, against an EMPTY
+    // graph — the most permissive combination there is, and the one that used to
+    // return Allow. Under an incomplete scope this would pass vacuously.
+    let offenders =
+        everyChange
+        |> List.filter Change.isPotentiallyDestructive
+        |> List.filter (fun change ->
+            let result = run SemanticGraph.empty completeScope [ change ]
+            (List.head result.Findings).Verdict = Allow)
+        |> List.map Change.tag
+
+    Assert.Equal<string list>([], offenders)
+
+[<Fact>]
+let ``an additive change is still allowed on a clean scan`` () =
+    // The other half. Tightening destructive changes must not drag the additive
+    // ones with it, or every plan becomes requires-approval and the verdict
+    // stops carrying information.
+    let result = run SemanticGraph.empty completeScope [ AddColumn(orders, id' "note") ]
+
+    Assert.Equal(Allow, result.Verdict)

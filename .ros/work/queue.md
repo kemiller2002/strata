@@ -80,7 +80,7 @@
 | WI-0075 | Report row-level security instead of not looking at it | complete | postgres, security, er-008 | high |
 | WI-0076 | Row-level security policies as desired state | complete | postgres, security, er-008 | high |
 | WI-0077 | Extensions as desired state | complete | postgres, er-008 | medium |
-| WI-0078 | Destructive changes never receive an Allow verdict | captured | strata | high |
+| WI-0078 | Destructive changes never receive an Allow verdict | ready | strata | high |
 | WI-0079 | Require an explicit include list in strata.json | captured | strata | high |
 | WI-0080 | Derive the managed schema set from directory names and remove managedSchemas | captured | strata | high |
 | WI-0081 | Project adoption and reconciliation commands | captured | strata | medium |
@@ -92,4 +92,4 @@
 | WI-0087 | Type-check queries with PREPARE | captured | strata | medium |
 | WI-0088 | Declared project invariants as compile-time checks | captured | strata | low |
 | WI-0089 | Sign the compiled artifact | captured | strata | low |
-| WI-0090 | Record the compile/deploy design decisions | ready | strata, decisions | high |
+| WI-0090 | Record the compile/deploy design decisions | complete | strata, decisions | high |

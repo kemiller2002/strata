@@ -110,8 +110,21 @@ module DeploymentGate =
         // looked in an empty corpus.
         let scopeSupportsAbsence = Scope.supportsAbsenceClaim scope
 
-        let cleanResultVerdict =
-            if scopeSupportsAbsence then Allow else RequiresApproval
+        // A clean scan never clears a DESTRUCTIVE change, whatever the scope
+        // supports. `scopeSupportsAbsence` proves the search was MEANINGFUL — a
+        // corpus was indexed, so "not found" is not vacuous. It does not prove
+        // the search was COMPLETE: Strata cannot see dynamic SQL, an ORM's
+        // generated queries, a BI tool, another service, or a cron job.
+        //
+        // This used to return Allow when the scope supported the claim, which
+        // made it the one place in the design where a bounded result became an
+        // unbounded conclusion — at the highest-stakes change in the vocabulary.
+        // Requiring approval on a safe drop costs a keystroke; auto-approving an
+        // unsafe one costs a table (DF-STRATA-2026-5E9F).
+        //
+        // The scope still decides what the finding SAYS, below. It no longer
+        // decides whether the question is asked.
+        let cleanResultVerdict = RequiresApproval
 
         let cleanResultRationale =
             if scopeSupportsAbsence then
@@ -154,7 +167,7 @@ module DeploymentGate =
                 |> List.distinct
 
             { Change = change
-              Verdict = if List.isEmpty dependents && scopeSupportsAbsence then Allow else Block
+              Verdict = if List.isEmpty dependents && scopeSupportsAbsence then RequiresApproval else Block
               Detected =
                 sprintf
                     "renames %s to %s, which %d source(s) still reference by the old name"
@@ -179,7 +192,7 @@ module DeploymentGate =
                 |> List.distinct
 
             { Change = change
-              Verdict = if List.isEmpty dependents && scopeSupportsAbsence then Allow else Block
+              Verdict = if List.isEmpty dependents && scopeSupportsAbsence then RequiresApproval else Block
               Detected =
                 sprintf
                     "renames %s.%s to %s, which %d source(s) still reference by the old name"
@@ -239,7 +252,7 @@ module DeploymentGate =
             let readers = SemanticGraph.readersOf table graph
 
             { Change = change
-              Verdict = if List.isEmpty readers && scopeSupportsAbsence then Allow else RequiresApproval
+              Verdict = RequiresApproval
               Detected =
                 sprintf
                     "changes row %s of %s, which %d source(s) read"
@@ -263,7 +276,7 @@ module DeploymentGate =
             let writers = SemanticGraph.writersOf table graph
 
             { Change = change
-              Verdict = if List.isEmpty writers && scopeSupportsAbsence then Allow else RequiresApproval
+              Verdict = RequiresApproval
               Detected =
                 sprintf
                     "creates trigger %s on %s, which %d source(s) write to"
@@ -290,7 +303,7 @@ module DeploymentGate =
               // ARE writers, no analysis can help: a trigger's effect is
               // invisible to the SQL that provokes it, so Strata could never
               // find the code that depended on it.
-              Verdict = if List.isEmpty writers && scopeSupportsAbsence then Allow else RequiresApproval
+              Verdict = RequiresApproval
               Detected =
                 sprintf
                     "drops trigger %s on %s, which %d source(s) write to"
@@ -313,7 +326,7 @@ module DeploymentGate =
             { Change = change
               // Same reasoning as the drop: a trigger on a table nothing writes
               // never fires, so redefining it changes nothing observable.
-              Verdict = if List.isEmpty writers && scopeSupportsAbsence then Allow else RequiresApproval
+              Verdict = RequiresApproval
               Detected =
                 sprintf
                     "redefines trigger %s on %s, which %d source(s) write to"
@@ -524,7 +537,7 @@ module DeploymentGate =
                 |> List.distinct
 
             { Change = change
-              Verdict = if List.isEmpty dependents && scopeSupportsAbsence then Allow else RequiresApproval
+              Verdict = RequiresApproval
               Detected =
                 sprintf "redefines view %s, which %d source(s) depend on" (QualifiedName.display view) (List.length dependents)
               Rationale =
@@ -547,7 +560,7 @@ module DeploymentGate =
                 |> List.distinct
 
             { Change = change
-              Verdict = if List.isEmpty dependents && scopeSupportsAbsence then Allow else RequiresApproval
+              Verdict = RequiresApproval
               Detected =
                 sprintf
                     "redefines routine %s, which %d source(s) depend on"
