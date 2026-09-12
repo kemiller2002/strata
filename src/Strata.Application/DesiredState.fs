@@ -79,7 +79,10 @@ module DesiredState =
           TriggerDeclarations: ((QualifiedName * Identifier) * string) list
 
           /// Reference rows, one entry per declaring file.
-          Data: DeclaredData list }
+          Data: DeclaredData list
+
+          /// Privileges the project declares, one per object/grantee pair.
+          Grants: Grant list }
 
     /// Declared schema names, from the objects actually loaded.
     let private declaredSchemas (objects: SchemaObject list) =
@@ -101,6 +104,7 @@ module DesiredState =
         let triggers = ResizeArray<QualifiedName * Trigger>()
         let triggerDeclarations = ResizeArray<(QualifiedName * Identifier) * string>()
         let data = ResizeArray<DeclaredData>()
+        let grants = ResizeArray<Grant>()
 
         for path, contents in files do
             let declarations = parser.ParseObjectDefinitions contents
@@ -118,6 +122,7 @@ module DesiredState =
                         | DeclaredIndex _
                         | DeclaredTrigger _
                         | DeclaredRows _
+                        | DeclaredGrant _
                         | Unmodelled _
                         | DeclarationFailed _ -> None)
 
@@ -130,6 +135,7 @@ module DesiredState =
                     // once: a row declaration only means something alongside
                     // the other statements in its file.
                     | DeclaredRows _ -> ()
+                    | DeclaredGrant grant -> grants.Add grant
                     | Unmodelled detail -> failures.Add { Path = path; Reason = detail }
                     | DeclarationFailed error ->
                         failures.Add
@@ -366,6 +372,15 @@ module DesiredState =
                       // triggers, and the consequence of getting it wrong is
                       // worse: a row nobody declared is a row user data may
                       // point at.
+                      // A project with no GRANT file says nothing about
+                      // privileges. Declaring one takes ownership of that
+                      // grantee's privileges on that object — and of nothing
+                      // else, which is finer than the rule for indexes and
+                      // triggers, because a wrong revoke costs a person their
+                      // access rather than an index rebuild.
+                      "grants",
+                      (if Seq.isEmpty grants then NotRequested
+                       else state "grant declarations are only as complete as the files that parsed")
                       "reference_data",
                       (if Seq.isEmpty data then NotRequested
                        else state "declared rows are only as complete as the files that parsed")
@@ -374,7 +389,16 @@ module DesiredState =
           Failures = allFailures
           Declarations = List.ofSeq declarations'
           TriggerDeclarations = List.ofSeq triggerDeclarations
-          Data = List.ofSeq data |> List.filter (fun d -> declaresTable d.Table) }
+          Data = List.ofSeq data |> List.filter (fun d -> declaresTable d.Table)
+          // Two declarations for the same object and grantee are merged rather
+          // than treated as rivals: `GRANT SELECT` and `GRANT INSERT` written
+          // on separate lines mean the grantee should hold both.
+          Grants =
+            List.ofSeq grants
+            |> List.groupBy (fun g -> QualifiedName.display g.Object, g.Grantee.ToLowerInvariant())
+            |> List.map (fun (_, gs) ->
+                { (List.head gs) with
+                    Privileges = gs |> List.collect (fun g -> g.Privileges) |> List.distinct |> List.sort }) }
 
     /// Schemas the project actually declared objects in.
     ///

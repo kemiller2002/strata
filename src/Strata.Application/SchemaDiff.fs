@@ -369,6 +369,105 @@ module SchemaDiff =
 
         created @ altered @ dropped
 
+    /// Privileges, compared per object AND per grantee.
+    ///
+    /// ## Why the ownership rule is finer here than anywhere else
+    ///
+    /// Indexes and triggers use a coarse rule: declare one on a table and the
+    /// project owns them all. That is right when the cost of a wrong removal is
+    /// a rebuild. It is wrong for privileges, where a project managing
+    /// `app_user` would silently revoke the replication role, the DBA's access
+    /// and the monitoring user's along with it.
+    ///
+    /// So declaring a grant for a grantee on an object takes ownership of THAT
+    /// GRANTEE's privileges on THAT object, and of nothing else. A grantee the
+    /// project never names is left alone and disclosed — drift Strata can see
+    /// and will not act on.
+    ///
+    /// `actual` is `None` when the ACLs could not be read, which is not the
+    /// same as nobody holding anything: that case proposes nothing at all.
+    let private grantChanges
+        (allowDrops: bool)
+        (managedSchemas: string list)
+        (desiredComplete: bool)
+        (declared: Grant list)
+        (actual: Grant list option) =
+
+        match actual with
+        | None ->
+            [],
+            (if List.isEmpty declared then
+                 []
+             else
+                 [ { Object = QualifiedName.unqualified (Identifier.unquoted "(grants)")
+                     Reason = NotCompared
+                     Detail = "the database's privileges could not be read, so declared grants were NOT compared" } ])
+        | Some deployed ->
+
+        let key (g: Grant) = QualifiedName.display g.Object, g.Grantee.ToLowerInvariant()
+        let deployedByKey = deployed |> List.map (fun g -> key g, g) |> Map.ofList
+        let declaredKeys = declared |> List.map key |> Set.ofList
+
+        let changes =
+            declared
+            |> List.collect (fun d ->
+                let held =
+                    Map.tryFind (key d) deployedByKey
+                    |> Option.map (fun g -> g.Privileges)
+                    |> Option.defaultValue []
+
+                let missing = d.Privileges |> List.filter (fun p -> not (List.contains p held))
+                let extra = held |> List.filter (fun p -> not (List.contains p d.Privileges))
+
+                [ if not (List.isEmpty missing) then
+                      Ok(GrantPrivileges(d.Object, d.Grantee, missing))
+                  if not (List.isEmpty extra) then
+                      if not (isManaged managedSchemas d.Object) then
+                          Microsoft.FSharp.Core.Error
+                              { Object = d.Object
+                                Reason = OutsideManagedSchemas
+                                Detail = sprintf "privileges held by %s lie outside the managed schemas" d.Grantee }
+                      elif not desiredComplete then
+                          Microsoft.FSharp.Core.Error
+                              { Object = d.Object
+                                Reason = DesiredStateIncomplete
+                                Detail =
+                                  sprintf
+                                      "%s holds %s beyond what is declared, but desired state did not load completely"
+                                      d.Grantee
+                                      (String.concat ", " extra) }
+                      elif not allowDrops then
+                          Microsoft.FSharp.Core.Error
+                              { Object = d.Object
+                                Reason = DropsNotEnabled
+                                Detail =
+                                  sprintf
+                                      "%s holds %s beyond what is declared; pass --allow-drops to revoke"
+                                      d.Grantee
+                                      (String.concat ", " extra) }
+                      else
+                          Ok(RevokePrivileges(d.Object, d.Grantee, extra)) ])
+
+        // Grantees the project never mentions. Reported, never revoked — this
+        // is the whole point of the per-grantee rule, so it is stated in the
+        // output rather than left to the reader to infer from silence.
+        let unclaimed =
+            deployed
+            |> List.filter (fun a -> not (Set.contains (key a) declaredKeys))
+            |> List.groupBy (fun a -> QualifiedName.display a.Object)
+            |> List.map (fun (_, gs) ->
+                { Object = (List.head gs).Object
+                  Reason = NotModelled
+                  Detail =
+                    sprintf
+                        "%s holds privileges here and the project declares none for them, so they were NOT compared and nothing is revoked: %s"
+                        (gs |> List.map (fun g -> g.Grantee) |> List.distinct |> List.sort |> String.concat ", ")
+                        (gs
+                         |> List.map (fun g -> sprintf "%s=%s" g.Grantee (String.concat "," g.Privileges))
+                         |> String.concat "; ") })
+
+        changes, unclaimed
+
     /// Compare desired state against actual state.
     // ---- DDL emission -------------------------------------------------------
 
@@ -450,6 +549,10 @@ module SchemaDiff =
         // the declared row, via quote_nullable. Strata does not re-render a
         // value it never interpreted: what goes into the database is what came
         // back out of the shadow table.
+        let granteeSql (grantee: string) =
+            if grantee.ToUpperInvariant() = "PUBLIC" then "PUBLIC"
+            else quote (Identifier.unquoted grantee)
+
         let desiredSequence name =
             desiredSequences |> List.tryFind (fun (sq: Sequence) -> sameName sq.Name name)
 
@@ -527,6 +630,25 @@ module SchemaDiff =
                 | _ -> sprintf "ALTER SEQUENCE %s %s" (quoteName name) body)
 
         | DropSequence name -> Some(sprintf "DROP SEQUENCE %s" (quoteName name))
+
+        // PUBLIC is a keyword, not a role name, so it is never quoted — quoting
+        // it would name a role called "PUBLIC" that almost certainly does not
+        // exist. Privileges are keywords too and are already uppercase.
+        | GrantPrivileges (object', grantee, privileges) ->
+            Some(
+                sprintf
+                    "GRANT %s ON %s TO %s"
+                    (String.concat ", " privileges)
+                    (quoteName object')
+                    (granteeSql grantee))
+
+        | RevokePrivileges (object', grantee, privileges) ->
+            Some(
+                sprintf
+                    "REVOKE %s ON %s FROM %s"
+                    (String.concat ", " privileges)
+                    (quoteName object')
+                    (granteeSql grantee))
 
         | CreateTable name when (declaredText name).IsSome -> declaredText name
 
@@ -875,6 +997,9 @@ module SchemaDiff =
         // After the table, its columns and its constraints exist, and after
         // triggers: a trigger on a reference table should see the rows arrive
         // the same way it would see any other write.
+        // After every object they name exists.
+        | GrantPrivileges _ -> 8
+        | RevokePrivileges _ -> 8
         | InsertRow _ -> 8
         | UpdateRow _ -> 8
         | TruncateTable _ -> 9
@@ -1788,6 +1913,10 @@ module SchemaDiff =
         (existingSchemas: string list option)
         /// Schemas the project actually declared objects in.
         (declaredInSchemas: string list)
+        /// Privileges the project declares.
+        (declaredGrants: Grant list)
+        /// Privileges the database holds, or `None` when they could not be read.
+        (actualGrants: Grant list option)
         /// Declared and deployed reference rows, already rendered by the
         /// server. Empty when the project declares no data files.
         (data: ResolvedData list)
@@ -2003,6 +2132,9 @@ module SchemaDiff =
 
         let newSchemas, schemaSuppressions = schemaChanges existingSchemas declaredInSchemas
 
+        let grantResults, grantSuppressions =
+            grantChanges allowDrops managedSchemas desiredComplete declaredGrants actualGrants
+
         let sequenceResults =
             sequenceChanges allowDrops managedSchemas desiredComplete desired.Objects actual.Objects
         let rowChanges, rowSuppressions = dataChanges data dataFailures
@@ -2021,6 +2153,7 @@ module SchemaDiff =
         let all =
             newSchemas
             @ sequenceResults
+            @ grantResults
             @ creations
             @ tableRenames
             @ indexesForNewTables
@@ -2065,6 +2198,7 @@ module SchemaDiff =
             @ unmodelled
             @ rowSuppressions
             @ schemaSuppressions
+            @ grantSuppressions
           DesiredStateComplete = desiredComplete }
 
     // ---- output -------------------------------------------------------------
@@ -2094,6 +2228,10 @@ module SchemaDiff =
         | DropTable table -> sprintf "drop-table         %s" (QualifiedName.display table)
         | CreateSchema schema -> sprintf "create-schema      %s" schema.Text
         | CreateSequence n -> sprintf "create-sequence    %s" (QualifiedName.display n)
+        | GrantPrivileges (o, g, p) ->
+            sprintf "grant              %s on %s to %s" (String.concat "," p) (QualifiedName.display o) g
+        | RevokePrivileges (o, g, p) ->
+            sprintf "revoke             %s on %s from %s" (String.concat "," p) (QualifiedName.display o) g
         | DropSequence n -> sprintf "drop-sequence      %s" (QualifiedName.display n)
         | AlterSequence n -> sprintf "alter-sequence     %s" (QualifiedName.display n)
         | CreateTable table -> sprintf "create-table       %s" (QualifiedName.display table)

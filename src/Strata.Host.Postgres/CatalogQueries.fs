@@ -305,6 +305,41 @@ module CatalogQueries =
         ORDER BY n.nspname, c.relname
         """
 
+    /// Privileges granted on relations and sequences.
+    ///
+    /// Three things here are not obvious, and each was verified against a live
+    /// server because getting any of them wrong is destructive:
+    ///
+    ///   * The OWNER appears in the ACL with every privilege the moment
+    ///     anything is granted (`postgres=arwdDxt/postgres`). Those are not
+    ///     grants, and reading them as grants makes Strata propose revoking the
+    ///     owner's own access to its own table. Excluded by grantee = relowner.
+    ///
+    ///   * PUBLIC is grantee OID 0, and `pg_get_userbyid(0)` returns the
+    ///     literal string `unknown (OID=0)` rather than failing. Emitting a
+    ///     revoke from that would name a role that does not exist, so it is
+    ///     translated to PUBLIC here.
+    ///
+    ///   * `relacl` is NULL for an object nobody has granted on — the DEFAULT
+    ///     state, not an empty one. `aclexplode` of NULL yields no rows, which
+    ///     is the right answer, but only because there are genuinely no grants
+    ///     to report.
+    let grants =
+        """
+        SELECT n.nspname AS schema_name,
+               c.relname AS object_name,
+               CASE WHEN a.grantee = 0 THEN 'PUBLIC'
+                    ELSE pg_catalog.pg_get_userbyid(a.grantee) END AS grantee,
+               a.privilege_type
+        FROM pg_catalog.pg_class c
+        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+        CROSS JOIN LATERAL pg_catalog.aclexplode(c.relacl) a
+        WHERE c.relkind IN ('r', 'p', 'v', 'm', 'S')
+          AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+          AND a.grantee <> c.relowner
+        ORDER BY n.nspname, c.relname, grantee, a.privilege_type
+        """
+
     let serverVersion = "SELECT current_setting('server_version')"
 
     let searchPath = "SELECT current_setting('search_path')"

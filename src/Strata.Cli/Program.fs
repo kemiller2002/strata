@@ -69,7 +69,12 @@ OPTIONS
 PROJECT LAYOUT
   <project>/schema/<schema>/<kind>/<name>.sql, one object per file. `kind` is
   the directory name and is yours to choose; tables/, views/, routines/,
-  indexes/, triggers/ and sequences/ are the conventional ones.
+  indexes/, triggers/, sequences/ and grants/ are the conventional ones.
+
+  grants/<object>.sql holds GRANT statements. Declaring one takes ownership of
+  THAT GRANTEE's privileges on THAT object — a grantee the project never names
+  keeps what it has and is reported, so managing app_user cannot silently
+  revoke a replication or monitoring role.
 
   The <schema> directory names the schema, and Strata CREATES it if the
   database does not have it — so a project applies against an empty database.
@@ -284,6 +289,16 @@ let main argv =
                         eprintfn "         Declared schemas will be reported as not-checked."
                         None
 
+                // Read for the same reason and with the same care: an ACL that
+                // could not be read is not an absent privilege.
+                let actualGrants =
+                    match CatalogIntrospection.readGrants connectionString with
+                    | Ok grants -> Some grants
+                    | Microsoft.FSharp.Core.Error message ->
+                        eprintfn "warning: could not read the database's privileges (%s)." message
+                        eprintfn "         Declared grants will be reported as not-compared."
+                        None
+
                 let searchPath =
                     match CatalogIntrospection.readSearchPath connectionString with
                     | Ok p -> p
@@ -485,6 +500,8 @@ let main argv =
                         declared.TriggerDeclarations
                         existingSchemas
                         (DesiredState.schemasDeclaredIn declared)
+                        declared.Grants
+                        actualGrants
                         resolvedData
                         dataFailures
                         normalisedViews

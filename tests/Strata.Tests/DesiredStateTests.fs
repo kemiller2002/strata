@@ -683,3 +683,60 @@ let ``an IDENTITY column is NOT NULL and has no default`` () =
 
     Assert.False(column.Type.IsNullable, "an identity column is NOT NULL")
     Assert.False(column.HasDefault, "an identity column has no default expression")
+
+
+// ---- grants ----------------------------------------------------------------
+
+let private grantsIn (loaded: DesiredState.Loaded) = loaded.Grants |> List.sortBy (fun g -> g.Grantee)
+
+[<Fact>]
+let ``grants are NotRequested rather than complete-and-empty`` () =
+    Assert.Equal(NotRequested, Completeness.stateOf "grants" (load [ "t.sql", accountTypeSql ]).Snapshot.Completeness)
+
+[<Fact>]
+let ``one statement declares a grant per object and grantee`` () =
+    let loaded =
+        load [ "g.sql", "GRANT SELECT ON ref.a, ref.b TO app_user, reporting;" ]
+
+    Assert.Equal(4, List.length loaded.Grants)
+
+[<Fact>]
+let ``GRANT ALL expands to every table privilege`` () =
+    // `ALL` arrives with NO privileges list at all — absence is the encoding —
+    // so the set is written out in the adapter. Too few and Strata keeps
+    // granting; too many and it keeps revoking.
+    let loaded = load [ "g.sql", "GRANT ALL ON ref.a TO app_user;" ]
+
+    Assert.Equal<string list>(
+        [ "DELETE"; "INSERT"; "REFERENCES"; "SELECT"; "TRIGGER"; "TRUNCATE"; "UPDATE" ],
+        (List.head loaded.Grants).Privileges)
+
+[<Fact>]
+let ``PUBLIC is read as PUBLIC, not as a role named PUBLIC`` () =
+    let loaded = load [ "g.sql", "GRANT SELECT ON ref.a TO PUBLIC;" ]
+
+    Assert.Equal("PUBLIC", (List.head loaded.Grants).Grantee)
+
+[<Fact>]
+let ``grants for the same object and grantee are merged, not treated as rivals`` () =
+    // Written on two lines means the grantee should hold both, not that the
+    // second line replaces the first.
+    let loaded =
+        load [ "g.sql", "GRANT SELECT ON ref.a TO app_user;\nGRANT INSERT ON ref.a TO app_user;" ]
+
+    let only = Assert.Single loaded.Grants
+    Assert.Equal<string list>([ "INSERT"; "SELECT" ], only.Privileges)
+
+[<Fact>]
+let ``REVOKE is refused: a file says what should be held`` () =
+    let loaded = load [ "g.sql", "REVOKE SELECT ON ref.a FROM app_user;" ]
+
+    Assert.Empty loaded.Grants
+    Assert.Contains(loaded.Failures, fun f -> f.Reason.Contains "REVOKE is not read as declared state")
+
+[<Fact>]
+let ``CURRENT_USER is refused: a file cannot fix who is connected`` () =
+    let loaded = load [ "g.sql", "GRANT SELECT ON ref.a TO CURRENT_USER;" ]
+
+    Assert.Empty loaded.Grants
+    Assert.Contains(loaded.Failures, fun f -> f.Reason.Contains "not declarable")

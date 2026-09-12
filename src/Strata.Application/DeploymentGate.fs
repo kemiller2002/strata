@@ -319,6 +319,49 @@ module DeploymentGate =
               AffectedSources = []
               NextSafeMove = "Proceed." }
 
+        | GrantPrivileges (object', grantee, privileges) ->
+            // Nothing breaks, so nothing here is looking for breakage. What it
+            // weighs is who can now reach the data — and PUBLIC is a different
+            // question from a named role, because PUBLIC includes every role
+            // that exists now and every one created later.
+            let toPublic = grantee.ToUpperInvariant() = "PUBLIC"
+
+            { Change = change
+              Verdict = if toPublic then RequiresApproval else Allow
+              Detected =
+                sprintf
+                    "grants %s on %s to %s"
+                    (String.concat ", " privileges)
+                    (QualifiedName.display object')
+                    grantee
+              Rationale =
+                if toPublic then
+                    "PUBLIC is not a role, it is every role — including ones created after this runs. \
+                     Nothing breaks; the data simply becomes reachable by anyone who can connect."
+                else
+                    "Additive. Widens who can reach the object; breaks nothing that works today."
+              AffectedSources = []
+              NextSafeMove = if toPublic then "Confirm the data is meant to be readable by any role, then approve." else "Proceed." }
+
+        | RevokePrivileges (object', grantee, privileges) ->
+            // There is nothing to find, and that is the finding. The corpus
+            // records SQL, not the role that runs it, so Strata cannot say
+            // which code runs as this grantee. An empty AffectedSources here
+            // would read as "nothing depends on it", which is not the claim.
+            { Change = change
+              Verdict = RequiresApproval
+              Detected =
+                sprintf
+                    "revokes %s on %s from %s"
+                    (String.concat ", " privileges)
+                    (QualifiedName.display object')
+                    grantee
+              Rationale =
+                "Whatever runs as this grantee starts failing on its next statement, with no warning before \
+                 it does. Strata cannot say what that is: the corpus records SQL, not the role that runs it."
+              AffectedSources = []
+              NextSafeMove = "Confirm nothing runs as this grantee against this object, then approve explicitly." }
+
         | CreateSequence name ->
             { Change = change
               Verdict = Allow

@@ -1231,6 +1231,80 @@ module PgParserAdapter =
             |> Option.defaultValue false
           Scope = Managed }
 
+    /// Every privilege `ALL` means, per object type.
+    ///
+    /// `GRANT ALL` arrives with NO privileges list at all — absence is the
+    /// encoding — so the set has to be written out here. Getting it wrong in
+    /// either direction shows up as permanent churn: too few and Strata keeps
+    /// granting, too many and it keeps revoking.
+    let private allPrivileges (objectType: ObjectType) =
+        match objectType with
+        | ObjectType.ObjectSequence -> [ "USAGE"; "SELECT"; "UPDATE" ]
+        | ObjectType.ObjectSchema -> [ "USAGE"; "CREATE" ]
+        | _ -> [ "SELECT"; "INSERT"; "UPDATE"; "DELETE"; "TRUNCATE"; "REFERENCES"; "TRIGGER" ]
+
+    /// Grants a file declares, one per object/grantee pair.
+    let private grantsOf (stmt: GrantStmt) : Result<Grant list, string> =
+        if not stmt.IsGrant then
+            // A desired-state file says what SHOULD hold, not what to take
+            // away. A REVOKE describes an operation, and the diff decides
+            // those — the same reason `INSERT ... ON CONFLICT` is refused.
+            Microsoft.FSharp.Core.Error
+                "REVOKE is not read as declared state: a file says which privileges should be held, and removing the others is the diff's decision"
+        elif stmt.Targtype <> GrantTargetType.AclTargetObject then
+            Microsoft.FSharp.Core.Error "only a grant on a named object is read as declared state"
+        else
+
+        let privileges =
+            if isNull (box stmt.Privileges) || stmt.Privileges.Count = 0 then
+                allPrivileges stmt.Objtype
+            else
+                stmt.Privileges
+                |> Seq.choose (fun n ->
+                    if isNull (box n.AccessPriv) || String.IsNullOrEmpty n.AccessPriv.PrivName then None
+                    else Some(n.AccessPriv.PrivName.ToUpperInvariant()))
+                |> List.ofSeq
+
+        let grantees =
+            if isNull (box stmt.Grantees) then []
+            else
+                stmt.Grantees
+                |> Seq.choose (fun n ->
+                    if isNull (box n.RoleSpec) then None
+                    else
+                        match n.RoleSpec.Roletype with
+                        | RoleSpecType.RolespecPublic -> Some "PUBLIC"
+                        | RoleSpecType.RolespecCstring when not (String.IsNullOrEmpty n.RoleSpec.Rolename) ->
+                            Some n.RoleSpec.Rolename
+                        // CURRENT_USER and SESSION_USER name whoever happens to
+                        // be connected, which a file cannot fix and a diff
+                        // cannot compare.
+                        | _ -> None)
+                |> List.ofSeq
+
+        let objects =
+            if isNull (box stmt.Objects) then []
+            else
+                stmt.Objects
+                |> Seq.choose (fun n ->
+                    if isNull (box n.RangeVar) then None
+                    else Some(qualifiedNameOf n.RangeVar.Schemaname n.RangeVar.Relname))
+                |> List.ofSeq
+
+        if List.isEmpty objects then
+            Microsoft.FSharp.Core.Error "GRANT with no resolvable object"
+        elif List.isEmpty grantees then
+            Microsoft.FSharp.Core.Error "GRANT with no grantee a file can fix (CURRENT_USER and SESSION_USER are not declarable)"
+        elif List.isEmpty privileges then
+            Microsoft.FSharp.Core.Error "GRANT with no recognised privilege"
+        else
+            Ok
+                [ for object' in objects do
+                    for grantee in grantees do
+                        { Object = object'
+                          Grantee = grantee
+                          Privileges = privileges |> List.distinct |> List.sort } ]
+
     let private errorOf (e: PgSqlParser.Error) =
         { Message = e.Message
           CursorPosition = e.CursorPos
@@ -1301,14 +1375,17 @@ module PgParserAdapter =
                     [ DeclarationFailed(errorOf result.Error) ]
                 else
                     result.Value.Stmts
-                    |> Seq.map (fun raw ->
+                    // `collect`, not `map`: one GRANT statement declares a
+                    // grant per object/grantee pair, so an arm may yield more
+                    // than one. Every other arm yields exactly one.
+                    |> Seq.collect (fun raw ->
                         let stmt = raw.Stmt
 
                         match stmt.NodeCase with
-                        | Node.NodeOneofCase.CreateStmt -> Declared(TableObject(tableOf stmt.CreateStmt))
+                        | Node.NodeOneofCase.CreateStmt -> [ Declared(TableObject(tableOf stmt.CreateStmt)) ]
 
                         | Node.NodeOneofCase.ViewStmt when not (isNull (box stmt.ViewStmt.View)) ->
-                            Declared(ViewObject(viewOf stmt.ViewStmt.View false))
+                            [ Declared(ViewObject(viewOf stmt.ViewStmt.View false)) ]
 
                         // CREATE MATERIALIZED VIEW is a CreateTableAsStmt with
                         // an objtype of matview, not a ViewStmt.
@@ -1316,20 +1393,26 @@ module PgParserAdapter =
                             stmt.CreateTableAsStmt.Objtype = ObjectType.ObjectMatview
                             && not (isNull (box stmt.CreateTableAsStmt.Into))
                             && not (isNull (box stmt.CreateTableAsStmt.Into.Rel)) ->
-                            Declared(ViewObject(viewOf stmt.CreateTableAsStmt.Into.Rel true))
+                            [ Declared(ViewObject(viewOf stmt.CreateTableAsStmt.Into.Rel true)) ]
+
+                        | Node.NodeOneofCase.GrantStmt ->
+                            match grantsOf stmt.GrantStmt with
+                            | Ok [] -> [ Unmodelled "GRANT declared nothing" ]
+                            | Ok grants -> grants |> List.map DeclaredGrant
+                            | Microsoft.FSharp.Core.Error detail -> [ Unmodelled detail ]
 
                         | Node.NodeOneofCase.CreateSeqStmt when not (isNull (box stmt.CreateSeqStmt.Sequence)) ->
-                            Declared(SequenceObject(sequenceOf stmt.CreateSeqStmt))
+                            [ Declared(SequenceObject(sequenceOf stmt.CreateSeqStmt)) ]
 
                         | Node.NodeOneofCase.CreateFunctionStmt ->
-                            Declared(RoutineObject(routineOf stmt.CreateFunctionStmt))
+                            [ Declared(RoutineObject(routineOf stmt.CreateFunctionStmt)) ]
 
                         // An unnamed index gets a server-generated name, which
                         // a file cannot predict and a diff cannot match. It is
                         // unmodelled rather than guessed at.
                         | Node.NodeOneofCase.IndexStmt when not (String.IsNullOrEmpty stmt.IndexStmt.Idxname) ->
                             let table, index = indexOf stmt.IndexStmt
-                            DeclaredIndex(table, index)
+                            [ DeclaredIndex(table, index) ]
 
                         // A trigger is always named, so there is no unnamed
                         // case to refuse as there is for an index.
@@ -1339,21 +1422,22 @@ module PgParserAdapter =
                         // mean two answers to the same question.
                         | Node.NodeOneofCase.InsertStmt when isNull (box stmt.InsertStmt.OnConflictClause) ->
                             match rowsOf stmt.InsertStmt with
-                            | Ok (table, columns, rows) -> DeclaredRows(table, columns, rows)
-                            | Microsoft.FSharp.Core.Error detail -> Unmodelled detail
+                            | Ok (table, columns, rows) -> [ DeclaredRows(table, columns, rows) ]
+                            | Microsoft.FSharp.Core.Error detail -> [ Unmodelled detail ]
 
                         | Node.NodeOneofCase.InsertStmt ->
-                            Unmodelled
-                                "INSERT ... ON CONFLICT is not read as declared data: reconciling declared rows against deployed ones is the diff's decision, not the file's"
+                            [ Unmodelled
+                                "INSERT ... ON CONFLICT is not read as declared data: reconciling declared rows against deployed ones is the diff's decision, not the file's" ]
 
                         | Node.NodeOneofCase.CreateTrigStmt ->
                             match triggerOf stmt.CreateTrigStmt with
-                            | Ok (table, trigger) -> DeclaredTrigger(table, trigger)
-                            | Microsoft.FSharp.Core.Error detail -> Unmodelled detail
+                            | Ok (table, trigger) -> [ DeclaredTrigger(table, trigger) ]
+                            | Microsoft.FSharp.Core.Error detail -> [ Unmodelled detail ]
                         // Recognised, modelled nowhere yet. Saying so keeps a
                         // view file from reading as an empty declaration, which
                         // a diff would treat as "nothing to create" (ER-008).
-                        | other -> Unmodelled(sprintf "%s is not yet read as a desired-state declaration" (string other)))
+                        | other ->
+                            [ Unmodelled(sprintf "%s is not yet read as a desired-state declaration" (string other)) ])
                     |> List.ofSeq
 
             member _.Fingerprint(sql: string) =

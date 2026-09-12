@@ -202,6 +202,23 @@ module Schema =
           Cycle: bool
           Scope: ManagementScope }
 
+    /// Privileges one grantee holds on one object.
+    ///
+    /// The grantee is a role NAME, or the literal `PUBLIC`. PostgreSQL stores
+    /// PUBLIC as grantee OID 0, which `pg_get_userbyid` renders as the string
+    /// `unknown (OID=0)` — so it is translated at the catalog boundary rather
+    /// than carried here, or a revoke would name a role that does not exist.
+    ///
+    /// The OWNER's privileges are not grants and never appear here. PostgreSQL
+    /// materialises them into the ACL as soon as anything is granted
+    /// (`postgres=arwdDxt/postgres`), and reading those as grants would have
+    /// Strata propose revoking the owner's own access to its own table.
+    type Grant =
+        { Object: QualifiedName
+          Grantee: string
+          /// Uppercase and sorted, so two sides that agree compare equal.
+          Privileges: string list }
+
     type SchemaObject =
         | TableObject of Table
         | ViewObject of View

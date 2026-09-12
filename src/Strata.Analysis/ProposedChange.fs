@@ -72,6 +72,18 @@ module ProposedChange =
         /// desired state is not authority to remove it (`NG-006`), and here the
         /// blast radius is the whole namespace rather than one object.
         | CreateSchema of schema: Identifier
+        /// Grants privileges to one grantee on one object.
+        ///
+        /// Additive in the sense that nothing breaks — but it widens who can
+        /// reach the data, which is a decision rather than a mechanical
+        /// consequence, and a grant to PUBLIC is a different decision again.
+        | GrantPrivileges of object': QualifiedName * grantee: string * privileges: string list
+        /// Takes privileges away from one grantee on one object.
+        ///
+        /// Destructive, and invisible until it bites: whatever ran as that role
+        /// starts failing on its next statement. Strata cannot say what that
+        /// is, because the corpus records SQL and not the role that runs it.
+        | RevokePrivileges of object': QualifiedName * grantee: string * privileges: string list
         /// Creates a sequence. Additive: nothing can already draw from one that
         /// does not exist.
         | CreateSequence of sequence: QualifiedName
@@ -189,6 +201,8 @@ module ProposedChange =
             | AlterColumnType _ -> "alter-column-type"
             | AddColumn _ -> "add-column"
             | CreateSchema _ -> "create-schema"
+            | GrantPrivileges _ -> "grant"
+            | RevokePrivileges _ -> "revoke"
             | CreateSequence _ -> "create-sequence"
             | DropSequence _ -> "drop-sequence"
             | AlterSequence _ -> "alter-sequence"
@@ -220,6 +234,8 @@ module ProposedChange =
             | AddColumn (table, _)
             | CreateTable table
             | CreateSequence table
+            | GrantPrivileges (table, _, _)
+            | RevokePrivileges (table, _, _)
             | DropSequence table
             | AlterSequence table
             | RenameTable (table, _)
@@ -271,6 +287,8 @@ module ProposedChange =
             // numbers it hands out.
             | DropSequence _
             | AlterSequence _
+            // Whatever ran as that role starts failing on its next statement.
+            | RevokePrivileges _
             // Every query joining the reference table sees the new value at
             // once, and none of them errors.
             | UpdateRow _
@@ -281,6 +299,7 @@ module ProposedChange =
             | AddColumn _
             | CreateSchema _
             | CreateSequence _
+            | GrantPrivileges _
             | CreateTable _
             | InsertRow _
             | CreateIndex _

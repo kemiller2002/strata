@@ -93,6 +93,9 @@ module DialectPort =
         /// bit-string, NULL — and anything outside it is refused rather than
         /// rendered.
         | DeclaredRows of table: QualifiedName * columns: Identifier list * rows: string list list
+        /// Privileges a file grants. One per object/grantee pair, so
+        /// `GRANT ... ON a, b TO x, y` yields four.
+        | DeclaredGrant of grant: Grant
         | Unmodelled of detail: string
         | DeclarationFailed of ParseError
 

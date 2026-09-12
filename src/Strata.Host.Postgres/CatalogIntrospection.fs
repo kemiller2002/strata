@@ -460,6 +460,34 @@ module CatalogIntrospection =
           ServerVersion = serverVersion
           Completeness = completeness }
 
+    /// Privileges granted on relations and sequences.
+    ///
+    /// Returned as a `Result` for the same reason `readSchemas` is: a caller
+    /// that could not read the ACLs must not conclude a privilege is absent
+    /// and propose granting it, nor conclude one is undeclared and revoke it.
+    let readGrants (connectionString: string) : Result<Grant list, string> =
+        try
+            use connection = new NpgsqlConnection(connectionString)
+            connection.Open()
+            use command = new NpgsqlCommand(CatalogQueries.grants, connection)
+            use reader = command.ExecuteReader() :?> NpgsqlDataReader
+
+            let rows =
+                [ while reader.Read() do
+                    yield
+                        (str reader "schema_name", str reader "object_name", str reader "grantee"),
+                        str reader "privilege_type" ]
+
+            rows
+            |> List.groupBy fst
+            |> List.map (fun ((schema, object', grantee), privileges) ->
+                { Object = qualified schema object'
+                  Grantee = grantee
+                  Privileges = privileges |> List.map snd |> List.distinct |> List.sort })
+            |> Ok
+        with ex ->
+            Error ex.Message
+
     /// Schema names that exist in the database.
     ///
     /// Returned as a `Result` rather than folded into the snapshot, and the
