@@ -451,184 +451,18 @@ let main argv =
 
                 let allowDrops = List.contains "--allow-drops" args
 
-                // Declared view DDL rendered the way the catalog renders it, so
-                // the two sides can be compared at all. Executed in a
-                // transaction that is always rolled back — the database is
-                // unchanged either way. If it cannot run (no CREATE privilege,
-                // a read-only target), views fall back to being disclosed as
-                // not-compared, which is what happened before this existed.
-                let normalisedViews =
-                    let declaredViews =
-                        declared.Snapshot.Objects
-                        |> List.choose (fun o ->
-                            match o with
-                            | ViewObject v when not v.IsMaterialized ->
-                                declared.Declarations
-                                |> List.tryPick (fun (name, text) ->
-                                    if QualifiedName.display name = QualifiedName.display v.Name then
-                                        Some(QualifiedName.display v.Name, text)
-                                    else
-                                        None)
-                            | _ -> None)
+                // Everything about the declared side that only a server can
+                // settle: view text, defaults, check and policy expressions,
+                // and reference rows through the real column types. One named
+                // boundary, because it is exactly what `strata compile` will
+                // produce and hand to `strata deploy`
+                // (`DF-STRATA-2026-2F6B`).
+                let resolved = Resolution.resolve connectionString declared
 
-                    match ShadowNormalisation.normaliseViews connectionString declaredViews with
-                    | Ok normalised -> normalised
-                    | Microsoft.FSharp.Core.Error message ->
-                        if not (List.isEmpty declaredViews) then
-                            eprintfn "warning: could not normalise declared views (%s)." message
-                            eprintfn "         View definitions will be reported as not-compared."
+                for warning in resolved.Warnings do
+                    eprintfn "warning: %s" warning
 
-                        []
-
-                // Declared defaults and checks rendered the way the catalog
-                // renders them, by the same rolled-back transaction.
-                let normalisedTables =
-                    let declaredTables =
-                        declared.Snapshot.Objects
-                        |> List.choose (fun o ->
-                            match o with
-                            | TableObject t ->
-                                declared.Declarations
-                                |> List.tryPick (fun (name, text) ->
-                                    if QualifiedName.display name = QualifiedName.display t.Name then
-                                        Some(QualifiedName.display t.Name, text)
-                                    else
-                                        None)
-                            | _ -> None)
-
-                    match ShadowNormalisation.normaliseTables connectionString declaredTables with
-                    | Ok normalised ->
-                        normalised
-                        |> List.map (fun n ->
-                            ({ Table = n.Table
-                               Defaults = n.Defaults
-                               Checks = n.Checks }: SchemaDiff.NormalisedTable))
-                    | Microsoft.FSharp.Core.Error message ->
-                        if not (List.isEmpty declaredTables) then
-                            eprintfn "warning: could not normalise declared tables (%s)." message
-                            eprintfn "         Defaults and check expressions will be reported as not-compared."
-
-                        []
-
-                // Declared policies, with their expressions rendered by the
-                // server. A file's `tenant = 'x'` and the catalog's
-                // `(tenant = 'x'::text)` are the same policy, and nothing but
-                // PostgreSQL can say so — the same reason check constraints go
-                // through the shadow.
-                //
-                // The table's own declared DDL comes along because a policy's
-                // expression is over the table's columns: it cannot be created
-                // until the table exists.
-                let declaredPolicies =
-                    let tableText name =
-                        declared.Declarations
-                        |> List.tryPick (fun (declaredName, text) ->
-                            if QualifiedName.display declaredName = QualifiedName.display name then Some text else None)
-
-                    let byTable =
-                        declared.Policies
-                        |> List.groupBy (fun (table, _) -> QualifiedName.display table)
-                        |> List.choose (fun (name, entries) ->
-                            match tableText (fst (List.head entries)) with
-                            | None -> None
-                            | Some tableDdl ->
-                                let policies =
-                                    entries
-                                    |> List.choose (fun (table, policy) ->
-                                        declared.PolicyDeclarations
-                                        |> List.tryPick (fun ((t, n), text) ->
-                                            if QualifiedName.display t = QualifiedName.display table
-                                               && Identifier.folded n = Identifier.folded policy.Name then
-                                                Some(policy.Name.Text, text)
-                                            else
-                                                None))
-
-                                if List.isEmpty policies then None else Some(name, tableDdl, policies))
-
-                    let rendered =
-                        match ShadowNormalisation.normalisePolicies connectionString byTable with
-                        | Ok normalised -> normalised
-                        | Microsoft.FSharp.Core.Error message ->
-                            if not (List.isEmpty byTable) then
-                                eprintfn "warning: could not normalise declared policies (%s)." message
-                                eprintfn "         Policy expressions will be reported as not-compared."
-
-                            []
-
-                    // A policy the server did not render keeps its placeholder,
-                    // so the diff compares everything else about it and says
-                    // nothing about the expression — rather than claiming the
-                    // expression matches, or that it differs.
-                    declared.Policies
-                    |> List.map (fun (table, policy) ->
-                        match
-                            rendered
-                            |> List.tryFind (fun n ->
-                                n.Table = QualifiedName.display table && n.Policy = policy.Name.Text)
-                        with
-                        | Some n -> table, { policy with Using = n.Using; WithCheck = n.WithCheck }
-                        | None -> table, policy)
-
-                // Declared reference rows, resolved against the live tables.
-                //
-                // Both sides come back rendered by the SERVER, through the real
-                // column types, so `1.250` in a file and `1.25` in a
-                // `numeric(12,2)` column are recognised as the same value
-                // rather than reported as a difference forever. Everything
-                // happens in a transaction that is rolled back.
-                let resolvedData, dataFailures =
-                    let declaredData =
-                        declared.Data
-                        |> List.map (fun d ->
-                            QualifiedName.display d.Table,
-                            d.Columns |> List.map (fun c -> c.Text),
-                            d.Rows,
-                            // Only needed when the table does not exist yet, so
-                            // the rows and the table that holds them can arrive
-                            // in one plan.
-                            declared.Declarations
-                            |> List.tryPick (fun (name, text) ->
-                                if QualifiedName.display name = QualifiedName.display d.Table then Some text
-                                else None))
-
-                    match ReferenceData.resolve connectionString declaredData with
-                    | Ok (resolutions, failures) ->
-                        resolutions
-                        |> List.map (fun r ->
-                            ({ Table = r.Table
-                               Columns = r.Columns
-                               KeyColumns = r.KeyColumns
-                               Declared =
-                                 r.Declared
-                                 |> List.map (fun row ->
-                                     ({ Key = row.Key
-                                        Rendered = row.Rendered
-                                        Literals = row.Literals }: SchemaDiff.ResolvedRow))
-                               Deployed =
-                                 r.Deployed
-                                 |> List.map (fun row ->
-                                     ({ Key = row.Key
-                                        Rendered = row.Rendered
-                                        Literals = row.Literals }: SchemaDiff.ResolvedRow)) }: SchemaDiff.ResolvedData)),
-                        failures
-                        |> List.map (fun f ->
-                            ({ Table = f.Table; Reason = f.Reason }: SchemaDiff.DataFailure))
-                    | Microsoft.FSharp.Core.Error message ->
-                        // Could not resolve ANY of them. Every declared table
-                        // becomes a failure rather than an empty result: a
-                        // table Strata could not read is not a table with no
-                        // rows, and treating it as one would propose inserting
-                        // every declared row into a table that already has them.
-                        if not (List.isEmpty declared.Data) then
-                            eprintfn "warning: could not resolve declared reference rows (%s)." message
-
-                        [],
-                        declared.Data
-                        |> List.map (fun d ->
-                            ({ Table = QualifiedName.display d.Table
-                               Reason = message }: SchemaDiff.DataFailure))
-
-                for failure in dataFailures do
+                for failure in resolved.DataFailures do
                     eprintfn "warning: %s: %s" failure.Table failure.Reason
 
                 // Rename intent, read from the raw file text: libpg_query
@@ -679,14 +513,14 @@ let main argv =
                             ActualGrants = actualGrants
                             ActualRowLevelSecurity = actualRowLevelSecurity
                             PolicyDeclarations = declared.PolicyDeclarations
-                            DeclaredPolicies = declaredPolicies
+                            DeclaredPolicies = resolved.Policies
                             DeclaredRowSecurity = declared.RowSecurity
                             DeclaredExtensions = declared.Extensions
                             ActualExtensions = actualExtensions
-                            Data = resolvedData
-                            DataFailures = dataFailures
-                            NormalisedViews = normalisedViews
-                            NormalisedTables = normalisedTables
+                            Data = resolved.Data
+                            DataFailures = resolved.DataFailures
+                            NormalisedViews = resolved.NormalisedViews
+                            NormalisedTables = resolved.NormalisedTables
                             Renames = renames }
                 let gate = DeploymentGate.run graph scope diff.Changes
 

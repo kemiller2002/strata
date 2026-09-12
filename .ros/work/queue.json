@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 91,
+  "nextSeq": 92,
   "items": [
     {
       "id": "WI-0001",
@@ -1412,10 +1412,10 @@
         "strata"
       ],
       "priority": "high",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-12T19:16:35Z",
-      "updatedAt": "2026-09-12T19:16:35Z",
+      "updatedAt": "2026-09-12T21:29:42Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -1546,6 +1546,20 @@
       "createdAt": "2026-09-12T19:17:00Z",
       "updatedAt": "2026-09-12T19:17:06Z",
       "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0091",
+      "title": "Correct the RLS disclosure that claims policies are not compared",
+      "description": null,
+      "tags": [],
+      "priority": "medium",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-12T21:38:38Z",
+      "updatedAt": "2026-09-12T21:38:38Z",
+      "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null
     }
