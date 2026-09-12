@@ -149,8 +149,13 @@ let ``completeness names categories Strata did not read`` () =
     let completeness = snapshot.Value.Completeness
 
     Assert.Equal(NotRequested, Completeness.stateOf "rls_policies" completeness)
-    Assert.Equal(NotRequested, Completeness.stateOf "sequences" completeness)
+    Assert.Equal(NotRequested, Completeness.stateOf "grants" completeness)
     Assert.Equal(Complete, Completeness.stateOf "relations" completeness)
+    // Sequences moved from "not read" to read, like triggers before them. The
+    // assertion moves with them: a category that stops being NotRequested must
+    // start being something, and a test that only checked the old value would
+    // pass just as well if the new one were never reported at all.
+    Assert.Equal(Complete, Completeness.stateOf "sequences" completeness)
     // Triggers moved from "not read" to read. The assertion moved with it
     // rather than being deleted: a category that stops being NotRequested must
     // start being something, and a test that only ever checked the old value

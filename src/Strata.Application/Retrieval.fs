@@ -246,6 +246,21 @@ module Retrieval =
                                   "kind", JString "routine"
                                   "language", JString r.Language
                                   "arguments", JArray(r.ArgumentTypes |> List.map JString) ]
+                    | Some (SequenceObject sq) ->
+                        JObject [ "name", JString(QualifiedName.display sq.Name)
+                                  "kind", JString "sequence"
+                                  "scope", managementScope sq.Scope
+                                  "dataType", JString sq.DataType
+                                  "start", JString(string sq.Start)
+                                  "increment", JString(string sq.Increment)
+                                  "minValue", JString(string sq.MinValue)
+                                  "maxValue", JString(string sq.MaxValue)
+                                  "cache", JString(string sq.Cache)
+                                  "cycle", JBool sq.Cycle
+                                  // The current value is deliberately absent:
+                                  // it is data, and it changes on every
+                                  // nextval.
+                                  "note", JString "The sequence's current value is not reported: it is data, not structure." ]
                     | None ->
                         // Not in the snapshot is not "does not exist".
                         JObject [ "name", JString(QualifiedName.display name)

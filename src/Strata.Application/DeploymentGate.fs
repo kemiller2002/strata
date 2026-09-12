@@ -319,6 +319,40 @@ module DeploymentGate =
               AffectedSources = []
               NextSafeMove = "Proceed." }
 
+        | CreateSequence name ->
+            { Change = change
+              Verdict = Allow
+              Detected = sprintf "creates sequence %s" (QualifiedName.display name)
+              Rationale = "Additive. Nothing can already draw from a sequence that does not exist."
+              AffectedSources = []
+              NextSafeMove = "Proceed." }
+
+        | AlterSequence name ->
+            // Nothing to look up, and that is the finding. A sequence is named
+            // in a column DEFAULT, which the catalog reports as rendered text
+            // rather than as a dependency, so Strata cannot enumerate who draws
+            // from it. Saying so beats a clean-looking empty list.
+            { Change = change
+              Verdict = RequiresApproval
+              Detected = sprintf "changes the increment, bounds, cache or cycle of %s" (QualifiedName.display name)
+              Rationale =
+                "The numbers it hands out change and nothing errors. Strata cannot list what draws from it: \
+                 a sequence is named inside a column default, which the catalog reports as text rather than \
+                 as a dependency."
+              AffectedSources = []
+              NextSafeMove = "Confirm nothing depends on the current increment or bounds, then approve explicitly." }
+
+        | DropSequence name ->
+            { Change = change
+              Verdict = RequiresApproval
+              Detected = sprintf "drops sequence %s" (QualifiedName.display name)
+              Rationale =
+                "A column default naming it keeps its text, so every insert relying on that default starts \
+                 failing. Strata cannot list which defaults name it, for the same reason it cannot list a \
+                 sequence's readers."
+              AffectedSources = []
+              NextSafeMove = "Confirm no column default draws from it, then approve explicitly." }
+
         | CreateView view ->
             { Change = change
               Verdict = Allow

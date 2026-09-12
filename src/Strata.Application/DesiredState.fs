@@ -233,7 +233,8 @@ module DesiredState =
                 match o with
                 | TableObject t -> QualifiedName.display t.Name = QualifiedName.display name
                 | ViewObject _
-                | RoutineObject _ -> false)
+                | RoutineObject _
+                | SequenceObject _ -> false)
 
         let orphanIndexes =
             declaredIndexes
@@ -307,7 +308,8 @@ module DesiredState =
                                 Triggers =
                                     (if List.isEmpty attachedTriggers then t.Triggers else attachedTriggers) }
                 | ViewObject _
-                | RoutineObject _ -> o)
+                | RoutineObject _
+                | SequenceObject _ -> o)
             |> List.ofSeq
 
         let loaded = withIndexes

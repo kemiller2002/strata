@@ -66,4 +66,5 @@
 | WI-0061 | ros work complete does not update queue.md when an item is captured and completed in the same run | blocked | ros, tooling | low |
 | WI-0062 | CLI help claims narrower behaviour than the code has | complete | strata, docs | low |
 | WI-0063 | Record metrics for the validation and deployment increment | complete | strata, metrics | medium |
-| WI-0064 | Strata cannot create a schema | ready | strata, desired-state | high |
+| WI-0064 | Strata cannot create a schema | complete | strata, desired-state | high |
+| WI-0065 | Sequences as desired state | ready | strata, desired-state | high |

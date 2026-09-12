@@ -72,6 +72,21 @@ module ProposedChange =
         /// desired state is not authority to remove it (`NG-006`), and here the
         /// blast radius is the whole namespace rather than one object.
         | CreateSchema of schema: Identifier
+        /// Creates a sequence. Additive: nothing can already draw from one that
+        /// does not exist.
+        | CreateSequence of sequence: QualifiedName
+        /// Removes a sequence.
+        ///
+        /// Destructive in a way that hides: a column DEFAULT naming it keeps
+        /// its text, and every INSERT that relies on that default starts
+        /// failing. Strata cannot see which defaults name it, because a default
+        /// expression is text the catalog renders rather than a dependency it
+        /// models.
+        | DropSequence of sequence: QualifiedName
+        /// Redefines a sequence's increment, bounds, cache or cycle.
+        ///
+        /// Not additive. The numbers it hands out change, and nothing errors.
+        | AlterSequence of sequence: QualifiedName
         /// Creates a relation. Additive.
         | CreateTable of table: QualifiedName
         /// Creates an index. Additive to READERS — nothing can depend on an
@@ -174,6 +189,9 @@ module ProposedChange =
             | AlterColumnType _ -> "alter-column-type"
             | AddColumn _ -> "add-column"
             | CreateSchema _ -> "create-schema"
+            | CreateSequence _ -> "create-sequence"
+            | DropSequence _ -> "drop-sequence"
+            | AlterSequence _ -> "alter-sequence"
             | CreateTable _ -> "create-table"
             | RenameTable _ -> "rename-table"
             | RenameColumn _ -> "rename-column"
@@ -201,6 +219,9 @@ module ProposedChange =
             | AlterColumnType (table, _, _)
             | AddColumn (table, _)
             | CreateTable table
+            | CreateSequence table
+            | DropSequence table
+            | AlterSequence table
             | RenameTable (table, _)
             | RenameColumn (table, _, _)
             | CreateView table
@@ -245,6 +266,11 @@ module ProposedChange =
             | RenameColumn _
             | AlterColumnType _
             | TruncateTable _
+            // A default naming it keeps its text and every insert relying on
+            // that default starts failing; changing one silently changes the
+            // numbers it hands out.
+            | DropSequence _
+            | AlterSequence _
             // Every query joining the reference table sees the new value at
             // once, and none of them errors.
             | UpdateRow _
@@ -254,6 +280,7 @@ module ProposedChange =
             | UnclassifiedChange _ -> true
             | AddColumn _
             | CreateSchema _
+            | CreateSequence _
             | CreateTable _
             | InsertRow _
             | CreateIndex _

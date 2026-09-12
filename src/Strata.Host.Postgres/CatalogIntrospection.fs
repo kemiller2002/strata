@@ -243,6 +243,20 @@ module CatalogIntrospection =
                       HasCondition = boolOf r "has_condition" } })
             |> categoryResult "triggers"
 
+        let sequences =
+            readCategory connection "sequences" CatalogQueries.sequences (fun r ->
+                SequenceObject
+                    { Name = qualified (str r "schema_name") (str r "sequence_name")
+                      DataType = str r "data_type"
+                      Start = r.GetInt64(r.GetOrdinal "start_value")
+                      Increment = r.GetInt64(r.GetOrdinal "increment_by")
+                      MinValue = r.GetInt64(r.GetOrdinal "min_value")
+                      MaxValue = r.GetInt64(r.GetOrdinal "max_value")
+                      Cache = r.GetInt64(r.GetOrdinal "cache_size")
+                      Cycle = boolOf r "is_cycled"
+                      Scope = (if boolOf r "extension_owned" then ExtensionOwned else Observed) })
+            |> categoryResult "sequences"
+
         let viewDefinitions =
             readCategory connection "view_definitions" CatalogQueries.viewDefinitions (fun r ->
                 (str r "schema_name", str r "relation_name"), str r "definition")
@@ -416,8 +430,8 @@ module CatalogIntrospection =
                                 |> List.sort
                                 |> String.concat ", "))
                    | state -> state)
+                  stateFor "sequences" (Option.isSome sequences)
                   "rls_policies", NotRequested
-                  "sequences", NotRequested
                   "extensions", NotRequested
                   "grants", NotRequested
 
@@ -440,7 +454,7 @@ module CatalogIntrospection =
                        )) ]
 
         { Objects =
-            (objects @ routineObjects)
+            (objects @ routineObjects @ (sequences |> Option.defaultValue []))
             // Deterministic order regardless of catalog return order (NFR-001).
             |> List.sortBy (fun o -> QualifiedName.display (SchemaObject.name o))
           ServerVersion = serverVersion

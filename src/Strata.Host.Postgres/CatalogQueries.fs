@@ -258,6 +258,53 @@ module CatalogQueries =
         ORDER BY n.nspname, p.proname
         """
 
+    /// Sequences a project could have declared — and ONLY those.
+    ///
+    /// A `serial` column and an `IDENTITY` column each get a sequence of their
+    /// own, and neither belongs to the project: the column owns it, and
+    /// dropping it breaks the column. Both are excluded here, and it takes TWO
+    /// dependency types to do it, which is the part that is easy to get wrong:
+    ///
+    ///   serial   -> pg_depend.deptype = 'a'  (auto)
+    ///   identity -> pg_depend.deptype = 'i'  (internal)
+    ///
+    /// Verified against a live server. Filtering on 'a' alone — the obvious
+    /// reading — leaves an identity column's sequence looking like a standalone
+    /// one, and `--allow-drops` would then propose dropping the sequence that
+    /// backs a live column.
+    ///
+    /// `last_value` is deliberately not selected. It is data: it moves on every
+    /// nextval, so comparing it would report a difference on a sequence nobody
+    /// touched, and acting on that would hand out a number twice.
+    let sequences =
+        """
+        SELECT n.nspname AS schema_name,
+               c.relname AS sequence_name,
+               pg_catalog.format_type(s.seqtypid, NULL) AS data_type,
+               s.seqstart     AS start_value,
+               s.seqincrement AS increment_by,
+               s.seqmin       AS min_value,
+               s.seqmax       AS max_value,
+               s.seqcache     AS cache_size,
+               s.seqcycle     AS is_cycled,
+               (dx.objid IS NOT NULL) AS extension_owned
+        FROM pg_catalog.pg_class c
+        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+        JOIN pg_catalog.pg_sequence s ON s.seqrelid = c.oid
+        LEFT JOIN pg_catalog.pg_depend dx
+               ON dx.objid = c.oid
+              AND dx.classid = 'pg_class'::regclass
+              AND dx.deptype = 'e'
+        WHERE c.relkind = 'S'
+          AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+          AND NOT EXISTS (
+                SELECT 1 FROM pg_catalog.pg_depend d
+                WHERE d.objid = c.oid
+                  AND d.classid = 'pg_class'::regclass
+                  AND d.deptype IN ('a', 'i'))
+        ORDER BY n.nspname, c.relname
+        """
+
     let serverVersion = "SELECT current_setting('server_version')"
 
     let searchPath = "SELECT current_setting('search_path')"

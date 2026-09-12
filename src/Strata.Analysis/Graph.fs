@@ -144,6 +144,7 @@ module Graph =
                                       (fk.Columns |> List.map (fun c -> c.Text) |> String.concat ", ")
                                       (QualifiedName.display fk.ReferencedTable)
                                       (fk.ReferencedColumns |> List.map (fun c -> c.Text) |> String.concat ", ") } ] })
+                | SequenceObject _
                 | ViewObject _
                 | RoutineObject _ -> [])
             // Deterministic order (NFR-001).

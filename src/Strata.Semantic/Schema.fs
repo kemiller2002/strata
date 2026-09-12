@@ -178,10 +178,35 @@ module Schema =
           Body: string option
           Scope: ManagementScope }
 
+    /// A sequence declared in its own right.
+    ///
+    /// NOT the sequences PostgreSQL creates for you. A `serial` column and an
+    /// `IDENTITY` column each get one, and neither belongs to the project: the
+    /// column owns it, `ALTER SEQUENCE` on it is the column's business, and
+    /// dropping it would break the column. Introspection excludes both — see
+    /// `CatalogQueries.sequences`, where the exclusion is spelled out.
+    ///
+    /// The sequence's CURRENT VALUE is deliberately absent. `last_value` is
+    /// data, not structure: it changes every time anything calls `nextval`, so
+    /// comparing it would report a difference on a sequence nobody touched and
+    /// "fixing" it would mean handing out a number twice.
+    type Sequence =
+        { Name: QualifiedName
+          /// `bigint`, `integer` or `smallint`, as the catalog renders it.
+          DataType: string
+          Start: int64
+          Increment: int64
+          MinValue: int64
+          MaxValue: int64
+          Cache: int64
+          Cycle: bool
+          Scope: ManagementScope }
+
     type SchemaObject =
         | TableObject of Table
         | ViewObject of View
         | RoutineObject of Routine
+        | SequenceObject of Sequence
 
     [<RequireQualifiedAccess>]
     module SchemaObject =
@@ -191,18 +216,21 @@ module Schema =
             | TableObject t -> t.Name
             | ViewObject v -> v.Name
             | RoutineObject r -> r.Name
+            | SequenceObject s -> s.Name
 
         let kind (o: SchemaObject) =
             match o with
             | TableObject _ -> ObjectKind.Table
             | ViewObject v -> if v.IsMaterialized then ObjectKind.MaterializedView else ObjectKind.View
             | RoutineObject _ -> ObjectKind.Routine
+            | SequenceObject _ -> ObjectKind.Sequence
 
         let scope (o: SchemaObject) =
             match o with
             | TableObject t -> t.Scope
             | ViewObject v -> v.Scope
             | RoutineObject r -> r.Scope
+            | SequenceObject s -> s.Scope
 
     /// Server identity for a snapshot.
     type ServerVersion =

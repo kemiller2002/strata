@@ -30,7 +30,10 @@ module CatalogResolution =
                 Some { Qualified = t.Name; Columns = t.Columns |> List.map (fun c -> c.Name) }
             | ViewObject v ->
                 Some { Qualified = v.Name; Columns = v.Columns |> List.map (fun c -> c.Name) }
-            | RoutineObject _ -> None)
+            // Neither has columns to resolve a reference against. A sequence
+            // is named in a DEFAULT, never selected from with a column list.
+            | RoutineObject _
+            | SequenceObject _ -> None)
 
     let private matchesName (indexed: Indexed) (name: Identifier) =
         Identifier.sameName indexed.Qualified.Name name

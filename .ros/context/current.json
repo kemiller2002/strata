@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "claude",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-09-12T01:34:31Z",
+  "updatedAt": "2026-09-12T01:48:31Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -1411,6 +1411,27 @@
         "EXE-20260912T012829486Z-209903cd"
       ],
       "completedAt": "2026-09-12T01:34:31Z"
+    },
+    {
+      "id": "WI-0065",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Host.Postgres/CatalogQueries.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/SchemaDiffTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T01:48:31Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T014832672Z-1c2c2a8c"
+      ],
+      "completedAt": "2026-09-12T01:48:31Z"
     }
   ]
 }

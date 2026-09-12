@@ -131,7 +131,8 @@ module SchemaDiff =
             match o with
             | TableObject t -> Some t
             | ViewObject _
-            | RoutineObject _ -> None)
+            | RoutineObject _
+            | SequenceObject _ -> None)
 
     let private sameName (a: QualifiedName) (b: QualifiedName) =
         QualifiedName.display a = QualifiedName.display b
@@ -288,6 +289,86 @@ module SchemaDiff =
             |> List.map (fun d -> Ok(CreateSchema(Identifier.unquoted d))),
             []
 
+    /// Sequences, compared on every property the model carries.
+    ///
+    /// Not by presence alone, as views and routines are: a sequence's increment
+    /// and bounds are structure, they are declared in the file, and the catalog
+    /// reports them exactly. There is nothing here that cannot be compared —
+    /// except the CURRENT VALUE, which is not in the model at all because it is
+    /// data, changes on every `nextval`, and "correcting" it would hand out a
+    /// number twice.
+    let private sequenceChanges
+        (allowDrops: bool)
+        (managedSchemas: string list)
+        (desiredComplete: bool)
+        (desired: SchemaObject list)
+        (actual: SchemaObject list)
+        =
+        let sequences objects =
+            objects
+            |> List.choose (fun o ->
+                match o with
+                | SequenceObject sq -> Some sq
+                | _ -> None)
+
+        let declared = sequences desired
+        let deployed = sequences actual
+
+        let shape (sq: Sequence) =
+            sprintf
+                "%s|%d|%d|%d|%d|%b"
+                sq.DataType
+                sq.Increment
+                sq.MinValue
+                sq.MaxValue
+                sq.Cache
+                sq.Cycle
+
+        let created =
+            declared
+            |> List.filter (fun d -> not (deployed |> List.exists (fun a -> sameName a.Name d.Name)))
+            |> List.map (fun d -> Ok(CreateSequence d.Name))
+
+        // START is excluded from `shape` deliberately. It only takes effect
+        // when the sequence is created or explicitly restarted, so a deployed
+        // sequence that has moved past its start is not a difference — and
+        // proposing one would mean resetting a live counter.
+        let altered =
+            declared
+            |> List.choose (fun d ->
+                deployed
+                |> List.tryFind (fun a -> sameName a.Name d.Name)
+                |> Option.bind (fun a -> if shape a <> shape d then Some(Ok(AlterSequence d.Name)) else None))
+
+        let dropped =
+            deployed
+            |> List.filter (fun a -> not (declared |> List.exists (fun d -> sameName d.Name a.Name)))
+            |> List.map (fun a ->
+                if not (isManaged managedSchemas a.Name) then
+                    Microsoft.FSharp.Core.Error
+                        { Object = a.Name
+                          Reason = OutsideManagedSchemas
+                          Detail = "a sequence outside the project's managed schemas" }
+                elif a.Scope = ExtensionOwned then
+                    Microsoft.FSharp.Core.Error
+                        { Object = a.Name
+                          Reason = ExtensionOwnedObject
+                          Detail = "an extension owns this sequence" }
+                elif not desiredComplete then
+                    Microsoft.FSharp.Core.Error
+                        { Object = a.Name
+                          Reason = DesiredStateIncomplete
+                          Detail = "absent from desired state, but desired state did not load completely" }
+                elif not allowDrops then
+                    Microsoft.FSharp.Core.Error
+                        { Object = a.Name
+                          Reason = DropsNotEnabled
+                          Detail = "this sequence would be dropped; pass --allow-drops" }
+                else
+                    Ok(DropSequence a.Name))
+
+        created @ altered @ dropped
+
     /// Compare desired state against actual state.
     // ---- DDL emission -------------------------------------------------------
 
@@ -346,6 +427,7 @@ module SchemaDiff =
         (declarations: (QualifiedName * string) list)
         (triggerDeclarations: ((QualifiedName * Identifier) * string) list)
         (data: ResolvedData list)
+        (desiredSequences: Sequence list)
         /// Declared check expressions as the SERVER renders them. A check's
         /// expression is not recoverable from the parse tree, so this is the
         /// only source for one.
@@ -368,6 +450,9 @@ module SchemaDiff =
         // the declared row, via quote_nullable. Strata does not re-render a
         // value it never interpreted: what goes into the database is what came
         // back out of the shadow table.
+        let desiredSequence name =
+            desiredSequences |> List.tryFind (fun (sq: Sequence) -> sameName sq.Name name)
+
         let declaredRow table key =
             data
             |> List.tryFind (fun d -> d.Table = QualifiedName.display table)
@@ -416,6 +501,32 @@ module SchemaDiff =
         // Bare CREATE SCHEMA, with no AUTHORIZATION: the connected role owns
         // it, and that is the same role that will create everything in it.
         | CreateSchema schema -> Some(sprintf "CREATE SCHEMA %s" (quote schema))
+
+        // Written from the model rather than the declaring file, because every
+        // property is carried and none of them is an expression. START is what
+        // the file asked for; where the sequence already exists, ALTER leaves
+        // the current value alone, which is the point — RESTART would hand out
+        // a number twice.
+        | CreateSequence name
+        | AlterSequence name ->
+            desiredSequence name
+            |> Option.map (fun sq ->
+                let body =
+                    sprintf
+                        "AS %s INCREMENT BY %d MINVALUE %d MAXVALUE %d CACHE %d%s"
+                        sq.DataType
+                        sq.Increment
+                        sq.MinValue
+                        sq.MaxValue
+                        sq.Cache
+                        (if sq.Cycle then " CYCLE" else " NO CYCLE")
+
+                match change with
+                | CreateSequence _ ->
+                    sprintf "CREATE SEQUENCE %s %s START WITH %d" (quoteName name) body sq.Start
+                | _ -> sprintf "ALTER SEQUENCE %s %s" (quoteName name) body)
+
+        | DropSequence name -> Some(sprintf "DROP SEQUENCE %s" (quoteName name))
 
         | CreateTable name when (declaredText name).IsSome -> declaredText name
 
@@ -730,42 +841,47 @@ module SchemaDiff =
         // First, and alone at its rank: nothing else can run until the
         // namespace its objects live in exists.
         | CreateSchema _ -> 0
-        | RenameColumn _ -> 1
-        | RenameTable _ -> 2
-        | CreateTable _ -> 2
-        | AddColumn _ -> 3
-        | AlterColumnType _ -> 4
+        // After the schema that holds them, before any table whose column
+        // DEFAULT draws from one.
+        | CreateSequence _ -> 1
+        | AlterSequence _ -> 1
+        | RenameColumn _ -> 2
+        | RenameTable _ -> 3
+        | CreateTable _ -> 3
+        | AddColumn _ -> 4
+        | AlterColumnType _ -> 5
         // After the columns they cover exist, before the drops.
-        | CreateIndex _ -> 4
-        | DropIndex _ -> 4
-        | AddConstraint _ -> 4
+        | CreateIndex _ -> 5
+        | DropIndex _ -> 5
+        | AddConstraint _ -> 5
         // One step ahead of the adds, because a constraint whose definition
         // changed is dropped and re-added under the SAME name: the add would
         // fail on a name that is still taken.
-        | DropConstraint _ -> 3
+        | DropConstraint _ -> 4
         // Views and routines reference tables and columns, so they come after
         // every table change that might create what they read.
-        | CreateView _ -> 5
-        | ReplaceView _ -> 5
-        | ReplaceRoutine _ -> 5
-        | CreateRoutine _ -> 5
+        | CreateView _ -> 6
+        | ReplaceView _ -> 6
+        | ReplaceRoutine _ -> 6
+        | CreateRoutine _ -> 6
         // After routines, and strictly after: a trigger names the function it
         // executes, and PostgreSQL rejects a CREATE TRIGGER whose function does
         // not exist yet. Sharing key 4 with CreateRoutine would not be enough —
         // the sort is stable, and trigger changes are assembled before routine
         // ones, so they would run first.
-        | CreateTrigger _ -> 6
-        | ReplaceTrigger _ -> 6
-        | DropTrigger _ -> 6
+        | CreateTrigger _ -> 7
+        | ReplaceTrigger _ -> 7
+        | DropTrigger _ -> 7
         // After the table, its columns and its constraints exist, and after
         // triggers: a trigger on a reference table should see the rows arrive
         // the same way it would see any other write.
-        | InsertRow _ -> 7
-        | UpdateRow _ -> 7
-        | TruncateTable _ -> 8
-        | DropColumn _ -> 9
-        | DropTable _ -> 10
-        | UnclassifiedChange _ -> 11
+        | InsertRow _ -> 8
+        | UpdateRow _ -> 8
+        | TruncateTable _ -> 9
+        | DropColumn _ -> 10
+        | DropSequence _ -> 11
+        | DropTable _ -> 11
+        | UnclassifiedChange _ -> 12
 
     /// Constraint and default differences for a table present on both sides.
     ///
@@ -1448,12 +1564,18 @@ module SchemaDiff =
             | ViewObject v -> "view:" + QualifiedName.display v.Name
             | RoutineObject r ->
                 sprintf "routine:%s(%s)" (QualifiedName.display r.Name) (String.concat "," r.ArgumentTypes)
+            | SequenceObject s -> "sequence:" + QualifiedName.display s.Name
 
         let nonTable (objects: SchemaObject list) =
             objects
             |> List.filter (fun o ->
                 match o with
-                | TableObject _ -> false
+                // Sequences are excluded here and compared on their own:
+                // this path compares views and routines by PRESENCE alone,
+                // and a sequence has a start, an increment and bounds that a
+                // presence check would pass over in silence.
+                | TableObject _
+                | SequenceObject _ -> false
                 | ViewObject _
                 | RoutineObject _ -> true)
 
@@ -1465,6 +1587,9 @@ module SchemaDiff =
             | ViewObject v -> if v.IsMaterialized then "materialized view" else "view"
             | RoutineObject r -> (match r.Kind with Procedure -> "procedure" | Function -> "function")
             | TableObject _ -> "table"
+            // Excluded from this path by `nonTable`; the compiler still wants
+            // the arm, and inventing a wrong one would be worse than saying so.
+            | SequenceObject _ -> "sequence"
 
         let created =
             desiredOther
@@ -1473,7 +1598,8 @@ module SchemaDiff =
                 match d with
                 | ViewObject v -> Ok(CreateView v.Name)
                 | RoutineObject r -> Ok(CreateRoutine r.Name)
-                | TableObject t -> Ok(CreateTable t.Name))
+                | TableObject t -> Ok(CreateTable t.Name)
+                | SequenceObject sq -> Ok(CreateSequence sq.Name))
 
         let removed =
             actualOther
@@ -1876,6 +2002,9 @@ module SchemaDiff =
         let notCompared = constraintResults |> List.collect snd
 
         let newSchemas, schemaSuppressions = schemaChanges existingSchemas declaredInSchemas
+
+        let sequenceResults =
+            sequenceChanges allowDrops managedSchemas desiredComplete desired.Objects actual.Objects
         let rowChanges, rowSuppressions = dataChanges data dataFailures
 
         let otherChangeResults, otherNotCompared =
@@ -1891,6 +2020,7 @@ module SchemaDiff =
 
         let all =
             newSchemas
+            @ sequenceResults
             @ creations
             @ tableRenames
             @ indexesForNewTables
@@ -1919,7 +2049,16 @@ module SchemaDiff =
             changes
             |> List.map (fun c ->
                 { Change = c
-                  Sql = emit declarations triggerDeclarations data normalisedTables desiredTables c })
+                  Sql =
+                    emit
+                        declarations
+                        triggerDeclarations
+                        data
+                        (desired.Objects
+                         |> List.choose (function SequenceObject sq -> Some sq | _ -> None))
+                        normalisedTables
+                        desiredTables
+                        c })
           Suppressed =
             (all |> List.choose (function Microsoft.FSharp.Core.Error s -> Some s | Ok _ -> None))
             @ notCompared
@@ -1954,6 +2093,9 @@ module SchemaDiff =
                 name.Text
         | DropTable table -> sprintf "drop-table         %s" (QualifiedName.display table)
         | CreateSchema schema -> sprintf "create-schema      %s" schema.Text
+        | CreateSequence n -> sprintf "create-sequence    %s" (QualifiedName.display n)
+        | DropSequence n -> sprintf "drop-sequence      %s" (QualifiedName.display n)
+        | AlterSequence n -> sprintf "alter-sequence     %s" (QualifiedName.display n)
         | CreateTable table -> sprintf "create-table       %s" (QualifiedName.display table)
         | RenameTable (from, to') ->
             sprintf "rename-table       %s -> %s" (QualifiedName.display from) (QualifiedName.display to')

@@ -69,7 +69,7 @@ OPTIONS
 PROJECT LAYOUT
   <project>/schema/<schema>/<kind>/<name>.sql, one object per file. `kind` is
   the directory name and is yours to choose; tables/, views/, routines/,
-  indexes/ and triggers/ are the conventional ones.
+  indexes/, triggers/ and sequences/ are the conventional ones.
 
   The <schema> directory names the schema, and Strata CREATES it if the
   database does not have it — so a project applies against an empty database.

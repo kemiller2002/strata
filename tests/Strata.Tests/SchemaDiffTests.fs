@@ -1653,3 +1653,98 @@ let ``a schema the project declares nothing in is never dropped`` () =
 
     Assert.Empty result.Changes
     Assert.DoesNotContain(result.Changes, fun c -> (Change.tag c).Contains "schema" && (Change.tag c).Contains "drop")
+
+
+// ---- sequences -------------------------------------------------------------
+
+let private seq' name increment maxValue cycle =
+    SequenceObject
+        { Name = qn "sales" name
+          DataType = "bigint"
+          Start = 1L
+          Increment = increment
+          MinValue = 1L
+          MaxValue = maxValue
+          Cache = 1L
+          Cycle = cycle
+          Scope = Managed }
+
+[<Fact>]
+let ``a declared sequence the database does not have is created`` () =
+    let result = run true managed (complete [ seq' "order_seq" 1L 100L false ]) (complete [])
+
+    Assert.Contains(result.Changes, fun c -> c = CreateSequence(qn "sales" "order_seq"))
+
+[<Fact>]
+let ``an identical sequence produces no change`` () =
+    let s = seq' "order_seq" 1L 100L false
+    let result = run true managed (complete [ s ]) (complete [ s ])
+
+    Assert.Empty result.Changes
+
+[<Fact>]
+let ``a sequence whose increment differs is altered, not recreated`` () =
+    let result =
+        run true managed
+            (complete [ seq' "order_seq" 2L 100L false ])
+            (complete [ seq' "order_seq" 1L 100L false ])
+
+    Assert.Contains(result.Changes, fun c -> c = AlterSequence(qn "sales" "order_seq"))
+    Assert.DoesNotContain(result.Changes, fun c -> c = CreateSequence(qn "sales" "order_seq"))
+
+[<Fact>]
+let ``a sequence is created before the tables whose defaults draw on it`` () =
+    let result =
+        run true managed
+            (complete [ seq' "order_seq" 1L 100L false; tbl Managed "sales" "orders" orders ])
+            (complete [])
+
+    let tags = result.Changes |> List.map Change.tag
+    Assert.True(
+        List.findIndex ((=) "create-sequence") tags < List.findIndex ((=) "create-table") tags,
+        sprintf "the sequence must exist before the table defaulting from it, got %A" tags)
+
+[<Fact>]
+let ``a sequence drop is suppressed rather than proposed when drops are off`` () =
+    let result = run false managed (complete []) (complete [ seq' "order_seq" 1L 100L false ])
+
+    Assert.Empty result.Changes
+    Assert.Contains(result.Suppressed, fun s -> s.Reason = DropsNotEnabled)
+
+[<Fact>]
+let ``an extension's sequence is never dropped`` () =
+    let owned =
+        SequenceObject
+            { Name = qn "sales" "ext_seq"
+              DataType = "bigint"
+              Start = 1L
+              Increment = 1L
+              MinValue = 1L
+              MaxValue = 100L
+              Cache = 1L
+              Cycle = false
+              Scope = ExtensionOwned }
+
+    let result = run true managed (complete []) (complete [ owned ])
+
+    Assert.Empty result.Changes
+    Assert.Contains(result.Suppressed, fun s -> s.Reason = ExtensionOwnedObject)
+
+[<Fact>]
+let ``a sequence outside the managed schemas is never dropped`` () =
+    let outside =
+        SequenceObject
+            { Name = qn "other" "seq"
+              DataType = "bigint"
+              Start = 1L
+              Increment = 1L
+              MinValue = 1L
+              MaxValue = 100L
+              Cache = 1L
+              Cycle = false
+              Scope = Observed }
+
+    let result = run true managed (complete []) (complete [ outside ])
+
+    Assert.Empty result.Changes
+    Assert.Contains(result.Suppressed, fun s -> s.Reason = OutsideManagedSchemas)

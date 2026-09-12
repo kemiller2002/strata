@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 65,
+  "nextSeq": 66,
   "items": [
     {
       "id": "WI-0001",
@@ -1091,6 +1091,23 @@
       "attachments": [],
       "createdAt": "2026-09-12T01:28:26Z",
       "updatedAt": "2026-09-12T01:28:26Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0065",
+      "title": "Sequences as desired state",
+      "description": "Standalone CREATE SEQUENCE files load, and sequences are created, altered and dropped. The sequences PostgreSQL creates for serial and identity columns are excluded: serial depends with deptype 'a' and identity with 'i', and filtering on 'a' alone leaves an identity column's sequence looking droppable.",
+      "tags": [
+        "strata",
+        "desired-state"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T01:48:31Z",
+      "updatedAt": "2026-09-12T01:48:31Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
