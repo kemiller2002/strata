@@ -158,6 +158,98 @@ module SchemaDiff =
             managedSchemas
             |> List.exists (fun m -> Identifier.sameName (Identifier.unquoted m) schema)
 
+    /// What row-level security is doing, for tables the project manages.
+    ///
+    /// Reported and never changed. Strata does not model policies as desired
+    /// state yet, and the honest consequence is that it says so — the
+    /// alternative it replaced was reporting `NotRequested`, which reads as
+    /// "nothing here" and is how a table default-denying every row looks
+    /// exactly like a table with no row-level security at all.
+    ///
+    /// Only tables inside the managed schemas are reported. A project is not
+    /// told about row-level security on schemas it does not manage, for the
+    /// same reason it is not told about their columns.
+    ///
+    /// `None` means the state could not be read, which is disclosed rather
+    /// than taken for "row-level security is off".
+    let private rowLevelSecurityDisclosures
+        (managedSchemas: string list)
+        (rls: Result<RowLevelSecurity list, string> option) =
+
+        match rls with
+        // The caller did not ask. Nothing was attempted, so there is nothing to
+        // disclose — saying "could not be read" here would be a claim about the
+        // database that nobody made.
+        | None -> []
+        | Some (Microsoft.FSharp.Core.Error message) ->
+            [ { Object = QualifiedName.unqualified (Identifier.unquoted "(row level security)")
+                Reason = NotCompared
+                Detail =
+                  sprintf
+                      "the database's row-level security state could not be read (%s), so nothing is known about which rows any role can see"
+                      message } ]
+        | Some (Ok entries) ->
+            entries
+            |> List.filter (fun e -> isManaged managedSchemas e.Table)
+            |> List.sortBy (fun e -> QualifiedName.display e.Table)
+            |> List.map (fun e ->
+                let policies =
+                    e.Policies
+                    |> List.map (fun p ->
+                        sprintf
+                            "%s (%s%s for %s)"
+                            p.Name.Text
+                            (if p.IsPermissive then "" else "restrictive ")
+                            (match p.Command with
+                             | PolicyCommand.All -> "all commands"
+                             | PolicyCommand.Select -> "select"
+                             | PolicyCommand.Insert -> "insert"
+                             | PolicyCommand.Update -> "update"
+                             | PolicyCommand.Delete -> "delete")
+                            (String.concat ", " p.Roles))
+                    |> String.concat "; "
+
+                let count = List.length e.Policies
+                let plural = if count = 1 then "policy" else "policies"
+                let restrict = if count = 1 then "restricts" else "restrict"
+                let wereCompared = if count = 1 then "was" else "were"
+
+                let detail =
+                    match e.Enabled, e.Policies with
+                    // The state that looks like nothing and denies everything.
+                    | true, [] ->
+                        "row-level security is ENABLED here and there are no policies, so every row is hidden"
+                        + " from every role except the table's owner. Strata does not manage policies, so it"
+                        + " proposes nothing."
+                    // The state that looks deliberate and does nothing.
+                    | false, _ :: _ ->
+                        sprintf
+                            "row-level security is DISABLED here, so the %d %s on this table %s NOTHING and every role sees every row: %s"
+                            count
+                            plural
+                            restrict
+                            policies
+                    | true, _ ->
+                        sprintf
+                            "row-level security is enabled and %s. Strata does not manage policies, so the %d %s here %s NOT compared and nothing changes them: %s"
+                            (if e.Forced then
+                                 "FORCED, so it applies to the table's owner too"
+                             else
+                                 "not forced, so the table's owner bypasses every policy")
+                            count
+                            plural
+                            wereCompared
+                            policies
+                    | false, [] ->
+                        // Only reachable when `relforcerowsecurity` is set
+                        // without `relrowsecurity`, which PostgreSQL allows and
+                        // which does nothing at all.
+                        "row-level security is FORCED here but not enabled, which has no effect."
+
+                { Object = e.Table
+                  Reason = NotModelled
+                  Detail = detail })
+
     /// Objects present in the database and absent from desired state.
     ///
     /// This is the dangerous direction and the only one that can destroy data,
@@ -2049,6 +2141,19 @@ module SchemaDiff =
           /// Privileges the database holds, or `None` when they could not be
           /// read.
           ActualGrants: Grant list option
+          /// Row-level security the database holds. Reported, never changed:
+          /// Strata does not model policies as desired state yet, and says so
+          /// rather than staying silent.
+          ///
+          /// THREE states, and the distinction is the same one this whole
+          /// codebase turns on. `None` means the caller did not ask, so there is
+          /// nothing to report. `Some (Error _)` means it was asked for and
+          /// could not be read, which is disclosed. `Some (Ok _)` is the answer.
+          ///
+          /// A plain `option` collapsed the first two, and the result was a
+          /// caller that never requested row-level security being told the
+          /// database's row-level security could not be read.
+          ActualRowLevelSecurity: Result<RowLevelSecurity list, string> option
           /// Declared and deployed reference rows, already rendered by the
           /// server. Empty when the project declares no data files.
           Data: ResolvedData list
@@ -2077,6 +2182,7 @@ module SchemaDiff =
               DeclaredInSchemas = []
               DeclaredGrants = []
               ActualGrants = None
+              ActualRowLevelSecurity = None
               Data = []
               DataFailures = []
               NormalisedViews = []
@@ -2322,6 +2428,9 @@ module SchemaDiff =
         let grantResults, grantSuppressions =
             grantChanges allowDrops managedSchemas desiredComplete declaredGrants actualGrants
 
+        let rlsSuppressions =
+            rowLevelSecurityDisclosures managedSchemas inputs.ActualRowLevelSecurity
+
         let sequenceResults =
             sequenceChanges allowDrops managedSchemas desiredComplete desired.Objects actual.Objects
         let rowChanges, rowSuppressions = dataChanges data dataFailures
@@ -2386,6 +2495,7 @@ module SchemaDiff =
             @ rowSuppressions
             @ schemaSuppressions
             @ grantSuppressions
+            @ rlsSuppressions
           DesiredStateComplete = desiredComplete }
 
     // ---- output -------------------------------------------------------------

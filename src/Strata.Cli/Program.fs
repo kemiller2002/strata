@@ -94,6 +94,12 @@ PROJECT LAYOUT
   table-wide SELECT is proposed for revoking — otherwise "only these columns"
   would add access and narrow none. Another grantee is still untouched.
 
+  Row-level security is REPORTED and never changed. Policies are not declarable
+  yet, and two states are worth knowing because both look like an ordinary
+  table: row-level security enabled with no policies hides every row from every
+  role, and policies on a table where it is disabled restrict nothing at all.
+  A plan says which, for every managed table where either holds.
+
   Two things about privileges are reported and never changed. Every function
   starts with EXECUTE granted to PUBLIC, so a project that does not declare
   PUBLIC is told that PUBLIC can still call its functions. And WITH GRANT
@@ -323,6 +329,26 @@ let main argv =
                         eprintfn "         Declared grants will be reported as not-compared."
                         None
 
+                // Reported, not compared — but READ, which is the point. Nothing
+                // looked at row-level security before, so a table with it
+                // enabled and no policies, hiding every row from every role,
+                // rendered exactly like a table with no row-level security at
+                // all: a clean plan and not a word about either.
+                //
+                // The snapshot's own `rls_policies` category stays
+                // `NotRequested`, the same as `grants`: the snapshot genuinely
+                // does not carry them, and this is read alongside it.
+                let actualRowLevelSecurity =
+                    match CatalogIntrospection.readRowLevelSecurity connectionString with
+                    | Ok state -> Some(Ok state)
+                    | Microsoft.FSharp.Core.Error message ->
+                        eprintfn "warning: could not read the database's row-level security (%s)." message
+                        eprintfn "         Which rows any role can see is unknown, and will be reported as such."
+                        // `Some (Error _)`, never `None`: the CLI DID ask, and
+                        // that failure is reported. `None` is reserved for a
+                        // caller that never asked.
+                        Some(Microsoft.FSharp.Core.Error message)
+
                 let searchPath =
                     match CatalogIntrospection.readSearchPath connectionString with
                     | Ok p -> p
@@ -527,6 +553,7 @@ let main argv =
                             DeclaredInSchemas = DesiredState.schemasDeclaredIn declared
                             DeclaredGrants = declared.Grants
                             ActualGrants = actualGrants
+                            ActualRowLevelSecurity = actualRowLevelSecurity
                             Data = resolvedData
                             DataFailures = dataFailures
                             NormalisedViews = normalisedViews

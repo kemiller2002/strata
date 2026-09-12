@@ -76,4 +76,5 @@
 | WI-0071 | State each awkward-forms fixture's contract in the file itself | complete | ros, process | medium |
 | WI-0072 | Make local ROS validation match CI's scope | complete | ros, ci | high |
 | WI-0073 | Column-level privileges as desired state | complete | postgres, privileges, er-008 | high |
-| WI-0074 | SchemaDiff.run took sixteen positional arguments, two of them transposable | ready | refactor, safety | high |
+| WI-0074 | SchemaDiff.run took sixteen positional arguments, two of them transposable | complete | refactor, safety | high |
+| WI-0075 | Report row-level security instead of not looking at it | ready | postgres, security, er-008 | high |

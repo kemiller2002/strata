@@ -2019,6 +2019,105 @@ let ``a privilege held WITH GRANT OPTION converges but is disclosed`` () =
         result.Suppressed,
         fun s -> s.Reason = NotModelled && s.Detail.Contains "WITH GRANT OPTION" && s.Detail.Contains "nothing removes it")
 
+// ---- row-level security -----------------------------------------------------
+//
+// Reported, never changed. The reason it is reported at all is that the two
+// dangerous combinations are invisible: a table denying every row and a table
+// whose policies do nothing both look like an ordinary table with a clean plan.
+
+let private policy name command permissive roles using check : Policy =
+    { Name = Identifier.unquoted name
+      Command = command
+      IsPermissive = permissive
+      Roles = roles
+      Using = using
+      WithCheck = check }
+
+let private runWithRls state =
+    Strata.Application.SchemaDiff.run
+        { Strata.Application.SchemaDiff.Inputs.between
+              (complete [ tbl Managed "sales" "orders" orders ])
+              (complete [ tbl Observed "sales" "orders" orders ]) with
+            AllowDrops = true
+            ManagedSchemas = managed
+            ActualRowLevelSecurity = state }
+
+[<Fact>]
+let ``row-level security enabled with no policies is reported as denying every row`` () =
+    // The state that looks like nothing. An inner join to pg_policy drops
+    // exactly these tables, so the most dangerous state in this area would be
+    // the one state that reports nothing at all.
+    let result =
+        runWithRls (Some(Ok [ { Table = qn "sales" "orders"; Enabled = true; Forced = false; Policies = [] } ]))
+
+    Assert.Empty result.Changes
+
+    Assert.Contains(
+        result.Suppressed,
+        fun s -> s.Reason = NotModelled && s.Detail.Contains "no policies" && s.Detail.Contains "every row is hidden")
+
+[<Fact>]
+let ``policies with row-level security disabled are reported as restricting nothing`` () =
+    // The state that looks deliberate. PostgreSQL holds policies on a table
+    // where RLS is off and they restrict nothing — verified live. Reporting the
+    // policy without the flag would say the data is protected when it is not.
+    let result =
+        runWithRls (
+            Some(
+                Ok
+                    [ { Table = qn "sales" "orders"
+                        Enabled = false
+                        Forced = false
+                        Policies =
+                          [ policy "p_read" PolicyCommand.Select true [ "PUBLIC" ] (Some "(owner_id = 1)") None ] } ]))
+
+    Assert.Contains(
+        result.Suppressed,
+        fun s -> s.Detail.Contains "DISABLED" && s.Detail.Contains "restricts NOTHING" && s.Detail.Contains "p_read")
+
+[<Fact>]
+let ``an unforced policy says the table's owner bypasses it`` () =
+    // Without FORCE the owner sees every row regardless, so a table that looks
+    // protected is not protected from the role that usually runs migrations.
+    let result =
+        runWithRls (
+            Some(
+                Ok
+                    [ { Table = qn "sales" "orders"
+                        Enabled = true
+                        Forced = false
+                        Policies = [ policy "p" PolicyCommand.All false [ "app_user" ] (Some "(a)") (Some "(a)") ] } ]))
+
+    Assert.Contains(result.Suppressed, fun s -> s.Detail.Contains "owner bypasses every policy")
+
+[<Fact>]
+let ``row-level security on an unmanaged schema is not reported`` () =
+    let result =
+        runWithRls (Some(Ok [ { Table = qn "other" "thing"; Enabled = true; Forced = false; Policies = [] } ]))
+
+    Assert.DoesNotContain(result.Suppressed, fun s -> s.Detail.Contains "row-level security")
+
+[<Fact>]
+let ``unreadable row-level security is disclosed, not taken for disabled`` () =
+    // The worst direction to guess. Concluding "off" would report a table as
+    // unprotected when it is locked down, or say nothing about one denying
+    // every row.
+    let result = runWithRls (Some(Microsoft.FSharp.Core.Error "permission denied"))
+
+    Assert.Contains(
+        result.Suppressed,
+        fun s -> s.Reason = NotCompared && s.Detail.Contains "could not be read")
+
+[<Fact>]
+let ``a caller that did not ask about row-level security is told nothing`` () =
+    // `None` is "did not ask", not "could not read". Collapsing the two had
+    // every caller that never requested row-level security being told the
+    // database's row-level security could not be read — a claim about the
+    // database that nobody had made.
+    let result = runWithRls None
+
+    Assert.DoesNotContain(result.Suppressed, fun s -> s.Detail.Contains "row-level security")
+
 [<Fact>]
 let ``unreadable privileges propose nothing and say so`` () =
     // None is not "nobody holds anything". Reading it that way would grant

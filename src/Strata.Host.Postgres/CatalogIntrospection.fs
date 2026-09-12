@@ -532,6 +532,80 @@ module CatalogIntrospection =
         with ex ->
             Error ex.Message
 
+    /// Row-level security state and policies, per table.
+    ///
+    /// A `Result` for the same reason the others are: a caller that could not
+    /// read this must not conclude row-level security is off. Concluding that
+    /// wrongly is the worst direction here — it reports a table as unprotected
+    /// when it is locked down, or, worse, says nothing about one that is
+    /// default-denying every row.
+    ///
+    /// Tables with neither the flag nor a policy do not appear at all: they
+    /// have nothing to say, and listing every ordinary table would bury the
+    /// three that do.
+    let readRowLevelSecurity (connectionString: string) : Result<RowLevelSecurity list, string> =
+        try
+            use connection = new NpgsqlConnection(connectionString)
+            connection.Open()
+            use command = new NpgsqlCommand(CatalogQueries.rowLevelSecurity, connection)
+            use reader = command.ExecuteReader() :?> NpgsqlDataReader
+
+            let optional (r: NpgsqlDataReader) (column: string) =
+                let ordinal = r.GetOrdinal column
+                if r.IsDBNull ordinal then None else Some(r.GetString ordinal)
+
+            // `polcmd` is a single char. Anything else is a PostgreSQL version
+            // that grew a command Strata has no case for, and guessing `All`
+            // would report a policy as applying to every statement when it
+            // applies to one. It is reported as unreadable instead.
+            let commandOf (code: string) =
+                match code with
+                | "*" -> Some PolicyCommand.All
+                | "r" -> Some PolicyCommand.Select
+                | "a" -> Some PolicyCommand.Insert
+                | "w" -> Some PolicyCommand.Update
+                | "d" -> Some PolicyCommand.Delete
+                | _ -> None
+
+            let rows =
+                [ while reader.Read() do
+                    let table = qualified (str reader "schema_name") (str reader "object_name")
+                    let enabled = reader.GetBoolean(reader.GetOrdinal "enabled")
+                    let forced = reader.GetBoolean(reader.GetOrdinal "forced")
+
+                    let policy =
+                        match optional reader "policy_name", optional reader "command" with
+                        | Some name, Some code ->
+                            commandOf code
+                            |> Option.map (fun cmd ->
+                                { Name = Identifier.unquoted name
+                                  Command = cmd
+                                  IsPermissive = reader.GetBoolean(reader.GetOrdinal "permissive")
+                                  Roles =
+                                    (let ordinal = reader.GetOrdinal "roles"
+
+                                     if reader.IsDBNull ordinal then []
+                                     else reader.GetFieldValue<string array> ordinal |> List.ofArray)
+                                  Using = optional reader "using_expr"
+                                  WithCheck = optional reader "check_expr" })
+                        // A row with no policy name is a table whose RLS flag is
+                        // set and which has none — the default-deny case, and
+                        // the whole reason the query left-joins.
+                        | _ -> None
+
+                    yield (QualifiedName.display table, table, enabled, forced), policy ]
+
+            rows
+            |> List.groupBy fst
+            |> List.map (fun ((_, table, enabled, forced), group) ->
+                { Table = table
+                  Enabled = enabled
+                  Forced = forced
+                  Policies = group |> List.choose snd |> List.sortBy (fun p -> Identifier.folded p.Name) })
+            |> Ok
+        with ex ->
+            Error ex.Message
+
     /// Schema names that exist in the database.
     ///
     /// Returned as a `Result` rather than folded into the snapshot, and the

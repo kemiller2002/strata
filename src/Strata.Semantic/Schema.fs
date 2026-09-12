@@ -354,6 +354,72 @@ module Schema =
           /// SELECT and can pass it on" are different states).
           Grantable: string list }
 
+    /// Which statement a policy applies to.
+    [<RequireQualifiedAccess>]
+    type PolicyCommand =
+        | All
+        | Select
+        | Insert
+        | Update
+        | Delete
+
+    /// A row-level security policy, as the catalog describes it.
+    ///
+    /// A policy on its own restricts NOTHING. It takes effect only while
+    /// row-level security is enabled on its table, and PostgreSQL is perfectly
+    /// happy to hold policies on a table where it is switched off — verified on
+    /// a live server. "There is a policy" and "rows are restricted" are
+    /// different states (ER-008), and the second is the one a reader cares
+    /// about, so `RowLevelSecurity` below carries both and never reports one
+    /// without the other.
+    type Policy =
+        { Name: Identifier
+          Command: PolicyCommand
+          /// PERMISSIVE policies are OR-ed together; RESTRICTIVE ones are
+          /// AND-ed on top. A restrictive policy read as permissive would
+          /// report access as wider than it is.
+          IsPermissive: bool
+          /// Role names the policy applies to, or the literal `PUBLIC`.
+          /// PostgreSQL stores PUBLIC as OID 0, translated at the boundary.
+          Roles: string list
+          /// The `USING` expression, as the catalog renders it.
+          ///
+          /// `None` means the policy HAS no `USING` clause — an `INSERT` policy
+          /// never does — which is not the same as an expression that could not
+          /// be rendered. Unlike a trigger's `WHEN`, this one renders fine:
+          /// `pg_get_expr(polqual, polrelid)` works because a policy's
+          /// expression is over one relation.
+          Using: string option
+          /// The `WITH CHECK` expression. `None` means no such clause; a
+          /// `SELECT` policy never has one.
+          WithCheck: string option }
+
+    /// Row-level security on one table, as the catalog reports it.
+    ///
+    /// Deliberately NOT a field on `Table`. A `CREATE TABLE` says nothing about
+    /// row-level security, so a declared table carrying `Enabled = false` would
+    /// read to a diff as "row-level security should be off here" — absence
+    /// rendered as a decision, which is the collapse `ER-008` forbids. This is
+    /// read separately, like grants, and only ever from the catalog.
+    ///
+    /// Two combinations are dangerous enough to be worth naming:
+    ///
+    ///   * `Enabled` with NO policies is DEFAULT DENY. Every row is hidden from
+    ///     every role except the table's owner. A table in this state looks
+    ///     perfectly ordinary and returns nothing.
+    ///
+    ///   * Policies with `Enabled = false` restrict nothing at all. The
+    ///     policies are visible, look deliberate, and are inert.
+    type RowLevelSecurity =
+        { Table: QualifiedName
+          Enabled: bool
+          /// Whether row-level security also applies to the table's OWNER.
+          /// Without this the owner bypasses every policy, so a table that
+          /// looks protected is not protected from the role that usually runs
+          /// the migrations.
+          Forced: bool
+          Policies: Policy list }
+
     type SchemaObject =
         | TableObject of Table
         | ViewObject of View

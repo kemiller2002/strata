@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 75,
+  "nextSeq": 76,
   "items": [
     {
       "id": "WI-0001",
@@ -1283,6 +1283,24 @@
       "attachments": [],
       "createdAt": "2026-09-12T10:22:07Z",
       "updatedAt": "2026-09-12T10:22:08Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0075",
+      "title": "Report row-level security instead of not looking at it",
+      "description": "Nothing read row-level security, so a table with it enabled and no policies — hiding every row from every role — rendered exactly like a table with none: a clean plan and not a word. Read pg_policy and pg_class.relrowsecurity and disclose what holds, including the two states that look like an ordinary table and are not. Policies stay unmanaged; the point is that Strata stops being silent about them.",
+      "tags": [
+        "postgres",
+        "security",
+        "er-008"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T10:28:51Z",
+      "updatedAt": "2026-09-12T10:29:02Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null

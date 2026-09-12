@@ -457,6 +457,51 @@ module CatalogQueries =
         ORDER BY n.nspname, p.proname, grantee, a.privilege_type
         """
 
+    /// Row-level security state and policies, one row per policy — plus a row
+    /// per table that has RLS switched on and NO policies.
+    ///
+    /// That last part is the reason this is one query rather than a join a
+    /// caller assembles. A table with row-level security enabled and no
+    /// policies is DEFAULT DENY: every row is hidden from every role but the
+    /// owner. An inner join to `pg_policy` drops exactly those tables, so the
+    /// most dangerous state in this area would be the one state that reports
+    /// nothing. The LEFT JOIN keeps them, with a NULL policy name.
+    ///
+    /// `relrowsecurity` is carried on every row because a policy without it is
+    /// inert — PostgreSQL holds policies on tables where RLS is off, and they
+    /// restrict nothing. Reporting the policy without the flag would say the
+    /// data is protected when it is not.
+    ///
+    /// `pg_get_expr(polqual, polrelid)` renders here, unlike a trigger's
+    /// `tgqual`: a policy's expression is over ONE relation, so there is no
+    /// OLD/NEW ambiguity to refuse.
+    let rowLevelSecurity =
+        """
+        SELECT n.nspname AS schema_name,
+               c.relname AS object_name,
+               c.relrowsecurity AS enabled,
+               c.relforcerowsecurity AS forced,
+               p.polname AS policy_name,
+               p.polcmd::text AS command,
+               p.polpermissive AS permissive,
+               COALESCE(
+                 (SELECT array_agg(CASE WHEN r = 0 THEN 'PUBLIC'
+                                        ELSE pg_catalog.pg_get_userbyid(r) END ORDER BY r)
+                  FROM unnest(p.polroles) AS r),
+                 '{}') AS roles,
+               pg_catalog.pg_get_expr(p.polqual, p.polrelid)      AS using_expr,
+               pg_catalog.pg_get_expr(p.polwithcheck, p.polrelid) AS check_expr
+        FROM pg_catalog.pg_class c
+        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+        LEFT JOIN pg_catalog.pg_policy p ON p.polrelid = c.oid
+        WHERE c.relkind IN ('r', 'p')
+          AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+          AND left(n.nspname, 3) <> 'pg_'
+          -- A table with neither the flag nor a policy has nothing to say.
+          AND (c.relrowsecurity OR c.relforcerowsecurity OR p.polname IS NOT NULL)
+        ORDER BY n.nspname, c.relname, p.polname
+        """
+
     let serverVersion = "SELECT current_setting('server_version')"
 
     let searchPath = "SELECT current_setting('search_path')"
