@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 72,
+  "nextSeq": 73,
   "items": [
     {
       "id": "WI-0001",
@@ -1231,6 +1231,23 @@
       ],
       "createdAt": "2026-09-12T09:52:34Z",
       "updatedAt": "2026-09-12T09:53:44Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0072",
+      "title": "Make local ROS validation match CI's scope",
+      "description": "./ros validate checks only the working tree; CI sets ROS_BASE_REF to the PR base, widening the check to every file changed on the branch. The two disagree silently in the direction that matters — local passes, CI fails — which is how 17 unattributed fixture files reached CI. A script that sets ROS_BASE_REF from the merge base removes the difference, and documents the attribution rule that caused it.",
+      "tags": [
+        "ros",
+        "ci"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T09:56:02Z",
+      "updatedAt": "2026-09-12T09:56:02Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null

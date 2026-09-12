@@ -24,7 +24,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: ./ros registry check
-      - run: ./ros validate
-        env:
-          ROS_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+      # The same script a contributor runs locally, so the two cannot drift.
+      # That drift is exactly what let 17 unattributed files reach CI: `./ros
+      # validate` alone checks the working tree, and only CI was passing
+      # ROS_BASE_REF to widen it to the whole branch.
+      - run: scripts/ros-validate.sh ${{ github.event.pull_request.base.sha || github.event.before }}
