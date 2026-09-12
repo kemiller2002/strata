@@ -587,3 +587,36 @@ let ``resolved reference rows are not carried in the artifact`` () =
         // Those are desired state and are what deploy resolves from.
         Assert.NotEmpty restored.Declared.Data
     | Microsoft.FSharp.Core.Error message -> failwithf "the artifact could not be read: %s" message
+
+// ---- validating against an artifact -----------------------------------------
+
+[<Fact>]
+let ``the default search path is the schemas the artifact manages`` () =
+    // And NOT `public`. A real connection's search_path usually ends there, so
+    // including it looks obviously right — but the artifact says nothing about
+    // an unmanaged schema, so `FROM product` becomes genuinely ambiguous
+    // between the declared `shop.product` and a `public.product` that may or may
+    // not exist. Strata then says so, correctly, for every unqualified name in
+    // every file. Measured: the same query is VALID against `shop` and
+    // UNVERIFIABLE against `shop,public`. Being uselessly right is still not
+    // useful.
+    Assert.Equal<string list>(
+        [ "shop" ],
+        Strata.Cli.OfflineValidation.searchPathFor None sample
+        |> List.map (fun (i: Identifier) -> i.Text))
+
+[<Fact>]
+let ``an explicit search path is taken as given`` () =
+    // Including a schema the artifact knows nothing about: the caller asked for
+    // the honest ambiguity back.
+    Assert.Equal<string list>(
+        [ "shop"; "public" ],
+        Strata.Cli.OfflineValidation.searchPathFor (Some " shop , public ") sample
+        |> List.map (fun (i: Identifier) -> i.Text))
+
+[<Fact>]
+let ``an empty search path entry is dropped rather than becoming a schema`` () =
+    Assert.Equal<string list>(
+        [ "shop" ],
+        Strata.Cli.OfflineValidation.searchPathFor (Some "shop,,") sample
+        |> List.map (fun (i: Identifier) -> i.Text))

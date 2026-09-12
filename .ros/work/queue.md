@@ -86,8 +86,8 @@
 | WI-0081 | Project adoption and reconciliation commands | captured | strata | medium |
 | WI-0082 | Hoist shadow normalisation out of the CLI ahead of the compile split | complete | strata | high |
 | WI-0083 | strata compile emits a deployable artifact | complete | strata | high |
-| WI-0084 | strata deploy reads an artifact rather than the source tree | ready | strata | high |
-| WI-0085 | strata validate against an artifact, with no database | captured | strata | medium |
+| WI-0084 | strata deploy reads an artifact rather than the source tree | complete | strata | high |
+| WI-0085 | strata validate against an artifact, with no database | ready | strata | medium |
 | WI-0086 | strata drift reports whether a server still matches an artifact | captured | strata | low |
 | WI-0087 | Type-check queries with PREPARE | captured | strata | medium |
 | WI-0088 | Declared project invariants as compile-time checks | captured | strata | low |

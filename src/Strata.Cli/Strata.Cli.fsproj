@@ -19,6 +19,7 @@
     <Compile Include="Compile.fs" />
     <Compile Include="Deployment.fs" />
     <Compile Include="Deploy.fs" />
+    <Compile Include="OfflineValidation.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 

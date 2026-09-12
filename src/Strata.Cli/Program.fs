@@ -57,6 +57,17 @@ COMMANDS
                                    or --approve accepts its requires-approval
                                    findings. A block is never overridden.
   validate <file.sql>              Check every relation and column in a SQL file
+          --artifact <file>        against a COMPILED ARTIFACT instead of a live
+                                   database. Needs NO connection and no
+                                   credentials, which is what makes it usable in
+                                   an editor, a pre-commit hook, or a pull
+                                   request from a fork. It also asks the better
+                                   question: a query valid against the artifact
+                                   and failing against production has found a
+                                   stale server, not a bad query. Unqualified
+                                   names resolve against the schemas the
+                                   artifact manages; widen with --search-path.
+  validate <file.sql>              Check every relation and column in a SQL file
                                    against the live schema. Exit 0 valid,
                                    1 provably wrong — a reference that does not
                                    exist, or SQL that does not parse —
@@ -83,7 +94,8 @@ OPTIONS
                      known breakage, not a judgement call — and it does not
                      enable removals, which need --allow-drops as well.
   --out <file>       Where `compile` writes the artifact
-  --artifact <file>  The artifact `deploy` reads
+  --artifact <file>  The artifact `deploy` and `validate` read
+  --search-path <s>  Comma-separated schemas for `validate --artifact`
   --allow-drops      Propose removals. Without it, objects present in the
                      database and absent from the project are REPORTED but
                      never proposed for dropping.
@@ -272,13 +284,40 @@ let main argv =
             | null | "" -> None
             | value -> Some value
 
+    let positional = args |> List.filter (fun a -> not (a.StartsWith "--"))
+
+    // `validate --artifact` is dispatched BEFORE the connection is required,
+    // because needing no connection is the whole point of it: an editor, a
+    // pre-commit hook and a pull request from a fork have no credentials, and
+    // those are the three places the check is worth the most
+    // (`DF-STRATA-2026-2F6B`).
+    match positional, valueOf "--artifact" args with
+    | "validate" :: sqlPath :: _, Some artifactPath ->
+        let parser = PgParserAdapter.PostgresParser() :> Strata.Analysis.DialectPort.IDialectParser
+
+        try
+            OfflineValidation.run
+                parser
+                artifactPath
+                sqlPath
+                (valueOf "--search-path" args)
+                (List.contains "--json" args)
+        with ex ->
+            eprintfn "error: %s" ex.Message
+            2
+
+    | "validate" :: _, Some _ ->
+        eprintfn "error: validate needs a path to a .sql file."
+        2
+
+    | _ ->
+
     match connection with
     | None ->
         eprintfn "error: no connection string. Pass --connection or set STRATA_PG."
         2
     | Some connectionString ->
 
-    let positional = args |> List.filter (fun a -> not (a.StartsWith "--")) 
 
     // `check` is not a retrieval query — it reads a file and returns an exit
     // code — so it is dispatched before the query parser.
