@@ -267,6 +267,55 @@ module CatalogIntrospection =
                       Scope = (if boolOf r "extension_owned" then ExtensionOwned else Observed) })
             |> categoryResult "enum_types"
 
+        // Read separately from the domains themselves because a domain has any
+        // number of CHECKs and PostgreSQL keeps them in `pg_constraint`, not in
+        // `pg_type`. Joined back below, in the catalog's own oid order — which
+        // is the order a `CREATE DOMAIN` declared them in.
+        let domainConstraints =
+            readCategory connection "domain_constraints" CatalogQueries.domainConstraints (fun r ->
+                (str r "schema_name", str r "type_name"),
+                ({ Name = Some(identifierOf (str r "constraint_name"))
+                   Definition = str r "definition"
+                   IsValidated = boolOf r "validated" }: DomainConstraint))
+            |> categoryResult "domain_constraints"
+
+        // Read WHOLE, never as a closure over the reader: a lambda that reads
+        // `r` after `readCategory` has disposed it throws
+        // `Cannot access a disposed object`, and it does so only once the
+        // constraints are joined on — long after this line.
+        let domainTypes =
+            readCategory connection "domain_types" CatalogQueries.domainTypes (fun r ->
+                { Name = qualified (str r "schema_name") (str r "type_name")
+                  BaseType = str r "base_type"
+                  Collation = strOpt r "collation_name"
+                  NotNull = boolOf r "not_null"
+                  Default = strOpt r "default_expression"
+                  Constraints = []
+                  Scope = (if boolOf r "extension_owned" then ExtensionOwned else Observed) })
+            |> categoryResult "domain_types"
+
+        let domains =
+            match domainTypes with
+            // A domain whose constraints could not be read is NOT reported with
+            // none: an empty constraint list reads as "this domain constrains
+            // nothing", which a diff would answer by proposing every declared
+            // CHECK be added, forever. The category is dropped whole instead,
+            // and `completeness` says so (ER-008).
+            | Some types when Option.isSome domainConstraints ->
+                let byType = domainConstraints |> Option.defaultValue []
+
+                Some(
+                    types
+                    |> List.map (fun d ->
+                        let key =
+                            (d.Name.Schema |> Option.map (fun s -> s.Text) |> Option.defaultValue ""), d.Name.Name.Text
+
+                        DomainObject
+                            { d with
+                                Constraints = byType |> List.filter (fun (k, _) -> k = key) |> List.map snd })
+                )
+            | _ -> None
+
         let viewDefinitions =
             readCategory connection "view_definitions" CatalogQueries.viewDefinitions (fun r ->
                 (str r "schema_name", str r "relation_name"), str r "definition")
@@ -442,6 +491,8 @@ module CatalogIntrospection =
                    | state -> state)
                   stateFor "sequences" (Option.isSome sequences)
                   stateFor "enum_types" (Option.isSome enumTypes)
+                  stateFor "domain_types" (Option.isSome domains)
+                  stateFor "domain_constraints" (Option.isSome domainConstraints)
                   "rls_policies", NotRequested
                   "extensions", NotRequested
                   "grants", NotRequested
@@ -468,7 +519,8 @@ module CatalogIntrospection =
             (objects
              @ routineObjects
              @ (sequences |> Option.defaultValue [])
-             @ (enumTypes |> Option.defaultValue []))
+             @ (enumTypes |> Option.defaultValue [])
+             @ (domains |> Option.defaultValue []))
             // Deterministic order regardless of catalog return order (NFR-001).
             |> List.sortBy (fun o -> QualifiedName.display (SchemaObject.name o))
           ServerVersion = serverVersion

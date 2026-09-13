@@ -338,6 +338,70 @@ module CatalogQueries =
         ORDER BY n.nspname, t.typname
         """
 
+    /// Domains and their own properties.
+    ///
+    /// The expressions here are the same ones `ShadowNormalisation` uses on the
+    /// declared side, and deliberately so: the two sides must be produced by the
+    /// same rendering or a comparison measures formatting rather than meaning.
+    ///
+    /// A collation is reported ONLY when the domain pins one that differs from
+    /// its base type's. `typcollation` is set for every collatable type whether
+    /// or not the declaration said `COLLATE`, so reporting it unconditionally
+    /// would have every `text` domain claim a collation no file wrote.
+    let domainTypes =
+        """
+        SELECT n.nspname AS schema_name,
+               t.typname AS type_name,
+               (dx.objid IS NOT NULL) AS extension_owned,
+               pg_catalog.format_type(t.typbasetype, t.typtypmod) AS base_type,
+               t.typnotnull AS not_null,
+               pg_catalog.pg_get_expr(t.typdefaultbin, 0) AS default_expression,
+               CASE
+                   WHEN t.typcollation <> 0 AND t.typcollation <> bt.typcollation
+                   THEN pg_catalog.quote_ident(cn.nspname) || '.' || pg_catalog.quote_ident(c.collname)
+               END AS collation_name
+        FROM pg_catalog.pg_type t
+        JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
+        JOIN pg_catalog.pg_type bt ON bt.oid = t.typbasetype
+        LEFT JOIN pg_catalog.pg_collation c ON c.oid = t.typcollation
+        LEFT JOIN pg_catalog.pg_namespace cn ON cn.oid = c.collnamespace
+        LEFT JOIN pg_catalog.pg_depend dx
+               ON dx.objid = t.oid
+              AND dx.classid = 'pg_type'::regclass
+              AND dx.deptype = 'e'
+        WHERE t.typtype = 'd'
+          AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+        ORDER BY n.nspname, t.typname
+        """
+
+    /// The CHECK constraints on every domain, in the order the catalog assigned
+    /// them.
+    ///
+    /// `ORDER BY con.oid` is declaration order within one `CREATE DOMAIN`, which
+    /// is how a project's unnamed constraints line up with the server's
+    /// `<domain>_check`, `<domain>_check1` naming. A domain's NOT NULL is NOT
+    /// here — PostgreSQL 16 records it as `typnotnull` and nothing else — which
+    /// is why it is a field of the domain rather than one of these.
+    let domainConstraints =
+        """
+        SELECT n.nspname AS schema_name,
+               t.typname AS type_name,
+               con.conname AS constraint_name,
+               -- Without the trailing `NOT VALID`, which `convalidated` already
+               -- carries. Leaving it in the text would make a validated and an
+               -- unvalidated copy of the SAME predicate compare as different
+               -- constraints, and the answer to that is `VALIDATE CONSTRAINT`,
+               -- not a drop and a re-add.
+               regexp_replace(pg_catalog.pg_get_constraintdef(con.oid), ' NOT VALID$', '') AS definition,
+               con.convalidated AS validated
+        FROM pg_catalog.pg_constraint con
+        JOIN pg_catalog.pg_type t ON t.oid = con.contypid
+        JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
+        WHERE t.typtype = 'd'
+          AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+        ORDER BY n.nspname, t.typname, con.oid
+        """
+
     /// Privileges granted on relations and sequences.
     ///
     /// Three things here are not obvious, and each was verified against a live

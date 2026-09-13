@@ -530,6 +530,121 @@ module DeploymentGate =
               NextSafeMove =
                 "If the type really is unused, drop the columns that use it first, in their own reviewed change." }
 
+        | CreateDomainType name ->
+            { Change = change
+              Verdict = Allow
+              Detected = sprintf "creates domain %s" (QualifiedName.display name)
+              Rationale = "Additive. Nothing can already be declared with a type that does not exist."
+              AffectedSources = []
+              NextSafeMove = "Proceed." }
+
+        | DropDomainType name ->
+            { Change = change
+              Verdict = Block
+              Detected = sprintf "drops domain %s" (QualifiedName.display name)
+              // Same mechanism as DROP TYPE on an enum, and the same verdict:
+              // this is data loss with a known mechanism rather than a judgement
+              // about blast radius.
+              Rationale =
+                "Dropping a domain drops every column declared with it, and the data in those columns goes with them. PostgreSQL will refuse while a dependency exists, so this either fails or destroys something."
+              AffectedSources = []
+              NextSafeMove =
+                "If the domain really is unused, drop the columns that use it first, in their own reviewed change." }
+
+        // Every ALTER DOMAIN below reaches columns Strata cannot enumerate: a
+        // column's TYPE is reported as rendered text, not as a dependency edge,
+        // so there is no list of what uses this domain to put in
+        // `AffectedSources`. An empty list here means "nothing was looked up",
+        // and each rationale says so rather than letting it read as "nothing was
+        // found" (ER-008).
+        | SetDomainDefault (name, expression, replacing) ->
+            { Change = change
+              Verdict = RequiresApproval
+              Detected =
+                sprintf
+                    "sets the default of %s to %s%s"
+                    (QualifiedName.display name)
+                    expression
+                    (match replacing with
+                     | Some previous -> sprintf ", replacing %s" previous
+                     | None -> ", which had none")
+              Rationale =
+                "Every insert that omits a column of this type stores a different value from now on, and nothing errors. Strata cannot list those columns: a column's type is rendered text in the catalog, not a dependency it models."
+              AffectedSources = []
+              NextSafeMove = "Confirm the writes that rely on the current default, then approve explicitly." }
+
+        | DropDomainDefault name ->
+            { Change = change
+              Verdict = RequiresApproval
+              Detected = sprintf "removes the default from %s" (QualifiedName.display name)
+              Rationale =
+                "Every insert that omitted a column of this type used to get a value and now gets NULL — or fails, where the column is NOT NULL. Strata cannot list those columns."
+              AffectedSources = []
+              NextSafeMove = "Confirm no write relies on this default, then approve explicitly." }
+
+        | SetDomainNotNull name ->
+            { Change = change
+              Verdict = Allow
+              Detected = sprintf "makes %s reject NULL" (QualifiedName.display name)
+              // Tightening, and it cannot pass quietly: PostgreSQL scans every
+              // column declared with the domain and raises if one holds a NULL.
+              // A plan is one transaction, so a failure costs the run and
+              // nothing else.
+              Rationale =
+                "Tightening, and loud: PostgreSQL scans every column declared with this domain and the statement fails if one holds a NULL. A plan is one transaction, so a failure costs the run rather than the data."
+              AffectedSources = []
+              NextSafeMove = "Proceed." }
+
+        | DropDomainNotNull name ->
+            { Change = change
+              Verdict = RequiresApproval
+              Detected = sprintf "lets %s admit NULL again" (QualifiedName.display name)
+              Rationale =
+                "Nothing breaks and nothing errors. What is lost is the promise that NULL cannot arrive in any column of this type — which code reading those columns may already rely on."
+              AffectedSources = []
+              NextSafeMove = "Confirm the readers of columns of this type handle NULL, then approve explicitly." }
+
+        | AddDomainConstraint (name, constraintName, definition) ->
+            { Change = change
+              Verdict = Allow
+              Detected =
+                sprintf
+                    "adds %s to %s: %s"
+                    (match constraintName with
+                     | Some n -> sprintf "constraint %s" n.Display
+                     | None -> "an unnamed constraint")
+                    (QualifiedName.display name)
+                    definition
+              Rationale =
+                "Tightening, and loud: PostgreSQL scans every column declared with this domain and the statement fails if a stored value would violate it. A plan is one transaction, so a failure costs the run rather than the data."
+              AffectedSources = []
+              NextSafeMove = "Proceed." }
+
+        | DropDomainConstraint (name, constraintName) ->
+            { Change = change
+              Verdict = RequiresApproval
+              Detected =
+                sprintf
+                    "removes %s from %s"
+                    (match constraintName with
+                     | Some n -> sprintf "constraint %s" n.Display
+                     | None -> "an unnamed constraint")
+                    (QualifiedName.display name)
+              Rationale =
+                "Nothing breaks and nothing errors. What is lost is the promise that the excluded values cannot arrive in any column of this type."
+              AffectedSources = []
+              NextSafeMove = "Confirm nothing relies on this constraint holding, then approve explicitly." }
+
+        | ValidateDomainConstraint (name, constraintName) ->
+            { Change = change
+              Verdict = Allow
+              Detected =
+                sprintf "validates constraint %s on %s" constraintName.Display (QualifiedName.display name)
+              Rationale =
+                "Checks the values this constraint was added NOT VALID and allowed to skip. It changes no data and removes nothing; it either passes or fails loudly, which is the point of running it."
+              AffectedSources = []
+              NextSafeMove = "Proceed." }
+
         | CreateSequence name ->
             { Change = change
               Verdict = Allow

@@ -487,12 +487,76 @@ module Schema =
           Values: string list
           Scope: ManagementScope }
 
+    /// One CHECK on a domain.
+    ///
+    /// `Name` follows the same two-state rule as a table constraint's: `None`
+    /// means the declaring file wrote a bare `CHECK (...)` and did not care what
+    /// the server called it. PostgreSQL then invents `<domain>_check`,
+    /// `<domain>_check1`, and so on, in declaration order — a name no file can
+    /// predict, which is why a declared unnamed constraint is matched by its
+    /// DEFINITION and never by a fabricated name (WI-0054). An INTROSPECTED one
+    /// always has a name, because the catalog has no nameless constraints.
+    ///
+    /// `Definition` is the whole `CHECK (...)` clause as
+    /// `pg_get_constraintdef` renders it, trailing `NOT VALID` included. It is
+    /// EMPTY on a freshly parsed declaration: the predicate text is not
+    /// recoverable from the parse tree without deparsing, exactly as for a
+    /// table's check constraint, so the declared side carries nothing until
+    /// shadow normalisation fills it in. A domain whose declaration was never
+    /// normalised therefore has its constraints DISCLOSED as not-compared
+    /// rather than diffed against an empty string.
+    type DomainConstraint =
+        { Name: ConstraintName
+          Definition: string
+          /// `false` for a constraint added `NOT VALID`: it applies to new
+          /// values and the existing ones were never checked. Carried because
+          /// the two are genuinely different states of the same constraint, and
+          /// collapsing them would report a domain as converged while a column
+          /// still holds values the project says are impossible (ER-008).
+          IsValidated: bool }
+
+    /// A domain: a base type carried around with its own constraints.
+    ///
+    /// ## What PostgreSQL will and will not let you change
+    ///
+    /// Measured against a live server rather than taken from the documentation:
+    ///
+    ///   - `ALTER DOMAIN ... {SET|DROP} DEFAULT`, `{SET|DROP} NOT NULL`, and
+    ///     `ADD`/`DROP CONSTRAINT` all work, and all of them are transactional.
+    ///     `ADD CONSTRAINT` scans every column already declared with the domain
+    ///     and fails if any value would violate it; `NOT VALID` skips that scan.
+    ///   - There is NO `ALTER DOMAIN ... TYPE`. It is a syntax error, not a
+    ///     permission problem: the base type of an existing domain cannot be
+    ///     changed by anyone. Neither can its collation.
+    ///
+    /// So a base-type or collation difference is DISCLOSED and never proposed —
+    /// the same shape as an enum's value order, and for the same reason.
+    ///
+    /// `BaseType` is the base type as `format_type` renders it, and `Collation`
+    /// is `None` when the domain simply inherits the base type's collation
+    /// rather than pinning one. Both come from the server: a declaration
+    /// rendered by shadow normalisation, or the catalog directly.
+    type DomainType =
+        { Name: QualifiedName
+          BaseType: string
+          Collation: string option
+          NotNull: bool
+          /// The DEFAULT expression as the catalog renders it, or `None` for a
+          /// domain with no default. Like `DomainConstraint.Definition`, this is
+          /// `None` on a declaration that has not been normalised — which is why
+          /// a domain Strata could not render has its default disclosed rather
+          /// than reported as absent.
+          Default: string option
+          Constraints: DomainConstraint list
+          Scope: ManagementScope }
+
     type SchemaObject =
         | TableObject of Table
         | ViewObject of View
         | RoutineObject of Routine
         | SequenceObject of Sequence
         | EnumObject of EnumType
+        | DomainObject of DomainType
 
     [<RequireQualifiedAccess>]
     module SchemaObject =
@@ -504,6 +568,7 @@ module Schema =
             | RoutineObject r -> r.Name
             | SequenceObject s -> s.Name
             | EnumObject e -> e.Name
+            | DomainObject d -> d.Name
 
         let kind (o: SchemaObject) =
             match o with
@@ -512,6 +577,7 @@ module Schema =
             | RoutineObject _ -> ObjectKind.Routine
             | SequenceObject _ -> ObjectKind.Sequence
             | EnumObject _ -> ObjectKind.EnumType
+            | DomainObject _ -> ObjectKind.DomainType
 
         let scope (o: SchemaObject) =
             match o with
@@ -520,6 +586,7 @@ module Schema =
             | RoutineObject r -> r.Scope
             | SequenceObject s -> s.Scope
             | EnumObject e -> e.Scope
+            | DomainObject d -> d.Scope
 
     /// Server identity for a snapshot.
     type ServerVersion =

@@ -227,6 +227,7 @@ let run
                 DataFailures = resolved.DataFailures
                 NormalisedViews = resolved.NormalisedViews
                 NormalisedTables = resolved.NormalisedTables
+                NormalisedDomains = resolved.NormalisedDomains
                 Renames = renames }
     let gate = DeploymentGate.run graph scope diff.Changes
 

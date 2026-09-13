@@ -126,6 +126,28 @@ module SchemaDiff =
           Defaults: (string * string) list
           Checks: (string * string) list }
 
+    /// A declared domain as the SERVER renders it.
+    ///
+    /// A domain read from a file carries no default expression and no check
+    /// predicates at all — neither is recoverable from the parse tree — so
+    /// WITHOUT this there is nothing to compare and the honest report is
+    /// "not compared". A domain absent from the resolved list gets exactly that.
+    ///
+    /// `Constraints` is one entry per DECLARED constraint, in declaration order,
+    /// so the caller pairs them positionally with what the file wrote and keeps
+    /// each one's declared name — or its declared namelessness, which is the
+    /// thing a server-assigned `<domain>_check` would destroy (WI-0054).
+    type NormalisedDomain =
+        { Domain: string
+          BaseType: string
+          Collation: string option
+          NotNull: bool
+          Default: string option
+          /// `(definition, validated)`. No name: the shadow's own is a per-run
+          /// GUID and the diff never reads it — see
+          /// `ShadowNormalisation.DomainNormalisation`.
+          Constraints: (string * bool) list }
+
     let private tables (snapshot: SchemaSnapshot) =
         snapshot.Objects
         |> List.choose (fun o ->
@@ -134,7 +156,8 @@ module SchemaDiff =
             | ViewObject _
             | RoutineObject _
             | SequenceObject _
-            | EnumObject _ -> None)
+            | EnumObject _
+            | DomainObject _ -> None)
 
     let private sameName (a: QualifiedName) (b: QualifiedName) =
         QualifiedName.display a = QualifiedName.display b
@@ -868,6 +891,283 @@ module SchemaDiff =
 
         created @ altered @ dropped
 
+    /// Domains, compared on everything PostgreSQL lets a domain carry.
+    ///
+    /// ## What can change and what cannot
+    ///
+    /// Measured against a live server: `ALTER DOMAIN` can set and drop a
+    /// DEFAULT, set and drop NOT NULL, add and drop a CHECK, and validate one
+    /// added `NOT VALID`. It cannot change the BASE TYPE — `ALTER DOMAIN ...
+    /// TYPE` is a syntax error, not a privilege problem — and it cannot change
+    /// the COLLATION. Those two are disclosed and never proposed, the same shape
+    /// as an enum's value order, and for the same reason: a plan that cannot
+    /// execute is worse than a report that says so.
+    ///
+    /// ## A base-type difference stops EVERY comparison on that domain
+    ///
+    /// Not only the base type. A domain's default and its check predicates are
+    /// rendered THROUGH the base type — declared over `varchar(255)` a check
+    /// reads back as `CHECK (((VALUE)::text ~ '@'::text))`, and over `text` as
+    /// `CHECK ((VALUE ~ '@'::text))` — so while the base types differ the two
+    /// sides can never agree on any of them.
+    ///
+    /// An earlier version proposed those changes anyway, on the reasoning that a
+    /// domain should converge as far as it can. Measured against a live server,
+    /// what it actually did was apply seven statements successfully and propose
+    /// six of them again on the next run, forever: the re-added constraints came
+    /// back rendered over the base type the DATABASE has. That is WI-0054's
+    /// churn with a different object, and the only honest answer is that nothing
+    /// about this domain was compared.
+    ///
+    /// ## Nothing here is compared without the server
+    ///
+    /// A parsed `CREATE DOMAIN` carries no default expression and no check
+    /// predicates: neither survives the parse tree, exactly as for a table's
+    /// check constraint. So a domain the resolver could not render is not
+    /// compared at all — it is disclosed. Diffing the catalog's
+    /// `CHECK ((VALUE ~ '@'::text))` against the empty string a bare parse
+    /// produces would propose dropping and re-adding every constraint on every
+    /// run, forever.
+    let private domainChanges
+        (allowDrops: bool)
+        (managedSchemas: string list)
+        (desiredComplete: bool)
+        (normalisedDomains: NormalisedDomain list)
+        (desired: SchemaObject list)
+        (actual: SchemaObject list)
+        =
+        let domains objects =
+            objects
+            |> List.choose (fun o ->
+                match o with
+                | DomainObject d -> Some d
+                | _ -> None)
+
+        let declared = domains desired
+        let deployed = domains actual
+
+        /// A declared domain with the server's rendering of its default, its
+        /// base type and its check predicates put back on it.
+        ///
+        /// `None` when the declaration was never rendered, and `None` again when
+        /// the server reported a different NUMBER of constraints than the file
+        /// wrote. The second should not happen — the shadow builds exactly the
+        /// declaration — and if it ever does, pairing the two lists positionally
+        /// would attach one constraint's predicate to another constraint's name.
+        let rendered (d: DomainType) =
+            normalisedDomains
+            |> List.tryFind (fun n -> n.Domain = QualifiedName.display d.Name)
+            |> Option.bind (fun n ->
+                if List.length n.Constraints <> List.length d.Constraints then
+                    None
+                else
+                    Some
+                        { d with
+                            BaseType = n.BaseType
+                            Collation = n.Collation
+                            NotNull = n.NotNull
+                            Default = n.Default
+                            Constraints =
+                              List.map2
+                                  (fun (c: DomainConstraint) (definition, validated) ->
+                                      { c with Definition = definition; IsValidated = validated })
+                                  d.Constraints
+                                  n.Constraints })
+
+        let unrendered (d: DomainType) =
+            Microsoft.FSharp.Core.Error
+                { Object = d.Name
+                  Reason = NotCompared
+                  Detail =
+                    "this domain's declaration could not be rendered by the server, so its base type, default and check constraints were not compared. A CREATE DOMAIN carries no predicate text through the parser; only the server can say what it means." }
+
+        let created =
+            declared
+            |> List.filter (fun d -> not (deployed |> List.exists (fun a -> sameName a.Name d.Name)))
+            // A domain may be declared OVER another one the same plan creates,
+            // so the base it stands on has to be created first. Depth in that
+            // graph, not name order: `List.sortBy` is stable, so domains at the
+            // same depth keep the order they were declared in.
+            |> fun creating ->
+                let byName =
+                    creating |> List.map (fun d -> QualifiedName.display d.Name, d) |> Map.ofList
+
+                let rec depth (seen: Set<string>) (name: string) =
+                    if Set.contains name seen then
+                        0
+                    else
+                        match Map.tryFind name byName with
+                        | None -> 0
+                        | Some d ->
+                            let baseName =
+                                rendered d
+                                |> Option.map (fun r -> r.BaseType)
+                                |> Option.defaultValue d.BaseType
+
+                            if baseName <> name && Map.containsKey baseName byName then
+                                1 + depth (Set.add name seen) baseName
+                            else
+                                0
+
+                creating |> List.sortBy (fun d -> depth Set.empty (QualifiedName.display d.Name))
+            |> List.map (fun d -> Ok(CreateDomainType d.Name))
+
+        /// Constraint differences for one domain, matched the way table
+        /// constraints are: a NAMED declaration claims the deployed constraint
+        /// of that name, and an UNNAMED one claims any deployed constraint with
+        /// the same predicate. A file that wrote a bare `CHECK (...)` asked for
+        /// a constraint that does this and said nothing about what it is called,
+        /// and PostgreSQL's `<domain>_check1` is not a name any file can predict.
+        let constraintDifferences (name: QualifiedName) (declaredOnes: DomainConstraint list) (deployedOnes: DomainConstraint list) =
+            let named =
+                declaredOnes |> List.choose (fun c -> c.Name |> Option.map (fun n -> Identifier.folded n, c))
+
+            let claimed =
+                named
+                |> List.choose (fun (n, _) ->
+                    deployedOnes
+                    |> List.tryFind (fun a -> a.Name |> Option.exists (fun m -> Identifier.folded m = n)))
+
+            // Removes the FIRST predicate match, not every equal one: two
+            // declarations that say the same thing need two deployed
+            // constraints, not one counted twice.
+            let rec removeFirst definition acc rest =
+                match rest with
+                | [] -> None
+                | (c: DomainConstraint) :: tail when c.Definition = definition -> Some(List.rev acc @ tail, c)
+                | head :: tail -> removeFirst definition (head :: acc) tail
+
+            let unnamedAdded, leftover =
+                declaredOnes
+                |> List.filter (fun c -> Option.isNone c.Name)
+                |> List.fold
+                    (fun (added, pool) c ->
+                        match removeFirst c.Definition [] pool with
+                        | Some (rest, _) -> added, rest
+                        | None -> added @ [ c ], pool)
+                    ([], deployedOnes |> List.filter (fun a -> not (List.contains a claimed)))
+
+            let namedChanges =
+                named
+                |> List.collect (fun (n, c) ->
+                    match
+                        deployedOnes
+                        |> List.tryFind (fun a -> a.Name |> Option.exists (fun m -> Identifier.folded m = n))
+                    with
+                    | None -> [ Ok(AddDomainConstraint(name, c.Name, c.Definition)) ]
+                    | Some a when a.Definition <> c.Definition ->
+                        // The name is taken, so the add would fail on it: the
+                        // drop has to run first, and `domainChanges` returns
+                        // drops ahead of adds for exactly this.
+                        [ Ok(DropDomainConstraint(name, a.Name)); Ok(AddDomainConstraint(name, c.Name, c.Definition)) ]
+                    | Some a when not a.IsValidated ->
+                        // Same predicate, but the values already stored were
+                        // never checked against it. A file that declares the
+                        // constraint plainly is asking for them to be.
+                        [ Ok(ValidateDomainConstraint(name, a.Name |> Option.defaultValue (Identifier.unquoted n))) ]
+                    | Some _ -> [])
+
+            let unnamed =
+                unnamedAdded |> List.map (fun c -> Ok(AddDomainConstraint(name, None, c.Definition)))
+
+            let removed =
+                leftover
+                |> List.map (fun a ->
+                    if not desiredComplete then
+                        Microsoft.FSharp.Core.Error
+                            { Object = name
+                              Reason = DesiredStateIncomplete
+                              Detail =
+                                sprintf
+                                    "%s is on this domain and not in the project, but desired state did not load completely"
+                                    (a.Name |> Option.map (fun n -> n.Display) |> Option.defaultValue "a constraint") }
+                    else
+                        Ok(DropDomainConstraint(name, a.Name)))
+
+            // Drops first: a redefined constraint keeps its name, and the add
+            // would collide with the one still holding it.
+            (removed @ (namedChanges |> List.filter (function Ok (DropDomainConstraint _) -> true | _ -> false)))
+            @ (namedChanges |> List.filter (function Ok (DropDomainConstraint _) -> false | _ -> true))
+            @ unnamed
+
+        let altered =
+            declared
+            |> List.collect (fun d ->
+                match deployed |> List.tryFind (fun a -> sameName a.Name d.Name) with
+                | None -> []
+                | Some a ->
+                    match rendered d with
+                    | None -> [ unrendered d ]
+                    | Some d ->
+                        let immovable =
+                            [ if d.BaseType <> a.BaseType then
+                                  yield
+                                      sprintf
+                                          "the project declares this domain over %s and the database has it over %s"
+                                          d.BaseType
+                                          a.BaseType
+                              if d.Collation <> a.Collation then
+                                  yield
+                                      sprintf
+                                          "the project declares collation %s and the database has %s"
+                                          (d.Collation |> Option.defaultValue "the base type's")
+                                          (a.Collation |> Option.defaultValue "the base type's") ]
+
+                        if not (List.isEmpty immovable) then
+                            [ Microsoft.FSharp.Core.Error
+                                  { Object = d.Name
+                                    Reason = NotCompared
+                                    Detail =
+                                      sprintf
+                                          "%s. PostgreSQL has no ALTER DOMAIN ... TYPE and cannot change a domain's collation either, so this cannot converge without recreating the domain and every column declared with it. Nothing else about this domain was compared: its default and its check predicates are rendered through the base type, so while the base types differ the two sides can never agree on them." 
+                                          (String.concat "; " immovable) } ]
+                        else
+
+                        let nullability =
+                            if d.NotNull && not a.NotNull then [ Ok(SetDomainNotNull d.Name) ]
+                            elif not d.NotNull && a.NotNull then [ Ok(DropDomainNotNull d.Name) ]
+                            else []
+
+                        let defaults =
+                            match d.Default, a.Default with
+                            | Some declaredDefault, deployedDefault when Some declaredDefault <> deployedDefault ->
+                                [ Ok(SetDomainDefault(d.Name, declaredDefault, deployedDefault)) ]
+                            | None, Some _ -> [ Ok(DropDomainDefault d.Name) ]
+                            | _ -> []
+
+                        nullability
+                        @ defaults
+                        @ constraintDifferences d.Name d.Constraints a.Constraints)
+
+        let dropped =
+            deployed
+            |> List.filter (fun a -> not (declared |> List.exists (fun d -> sameName d.Name a.Name)))
+            |> List.map (fun a ->
+                if not (isManaged managedSchemas a.Name) then
+                    Microsoft.FSharp.Core.Error
+                        { Object = a.Name
+                          Reason = OutsideManagedSchemas
+                          Detail = "a domain outside the project's managed schemas" }
+                elif a.Scope = ExtensionOwned then
+                    Microsoft.FSharp.Core.Error
+                        { Object = a.Name
+                          Reason = ExtensionOwnedObject
+                          Detail = "an extension owns this domain" }
+                elif not desiredComplete then
+                    Microsoft.FSharp.Core.Error
+                        { Object = a.Name
+                          Reason = DesiredStateIncomplete
+                          Detail = "absent from desired state, but desired state did not load completely" }
+                elif not allowDrops then
+                    Microsoft.FSharp.Core.Error
+                        { Object = a.Name
+                          Reason = DropsNotEnabled
+                          Detail = "this domain would be dropped; pass --allow-drops" }
+                else
+                    Ok(DropDomainType a.Name))
+
+        created @ altered @ dropped
+
     /// Privileges, compared per object AND per grantee.
     ///
     /// ## Why the ownership rule is finer here than anywhere else
@@ -1264,6 +1564,49 @@ module SchemaDiff =
                     | None -> sprintf "ALTER TYPE %s ADD VALUE %s" (quoteName name) (literal value))
 
         | DropEnumType name -> Some(sprintf "DROP TYPE %s" (quoteName name))
+
+        // From the declaring file, verbatim, like a view or a routine: a
+        // domain's DEFAULT and its CHECK predicates are expressions, and the
+        // model carries only the server's rendering of them. Writing the file's
+        // own text is the one way to create the domain the project declared
+        // rather than a reconstruction of it.
+        | CreateDomainType name -> declaredText name
+
+        | DropDomainType name -> Some(sprintf "DROP DOMAIN %s" (quoteName name))
+
+        // The expressions below are the CATALOG's rendering, not the file's, and
+        // that is not a shortcut: an ALTER carries one expression and the model
+        // has exactly one form of it. `'x'::text` is what the server itself
+        // deparsed and is accepted straight back.
+        | SetDomainDefault (name, expression, _) ->
+            Some(sprintf "ALTER DOMAIN %s SET DEFAULT %s" (quoteName name) expression)
+
+        | DropDomainDefault name -> Some(sprintf "ALTER DOMAIN %s DROP DEFAULT" (quoteName name))
+        | SetDomainNotNull name -> Some(sprintf "ALTER DOMAIN %s SET NOT NULL" (quoteName name))
+        | DropDomainNotNull name -> Some(sprintf "ALTER DOMAIN %s DROP NOT NULL" (quoteName name))
+
+        | AddDomainConstraint (name, constraintName, definition) ->
+            // `pg_get_constraintdef` renders a domain check as `CHECK ((...))`,
+            // which is already the whole clause an ADD takes. An unnamed one is
+            // written WITHOUT a CONSTRAINT clause, so the server assigns the
+            // name — the declaring file said it did not care, and inventing one
+            // here is what made unnamed constraints unconvergeable (WI-0054).
+            Some(
+                match constraintName with
+                | Some n -> sprintf "ALTER DOMAIN %s ADD CONSTRAINT %s %s" (quoteName name) (quote n) definition
+                | None -> sprintf "ALTER DOMAIN %s ADD %s" (quoteName name) definition
+            )
+
+        // Only a NAMED constraint can be dropped: `ALTER DOMAIN ... DROP
+        // CONSTRAINT` takes a name and there is no form that takes a predicate.
+        // A deployed constraint always has one, so `None` here never arises
+        // from introspection — and refusing beats inventing a name to drop.
+        | DropDomainConstraint (name, constraintName) ->
+            constraintName
+            |> Option.map (fun n -> sprintf "ALTER DOMAIN %s DROP CONSTRAINT %s" (quoteName name) (quote n))
+
+        | ValidateDomainConstraint (name, constraintName) ->
+            Some(sprintf "ALTER DOMAIN %s VALIDATE CONSTRAINT %s" (quoteName name) (quote constraintName))
 
         | CreateSequence name
         | AlterSequence name ->
@@ -1669,6 +2012,20 @@ module SchemaDiff =
         // same plan may use it as a default.
         | CreateEnumType _ -> 2
         | AddEnumValue _ -> 2
+        // With them, and for the same reason: a column can be declared of this
+        // type. Every ALTER DOMAIN ranks here too — the domain exists by now,
+        // and a table created later in the same plan should meet the domain the
+        // project declares rather than the one it is replacing. Order WITHIN the
+        // rank is the order `domainChanges` assembled them in, which puts a
+        // constraint's drop ahead of the re-add that takes its name back.
+        | CreateDomainType _ -> 2
+        | SetDomainDefault _ -> 2
+        | DropDomainDefault _ -> 2
+        | SetDomainNotNull _ -> 2
+        | DropDomainNotNull _ -> 2
+        | AddDomainConstraint _ -> 2
+        | DropDomainConstraint _ -> 2
+        | ValidateDomainConstraint _ -> 2
         | RenameColumn _ -> 3
         | RenameTable _ -> 4
         | CreateTable _ -> 4
@@ -1747,6 +2104,7 @@ module SchemaDiff =
         // is still declared with it, so every table that used it has to go
         // first or the statement fails.
         | DropEnumType _ -> 17
+        | DropDomainType _ -> 17
         | UnclassifiedChange _ -> 18
 
     /// Constraint and default differences for a table present on both sides.
@@ -2432,6 +2790,7 @@ module SchemaDiff =
                 sprintf "routine:%s(%s)" (QualifiedName.display r.Name) (String.concat "," r.ArgumentTypes)
             | SequenceObject s -> "sequence:" + QualifiedName.display s.Name
             | EnumObject e -> "enum:" + QualifiedName.display e.Name
+            | DomainObject d -> "domain:" + QualifiedName.display d.Name
 
         let nonTable (objects: SchemaObject list) =
             objects
@@ -2444,9 +2803,11 @@ module SchemaDiff =
                 | TableObject _
                 | SequenceObject _
                 // Excluded for the same reason a sequence is: this path
-                // compares by PRESENCE, and an enum's VALUES are most of what it
-                // is. `enumChanges` compares them.
-                | EnumObject _ -> false
+                // compares by PRESENCE, and an enum's VALUES — or a domain's
+                // base type, default and checks — are most of what it is.
+                // `enumChanges` and `domainChanges` compare them.
+                | EnumObject _
+                | DomainObject _ -> false
                 | ViewObject _
                 | RoutineObject _ -> true)
 
@@ -2462,6 +2823,7 @@ module SchemaDiff =
             // the arm, and inventing a wrong one would be worse than saying so.
             | SequenceObject _ -> "sequence"
             | EnumObject _ -> "enum type"
+            | DomainObject _ -> "domain"
 
         let created =
             desiredOther
@@ -2472,7 +2834,8 @@ module SchemaDiff =
                 | RoutineObject r -> Ok(CreateRoutine r.Name)
                 | TableObject t -> Ok(CreateTable t.Name)
                 | SequenceObject sq -> Ok(CreateSequence sq.Name)
-                | EnumObject e -> Ok(CreateEnumType e.Name))
+                | EnumObject e -> Ok(CreateEnumType e.Name)
+                | DomainObject d -> Ok(CreateDomainType d.Name))
 
         let removed =
             actualOther
@@ -2707,6 +3070,10 @@ module SchemaDiff =
           DataFailures: DataFailure list
           NormalisedViews: (string * string) list
           NormalisedTables: NormalisedTable list
+          /// Declared domains as the server renders them. A domain missing from
+          /// here is DISCLOSED rather than compared — its predicates never
+          /// survived the parser, so there is nothing to compare it with.
+          NormalisedDomains: NormalisedDomain list
           Renames: DeclaredRename list
           Desired: SchemaSnapshot
           Actual: SchemaSnapshot }
@@ -2738,6 +3105,7 @@ module SchemaDiff =
               DataFailures = []
               NormalisedViews = []
               NormalisedTables = []
+              NormalisedDomains = []
               Renames = []
               Desired = desired
               Actual = actual }
@@ -3004,6 +3372,15 @@ module SchemaDiff =
 
         let enumResults =
             enumChanges allowDrops managedSchemas desiredComplete desired.Objects actual.Objects
+
+        let domainResults =
+            domainChanges
+                allowDrops
+                managedSchemas
+                desiredComplete
+                inputs.NormalisedDomains
+                desired.Objects
+                actual.Objects
         let rowChanges, rowSuppressions = dataChanges data dataFailures
 
         /// The one explanation PostgreSQL will not give you.
@@ -3060,6 +3437,9 @@ module SchemaDiff =
             newSchemas
             @ sequenceResults
             @ enumResults
+            // After the enums: a domain may stand on one that arrives in this
+            // same plan, and both rank 2, so the stable sort keeps this order.
+            @ domainResults
             @ grantResults
             @ policyResults
             @ extensionResults
@@ -3145,6 +3525,30 @@ module SchemaDiff =
                 (QualifiedName.display name)
                 value
                 (match after with Some p -> sprintf " after '%s'" p | None -> " (first)")
+        | CreateDomainType name -> sprintf "create-domain-type %s" (QualifiedName.display name)
+        | DropDomainType name -> sprintf "drop-domain-type   %s" (QualifiedName.display name)
+        | SetDomainDefault (name, expression, replacing) ->
+            sprintf
+                "set-domain-default %s %s%s"
+                (QualifiedName.display name)
+                expression
+                (match replacing with Some previous -> sprintf " (was %s)" previous | None -> " (had none)")
+        | DropDomainDefault name -> sprintf "drop-domain-default %s" (QualifiedName.display name)
+        | SetDomainNotNull name -> sprintf "set-domain-not-null %s" (QualifiedName.display name)
+        | DropDomainNotNull name -> sprintf "drop-domain-not-null %s" (QualifiedName.display name)
+        | AddDomainConstraint (name, constraintName, definition) ->
+            sprintf
+                "add-domain-constraint %s %s %s"
+                (QualifiedName.display name)
+                (match constraintName with Some n -> n.Display | None -> "(unnamed)")
+                definition
+        | DropDomainConstraint (name, constraintName) ->
+            sprintf
+                "drop-domain-constraint %s %s"
+                (QualifiedName.display name)
+                (match constraintName with Some n -> n.Display | None -> "(unnamed)")
+        | ValidateDomainConstraint (name, constraintName) ->
+            sprintf "validate-domain-constraint %s %s" (QualifiedName.display name) constraintName.Display
         | DropColumn (table, column) ->
             sprintf "drop-column        %s.%s" (QualifiedName.display table) column.Text
         | AlterColumnType (table, column, newType) ->

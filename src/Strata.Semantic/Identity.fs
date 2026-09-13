@@ -55,6 +55,7 @@ module Identity =
         | Trigger
         | Constraint
         | EnumType
+        | DomainType
 
     /// A name as it appeared in SQL or the catalog: optionally schema-qualified.
     ///

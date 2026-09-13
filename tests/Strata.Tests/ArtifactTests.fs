@@ -159,6 +159,26 @@ let private sample : ResolvedDesiredState =
                         // and a renderer that sorted would round-trip to a
                         // different type while looking correct.
                         Values = [ "pending"; "shipped"; "cancelled" ]
+                        Scope = Managed }
+                  DomainObject
+                      { Name = qn "shop" "email"
+                        BaseType = "text"
+                        Collation = Some "pg_catalog.\"C\""
+                        NotNull = true
+                        Default = Some "'nobody@example.com'::text"
+                        Constraints =
+                          // A named one, an UNNAMED one, and one added NOT
+                          // VALID. All three states round-trip or this format
+                          // loses the distinction that decides what is proposed.
+                          [ { Name = Some(id' "email_shape")
+                              Definition = "CHECK ((VALUE ~ '@'::text))"
+                              IsValidated = true }
+                            { Name = None
+                              Definition = "CHECK ((length(VALUE) < 100))"
+                              IsValidated = true }
+                            { Name = Some(id' "email_lower")
+                              Definition = "CHECK ((VALUE = lower(VALUE)))"
+                              IsValidated = false } ]
                         Scope = Managed } ]
               ServerVersion =
                 Fact.create
@@ -218,6 +238,16 @@ let private sample : ResolvedDesiredState =
         [ { Table = "shop.product"
             Defaults = [ "status", "'open'::text" ]
             Checks = [ "product_total_positive", "(total > (0)::numeric)" ] } ]
+      NormalisedDomains =
+        [ { Domain = "shop.email"
+            BaseType = "text"
+            Collation = Some "pg_catalog.\"C\""
+            NotNull = true
+            Default = Some "'nobody@example.com'::text"
+            Constraints =
+              [ "CHECK ((VALUE ~ '@'::text))", true
+                "CHECK ((length(VALUE) < 100))", true
+                "CHECK ((VALUE = lower(VALUE)))", false ] } ]
       Policies = [ qn "shop" "product", policy "p_all" PolicyCommand.All true (Some "(a)") None ]
       RowSecurity = [ qn "shop" "product", RowSecuritySetting.Enable ]
       Data =
@@ -307,7 +337,9 @@ let ``a sequence bound larger than an int survives`` () =
 let ``an artifact from a different format version is refused by name`` () =
     // Not parsed optimistically. A reader that guessed would deploy something
     // other than what was compiled, which is the one thing compiling rules out.
-    let text = (Artifact.toText sample).Replace("\"formatVersion\":1", "\"formatVersion\":99")
+    let text =
+        (Artifact.toText sample)
+            .Replace(sprintf "\"formatVersion\":%d" Artifact.FormatVersion, "\"formatVersion\":99")
 
     match Artifact.ofText text with
     | Ok _ -> failwith "a future format version was accepted"
@@ -349,7 +381,7 @@ let ``the sample carries every SchemaObject case`` () =
     let cases = FSharpType.GetUnionCases typeof<SchemaObject> |> Array.map (fun c -> c.Name)
 
     Assert.Equal<string array>(
-        [| "TableObject"; "ViewObject"; "RoutineObject"; "SequenceObject"; "EnumObject" |],
+        [| "TableObject"; "ViewObject"; "RoutineObject"; "SequenceObject"; "EnumObject"; "DomainObject" |],
         cases)
 
     assertEveryCaseReaches
@@ -357,7 +389,8 @@ let ``the sample carries every SchemaObject case`` () =
           "ViewObject", "\"kind\":\"view\""
           "RoutineObject", "\"kind\":\"routine\""
           "SequenceObject", "\"kind\":\"sequence\""
-          "EnumObject", "\"kind\":\"enum-type\"" ]
+          "EnumObject", "\"kind\":\"enum-type\""
+          "DomainObject", "\"kind\":\"domain-type\"" ]
 
 [<Fact>]
 let ``the sample carries every GrantTarget case`` () =

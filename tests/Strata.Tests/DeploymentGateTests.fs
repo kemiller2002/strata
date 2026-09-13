@@ -190,6 +190,20 @@ let private everyChange : Change list =
     [ CreateEnumType(qn "sales" "status")
       AddEnumValue(qn "sales" "status", "shipped", Some "pending")
       DropEnumType(qn "sales" "status")
+      CreateDomainType(qn "sales" "email")
+      DropDomainType(qn "sales" "email")
+      SetDomainDefault(qn "sales" "email", "'x@y.z'::text", Some "'a@b.c'::text")
+      // The other half of `replacing`: a domain that had no default at all.
+      SetDomainDefault(qn "sales" "email", "'x@y.z'::text", None)
+      DropDomainDefault(qn "sales" "email")
+      SetDomainNotNull(qn "sales" "email")
+      DropDomainNotNull(qn "sales" "email")
+      AddDomainConstraint(qn "sales" "email", Some(id' "email_shape"), "CHECK ((VALUE ~ '@'::text))")
+      // And an unnamed one, which is a different thing to report.
+      AddDomainConstraint(qn "sales" "email", None, "CHECK ((VALUE ~ '@'::text))")
+      DropDomainConstraint(qn "sales" "email", Some(id' "email_shape"))
+      DropDomainConstraint(qn "sales" "email", None)
+      ValidateDomainConstraint(qn "sales" "email", id' "email_shape")
       DropColumn(orders, id' "c")
       DropTable orders
       AlterColumnType(orders, id' "c", "bigint")

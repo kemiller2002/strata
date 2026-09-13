@@ -236,6 +236,7 @@ let ``Strata reads the declaration the way the server does`` (name: string) =
             | RoutineObject r -> RoutineObject { r with Name = qualify r.Name }
             | SequenceObject s -> SequenceObject { s with Name = qualify s.Name }
             | EnumObject e -> EnumObject { e with Name = qualify e.Name }
+            | DomainObject d -> DomainObject { d with Name = qualify d.Name }
 
         let desired =
             { declared.Snapshot with Objects = declared.Snapshot.Objects |> List.map requalify }
@@ -331,7 +332,8 @@ let ``Strata reads the declaration the way the server does`` (name: string) =
                     Data = resolved.Data
                     DataFailures = resolved.DataFailures
                     NormalisedViews = resolved.NormalisedViews
-                    NormalisedTables = resolved.NormalisedTables }
+                    NormalisedTables = resolved.NormalisedTables
+                    NormalisedDomains = resolved.NormalisedDomains }
 
         // Rendered so a failure names what diverged rather than just counting.
         // `SchemaDiff.describe` is private, and it stays that way: widening
