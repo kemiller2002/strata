@@ -1687,6 +1687,34 @@
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null
+    },
+    {
+      "id": "WI-0101",
+      "title": "A materialized view's definition is never compared",
+      "description": "A materialized view is created and then compared on PRESENCE only: renderViews skips matviews (ViewObject v when not v.IsMaterialized) so no normalisation happens, and otherObjectChanges guards its comparison the same way. Measured: changing a matview body server-side produced no change, only 'materialized view exists on both sides; its definition was NOT compared, so the bodies may differ', while the same edit to a plain view and a SQL routine were both caught. It is disclosed rather than silent, so nothing lies -- but a drifted matview reads as converged-with-a-footnote on every run. Harder than a plain view because there is no CREATE OR REPLACE MATERIALIZED VIEW: converging one means DROP + CREATE + REFRESH, which discards the stored result and takes a lock. So it needs gate treatment as a destructive change, not just a comparison. Proposed shape: normalise via the same shadow path plain views use, and emit ReplaceMaterializedView as Block-by-default with the data loss stated in the verdict.",
+      "tags": [],
+      "priority": "medium",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-13T11:39:00Z",
+      "updatedAt": "2026-09-13T11:39:09Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0102",
+      "title": "No usage documentation for Strata or for agents driving it",
+      "description": "README.md described the ROS pilot scaffolding and said nothing about how to use Strata. There was no agent-facing guide at all, so an agent had to infer the CLI surface, the exit-code semantics and the suppressed-list contract from source. Written: a task-oriented README with worked examples, three mermaid diagrams (compile/deploy split, plan-gate-apply, shadow normalisation) and a coverage table; and docs/strata/AGENT-GUIDE.md with a use-vs-grep decision table, the scope-once/--brief session pattern, exit-code traps and a copy-paste system prompt. Every example was executed against a live PostgreSQL 16.15 and the transcripts corrected where invented output differed from real output.",
+      "tags": [],
+      "priority": "medium",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-13T11:39:00Z",
+      "updatedAt": "2026-09-13T11:41:22Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
     }
   ]
 }

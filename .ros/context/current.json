@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "claude",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-09-13T03:42:52Z",
+  "updatedAt": "2026-09-13T11:41:21Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -2321,6 +2321,31 @@
         "EXE-20260913T034105389Z-a1934770"
       ],
       "completedAt": "2026-09-13T03:42:52Z"
+    },
+    {
+      "id": "WI-0102",
+      "type": "documentation",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "README.md"
+        },
+        {
+          "type": "implementation",
+          "path": "docs/strata/AGENT-GUIDE.md"
+        },
+        {
+          "type": "tests",
+          "path": "scripts/check-docs-match-cli.sh"
+        }
+      ],
+      "updatedAt": "2026-09-13T11:41:21Z",
+      "telemetryExecutionIds": [
+        "EXE-20260913T113910007Z-234440a6"
+      ],
+      "completedAt": "2026-09-13T11:41:21Z"
     }
   ]
 }

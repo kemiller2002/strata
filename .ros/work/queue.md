@@ -103,3 +103,5 @@
 | WI-0098 | Enum and domain types cannot be declared | complete |  | high |
 | WI-0099 | Domain types cannot be declared | complete |  | medium |
 | WI-0100 | A resolved field that reaches no consumer compiles clean | complete |  | medium |
+| WI-0101 | A materialized view's definition is never compared | ready |  | medium |
+| WI-0102 | No usage documentation for Strata or for agents driving it | complete |  | medium |
