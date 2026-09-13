@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 97,
+  "nextSeq": 99,
   "items": [
     {
       "id": "WI-0001",
@@ -1628,6 +1628,34 @@
       "attachments": [],
       "createdAt": "2026-09-12T23:19:53Z",
       "updatedAt": "2026-09-12T23:52:02Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0097",
+      "title": "A generated column never converges",
+      "description": "PgParserAdapter reads HasDefault as (ConstrDefault || serial), so a GENERATED ALWAYS AS (...) STORED column reads as having no default. The catalog reads has_default as (atthasdef AND adbin IS NOT NULL), and a generated column's expression LIVES in pg_attrdef, so the deployed side reads true. Every plan then reports 'default absent in desired state and present in the database' as an unclassified change, forever. Reproduced live: deploy a table with a generated column to an empty database, then drift immediately reports 1 difference. Same family as WI-0054 and WI-0095. The fix mirrors the serial case the same line already handles.",
+      "tags": [],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-13T00:31:00Z",
+      "updatedAt": "2026-09-13T00:35:06Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0098",
+      "title": "Enum and domain types cannot be declared",
+      "description": "SchemaObject models Table, View, Routine and Sequence only. CREATE TYPE ... AS ENUM and CREATE DOMAIN are refused at compile: 'CreateEnumStmt/CreateDomainStmt is not yet read as a desired-state declaration'. The refusal is loud and correct per ER-008, but it means Strata cannot manage a schema containing either -- and an enum is one of the commonest things in a real PostgreSQL schema, so this is the single largest gap between 'works' and 'usable on an existing database'. Needs a SchemaObject case, introspection, diff, and DDL emission; enum value ORDER and ALTER TYPE ... ADD VALUE (which cannot run in a transaction) are the hard parts. Composite types compile but are silently unmodelled, which is worse than refusing and should be made a refusal in the same change.",
+      "tags": [],
+      "priority": "high",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-13T00:31:00Z",
+      "updatedAt": "2026-09-13T00:31:00Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null

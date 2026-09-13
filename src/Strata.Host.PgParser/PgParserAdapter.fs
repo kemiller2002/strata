@@ -661,17 +661,35 @@ module PgParserAdapter =
                 | None -> declaredType
               IsNullable = not isNotNull }
           Position = position
-          // A serial column always has a nextval default, which the catalog
-          // reports and the file does not write.
-          // An IDENTITY column is deliberately NOT counted here, though a
-          // serial one is. The two look alike and the catalog treats them
-          // differently: a serial column really does get a `nextval` default in
-          // pg_attrdef, while an identity column's value comes from
-          // `attidentity` and it has no default at all. Claiming one produced
-          // "default present in desired state and absent in the database" on
-          // every run — caught by the round-trip immediately after the
-          // nullability fix above, in the same edit.
-          HasDefault = hasKind ConstrType.ConstrDefault || serial.IsSome
+          // What the CATALOG counts as a default, which is not the same list a
+          // file writes. `has_default` there is
+          // `atthasdef AND adbin IS NOT NULL`, so the question is only ever
+          // "does this column get a row in pg_attrdef".
+          //
+          // A serial column does: the catalog reports a `nextval` default the
+          // file never wrote.
+          //
+          // A GENERATED ALWAYS AS (...) STORED column does too — its generation
+          // expression is stored in pg_attrdef like any other default. Missing
+          // that made every such column report "default absent in desired state
+          // and present in the database" on every run, an unclassified change
+          // that no plan could ever settle. Reproduced live: deploy a table with
+          // one to an empty database, and drift reports a difference
+          // immediately (`WI-0097`).
+          //
+          // An IDENTITY column does NOT, and is deliberately excluded. It looks
+          // like the other two and the catalog treats it differently: its value
+          // comes from `attidentity` and it has no pg_attrdef row at all.
+          // Counting it produced the mirror-image churn — "default present in
+          // desired state and absent in the database" — caught by the
+          // round-trip immediately after the nullability fix above.
+          //
+          // So the rule is the catalog's, not the syntax's: these three look
+          // alike in a file and only one of them is absent from pg_attrdef.
+          HasDefault =
+              hasKind ConstrType.ConstrDefault
+              || serial.IsSome
+              || hasKind ConstrType.ConstrGenerated
           // A declared default is not comparable until the SERVER has rendered
           // it: the file says DEFAULT 'open', the catalog says 'open'::text.
           // ShadowNormalisation supplies the comparable form.
