@@ -65,6 +65,33 @@
     "updated": "2026-09-12"
   },
   {
+    "confidence": "high",
+    "created": "2026-09-13",
+    "created_by_agent": "claude",
+    "decision_type": "engineering-practice",
+    "evidence": [
+      "EV-STRATA-2026-F4C6",
+      "EV-STRATA-2026-D8E1",
+      "EV-STRATA-2026-D7B2",
+      "EV-STRATA-2026-E3D7"
+    ],
+    "id": "DF-STRATA-2026-6C48",
+    "path": "research/decisions/DF-STRATA-2026-6C48--documentation-is-executed-before-it-is-published.md",
+    "status": "accepted",
+    "superseded_by": [],
+    "supersedes": [],
+    "tags": [
+      "strata",
+      "documentation",
+      "readme",
+      "er-008",
+      "evidence",
+      "agents"
+    ],
+    "title": "Documentation is executed before it is published, and reports evidence that contradicts it",
+    "updated": "2026-09-13"
+  },
+  {
     "confidence": "medium",
     "created": "2026-09-12",
     "created_by_agent": "claude",

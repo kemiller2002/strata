@@ -73,6 +73,9 @@ jobs:
       - name: Check every resolved field reaches the diff
         run: ./scripts/check-resolved-state-wiring.sh
 
+      - name: Check the docs still match the CLI
+        run: ./scripts/check-docs-match-cli.sh
+
       - name: Build the live test fixture
         run: ./scripts/test-fixture.sh
         env:
