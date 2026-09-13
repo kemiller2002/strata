@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "claude",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-09-13T11:41:21Z",
+  "updatedAt": "2026-09-13T11:48:24Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -2346,6 +2346,31 @@
         "EXE-20260913T113910007Z-234440a6"
       ],
       "completedAt": "2026-09-13T11:41:21Z"
+    },
+    {
+      "id": "WI-0103",
+      "type": "documentation",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "docs/strata/DOCUMENTATION-REQUIREMENTS.md"
+        },
+        {
+          "type": "implementation",
+          "path": "research/decisions/DF-STRATA-2026-6C48--documentation-is-executed-before-it-is-published.md"
+        },
+        {
+          "type": "tests",
+          "path": "scripts/check-docs-match-cli.sh"
+        }
+      ],
+      "updatedAt": "2026-09-13T11:48:24Z",
+      "telemetryExecutionIds": [
+        "EXE-20260913T114508295Z-4f08461d"
+      ],
+      "completedAt": "2026-09-13T11:48:24Z"
     }
   ]
 }

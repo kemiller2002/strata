@@ -1715,6 +1715,20 @@
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null
+    },
+    {
+      "id": "WI-0103",
+      "title": "The rules the documentation was written under are not written down",
+      "description": "WI-0102 produced README.md and docs/strata/AGENT-GUIDE.md under a set of rules that were applied but never recorded: execute every transcript before publishing it, measure a figure rather than recall it, report evidence that contradicts the claim you were asked to make, do not tidy real output, name what is NOT covered as prominently as what is, and tell an agent where the tool is the wrong choice. Three transcripts were wrong until they were run, and one claim about this repository's own state (that WI-0101 had been captured) was asserted without checking and was false. None of that is durable: the next person or agent writing a README has no way to know any of it, and only one of the rules is mechanically enforced. Write them as requirements with the failures that motivated each, a decision record as their authority, and enforcement where enforcement is possible.",
+      "tags": [],
+      "priority": "medium",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-13T11:45:07Z",
+      "updatedAt": "2026-09-13T11:48:25Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
     }
   ]
 }

@@ -65,11 +65,32 @@ Rules are constraints, so they trace to a *mechanism*, not to a work item.
 | `HY-STRATA-2026-5E03` PREPARE/EXPLAIN substitutes for binder | `EX-STRATA-2026-B2E8` | active, untested |
 | `HY-STRATA-2026-6F14` value independence | deferred | proposed |
 
+## Documentation requirements
+
+Requirements about the repository's own documentation rather than about Strata's
+behaviour. Full statements, with the failure that motivated each, in
+[`DOCUMENTATION-REQUIREMENTS.md`](DOCUMENTATION-REQUIREMENTS.md).
+
+| Requirement | ROS record | Work item | Enforcement |
+|---|---|---|---|
+| `DOC-001` transcripts are executed | `DF-STRATA-2026-6C48` | WI-0102, WI-0103 | human |
+| `DOC-002` figures are measured or cited | `DF-STRATA-2026-6C48` | WI-0102, WI-0103 | human |
+| `DOC-003` contradicting evidence is reported | `DF-STRATA-2026-6C48` | WI-0102, WI-0103 | human |
+| `DOC-004` real output is not tidied | `DF-STRATA-2026-6C48` | WI-0102, WI-0103 | human |
+| `DOC-005` commands and flags must exist | `DF-STRATA-2026-6C48` | WI-0102 | `scripts/check-docs-match-cli.sh` |
+| `DOC-006` internal links must resolve | `DF-STRATA-2026-6C48` | WI-0103 | `scripts/check-docs-match-cli.sh` |
+| `DOC-007` gaps named as prominently as successes | `DF-STRATA-2026-6C48` | WI-0102, WI-0103 | human |
+| `DOC-008` repository claims are read, not recalled | `DF-STRATA-2026-6C48` | WI-0103 | human |
+
+Six of eight are human obligations. Recorded as such rather than left implicit:
+a traceability table implying mechanical coverage it does not have would be the
+`DOC-004` failure in a different place.
+
 ## Orphan checks
 
 **Orphan requirements** (a requirement with no work item and no explicit
 deferral): none. PR-018..PR-024 are explicitly deferred with named blocking
-questions.
+questions. DOC-001..DOC-008 trace to WI-0102 and WI-0103.
 
 **Orphan work items** (a work item tracing to no requirement): none. WI-0003
 traces to `DF-STRATA-2026-D3F8` as justified engineering support; WI-0014 traces

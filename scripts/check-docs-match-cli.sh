@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Catch documentation that has drifted from the CLI (WI-0102).
+# Catch documentation that has drifted from the CLI or from the tree (DOC-005,
+# DOC-006 in docs/strata/DOCUMENTATION-REQUIREMENTS.md).
 #
 # README.md and docs/strata/AGENT-GUIDE.md are full of copy-pasteable commands.
 # A flag that is renamed or a command that is removed leaves those examples
@@ -8,11 +9,13 @@
 # caused it.
 #
 # So: every `strata <command>` and every `--flag` the docs mention must appear in
-# the CLI's own `--help`. This checks the SHAPE of the documentation, not its
-# prose; it cannot tell you an explanation is out of date, only that a command
-# or flag no longer exists.
+# the CLI's own `--help` (DOC-005), and every relative link must point at a file
+# that exists (DOC-006). This checks the SHAPE of the documentation, not its
+# prose; it cannot tell you an explanation is out of date, that a transcript was
+# invented, or that a figure was recalled rather than measured. Those are
+# DOC-001 to DOC-004 and DOC-007 to DOC-008, and they stay human obligations.
 #
-# Exit non-zero on a command or flag the CLI does not have.
+# Exit non-zero on a command or flag the CLI does not have, or a broken link.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -37,7 +40,11 @@ cli_flags = set(re.findall(r"--[a-z][a-z-]*", help_text))
 # spaces in the help output.
 cli_commands = set(re.findall(r"^  ([a-z][a-z-]*)\s", help_text, re.M))
 
-docs = ["README.md", "docs/strata/AGENT-GUIDE.md"]
+docs = [
+    "README.md",
+    "docs/strata/AGENT-GUIDE.md",
+    "docs/strata/DOCUMENTATION-REQUIREMENTS.md",
+]
 
 # Flags that belong to `dotnet`, not to strata, and markdown rules that look
 # like flags. Listed rather than pattern-matched so a new one is a deliberate
@@ -81,18 +88,28 @@ for path in docs:
         if command not in cli_commands:
             problems.append(f"{path}: documents command `strata {command}`, which the CLI does not have")
 
+    # DOC-006: every relative link resolves. A link into research/ or docs/ that
+    # points at a renamed record is the same failure as a renamed flag — the
+    # reader follows it and lands nowhere.
+    base = os.path.dirname(path)
+    for label, target in re.findall(r"\[([^\]]+)\]\(([^)#\s]+)(?:#[^)]*)?\)", text):
+        if target.startswith(("http://", "https://", "mailto:")):
+            continue
+        if not os.path.exists(os.path.normpath(os.path.join(base, target))):
+            problems.append(f"{path}: link [{label}] points at {target}, which does not exist")
+
 if problems:
     print("DOCS DO NOT MATCH THE CLI", file=sys.stderr)
     print("", file=sys.stderr)
     for problem in problems:
         print(f"  {problem}", file=sys.stderr)
     print("", file=sys.stderr)
-    print("A copy-pasteable example that no longer works is worse than no example.", file=sys.stderr)
-    print("Update the docs, or restore the flag.", file=sys.stderr)
+    print("A copy-pasteable example that no longer works, or a link that lands", file=sys.stderr)
+    print("nowhere, is worse than none. Update the docs, or restore the target.", file=sys.stderr)
     sys.exit(1)
 
 print(
-    f"check-docs-match-cli: OK ({len(cli_commands)} command(s), "
-    f"{len(cli_flags)} flag(s) — every one the docs use exists)"
+    f"check-docs-match-cli: OK ({len(docs)} document(s) — every command, flag "
+    f"and link resolves)"
 )
 PY

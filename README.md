@@ -654,6 +654,9 @@ decisions, hypotheses and evidence are tracked as records rather than prose.
 
 - [`AGENTS.md`](AGENTS.md) — the canonical agent contract for working *on* this repo
 - [`BOOTSTRAP.md`](BOOTSTRAP.md) — setup
+- [`docs/strata/DOCUMENTATION-REQUIREMENTS.md`](docs/strata/DOCUMENTATION-REQUIREMENTS.md)
+  — the rules this README was written under (`DOC-001`–`DOC-008`), and the
+  failures that motivated each
 - [`docs/development-telemetry.md`](docs/development-telemetry.md) — telemetry rules
 - [`research/`](research) — hypotheses, experiments, evidence, decisions
 
@@ -661,6 +664,18 @@ decisions, hypotheses and evidence are tracked as records rather than prose.
 ./ros validate            # work-item attribution and record integrity
 ./ros registry check
 scripts/ros-validate.sh   # what CI runs — use this, not ./ros validate alone
+```
+
+### Changing this README
+
+It is held to `DOC-001`–`DOC-008`
+([`DF-STRATA-2026-6C48`](research/decisions/DF-STRATA-2026-6C48--documentation-is-executed-before-it-is-published.md)).
+The short version: **run every command you show and paste what came back**,
+measure or cite every figure, report evidence that contradicts you, do not tidy
+real output, and name what is not covered. Two of the eight are checked in CI:
+
+```bash
+scripts/check-docs-match-cli.sh    # commands, flags and links must exist
 ```
 
 > **Pilot rule.** The operating system is itself under evaluation. Do not infer

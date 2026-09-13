@@ -105,3 +105,4 @@
 | WI-0100 | A resolved field that reaches no consumer compiles clean | complete |  | medium |
 | WI-0101 | A materialized view's definition is never compared | ready |  | medium |
 | WI-0102 | No usage documentation for Strata or for agents driving it | complete |  | medium |
+| WI-0103 | The rules the documentation was written under are not written down | complete |  | medium |
