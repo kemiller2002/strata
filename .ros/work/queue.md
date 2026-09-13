@@ -101,4 +101,5 @@
 | WI-0096 | No harness for running the CLI as a process | complete |  | medium |
 | WI-0097 | A generated column never converges | complete |  | high |
 | WI-0098 | Enum and domain types cannot be declared | complete |  | high |
-| WI-0099 | Domain types cannot be declared | captured |  | medium |
+| WI-0099 | Domain types cannot be declared | complete |  | medium |
+| WI-0100 | A resolved field that reaches no consumer compiles clean | complete |  | medium |

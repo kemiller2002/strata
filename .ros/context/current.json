@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "claude",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-09-13T03:08:21Z",
+  "updatedAt": "2026-09-13T03:42:52Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -2259,6 +2259,68 @@
         "EXE-20260913T024501901Z-d161054e"
       ],
       "completedAt": "2026-09-13T03:08:21Z"
+    },
+    {
+      "id": "WI-0099",
+      "type": "feature",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Semantic/Schema.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Application/SchemaDiff.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Host.Postgres/ShadowNormalisation.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Host.PgParser/PgParserAdapter.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/SchemaDiffTests.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/ShadowNormalisationTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-13T03:42:42Z",
+      "telemetryExecutionIds": [
+        "EXE-20260913T031213716Z-977b8b0c"
+      ],
+      "completedAt": "2026-09-13T03:42:42Z"
+    },
+    {
+      "id": "WI-0100",
+      "type": "defect",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "scripts/check-resolved-state-wiring.sh"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Cli/Deployment.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/AwkwardFormsTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-13T03:42:52Z",
+      "telemetryExecutionIds": [
+        "EXE-20260913T034105389Z-a1934770"
+      ],
+      "completedAt": "2026-09-13T03:42:52Z"
     }
   ]
 }

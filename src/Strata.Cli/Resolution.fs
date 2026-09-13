@@ -94,6 +94,54 @@ let private renderTables connectionString (declared: DesiredState.Loaded) =
                   "could not normalise declared tables (%s); defaults and check expressions will be reported as not-compared."
                   message ]
 
+/// Every enum type the project declares, as `(qualified name, values)`.
+///
+/// Passed to the parts of resolution that BUILD something in the shadow — a
+/// reference table, a domain — because either may name a type that arrives in
+/// this same plan and does not exist on the server yet.
+let private declaredEnumTypes (declared: DesiredState.Loaded) =
+    declared.Snapshot.Objects
+    |> List.choose (fun o ->
+        match o with
+        | EnumObject e -> Some(QualifiedName.display e.Name, e.Values)
+        | _ -> None)
+
+/// Declared domains, rendered by the server.
+///
+/// The one part of the declared side that cannot be compared AT ALL without
+/// this: a `CREATE DOMAIN`'s default expression and check predicates do not
+/// survive the parser, so a domain that fails to render is reported as
+/// not-compared rather than diffed against nothing.
+let private renderDomains connectionString (declared: DesiredState.Loaded) =
+    let declaredDomains =
+        declared.Snapshot.Objects
+        |> List.choose (fun o ->
+            match o with
+            | DomainObject d ->
+                declarationOf declared d.Name
+                |> Option.map (fun text -> QualifiedName.display d.Name, text)
+            | _ -> None)
+
+    match ShadowNormalisation.normaliseDomains connectionString (declaredEnumTypes declared) declaredDomains with
+    | Ok normalised ->
+        normalised
+        |> List.map (fun n ->
+            ({ Domain = n.Domain
+               BaseType = n.BaseType
+               Collation = n.Collation
+               NotNull = n.NotNull
+               Default = n.Default
+               Constraints = n.Constraints }: SchemaDiff.NormalisedDomain)),
+        []
+    | Microsoft.FSharp.Core.Error message ->
+        [],
+        if List.isEmpty declaredDomains then
+            []
+        else
+            [ sprintf
+                  "could not normalise declared domains (%s); their base types, defaults and check constraints will be reported as not-compared."
+                  message ]
+
 /// Declared policies, with their expressions rendered by the server. A file's
 /// `tenant = 'x'` and the catalog's `(tenant = 'x'::text)` are the same policy,
 /// and nothing but PostgreSQL can say so — the same reason check constraints go
@@ -173,14 +221,7 @@ let resolveData connectionString (declared: DesiredState.Loaded) =
 
     // The types the project declares, so a reference table whose column uses
     // one that arrives in this same plan can still be built in the shadow.
-    let declaredEnums =
-        declared.Snapshot.Objects
-        |> List.choose (fun o ->
-            match o with
-            | EnumObject e -> Some(QualifiedName.display e.Name, e.Values)
-            | _ -> None)
-
-    match ReferenceData.resolve connectionString declaredEnums declaredData with
+    match ReferenceData.resolve connectionString (declaredEnumTypes declared) declaredData with
     | Ok (resolutions, failures) ->
         let row (r: ReferenceData.ResolvedRow) =
             ({ Key = r.Key
@@ -219,6 +260,7 @@ let resolveData connectionString (declared: DesiredState.Loaded) =
 let resolve (connectionString: string) (declared: DesiredState.Loaded) : ResolvedDesiredState =
     let views, viewWarnings = renderViews connectionString declared
     let tables, tableWarnings = renderTables connectionString declared
+    let domains, domainWarnings = renderDomains connectionString declared
     let policies, policyWarnings = renderPolicies connectionString declared
     let (data, dataFailures), dataWarnings = resolveData connectionString declared
 
@@ -237,10 +279,17 @@ let resolve (connectionString: string) (declared: DesiredState.Loaded) : Resolve
     { Declared = declared
       NormalisedViews = views
       NormalisedTables = tables
+      NormalisedDomains = domains
       Policies = policies
       RowSecurity = declared.RowSecurity
       Data = data
       DataFailures = dataFailures
       Warnings =
-        List.concat [ viewWarnings; tableWarnings; policyWarnings; dataWarnings; versionWarnings ]
+        List.concat
+            [ viewWarnings
+              tableWarnings
+              domainWarnings
+              policyWarnings
+              dataWarnings
+              versionWarnings ]
       CompiledWith = compiledWith }

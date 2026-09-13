@@ -51,6 +51,13 @@ type ResolvedDesiredState =
       /// Defaults and check expressions, rendered.
       NormalisedTables: SchemaDiff.NormalisedTable list
 
+      /// Declared domains, with their base type, default and check predicates
+      /// as the server renders them. A domain that is ABSENT here was not
+      /// rendered, and its default and constraints are then disclosed as
+      /// not-compared — never compared against the empty strings a bare parse
+      /// produces, which would propose the same changes on every run forever.
+      NormalisedDomains: SchemaDiff.NormalisedDomain list
+
       /// Declared policies, with `Using` and `WithCheck` filled in by the
       /// server where normalisation succeeded. A policy that kept its
       /// placeholder is compared on everything except its expressions, and the

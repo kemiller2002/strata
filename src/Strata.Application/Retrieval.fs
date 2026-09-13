@@ -270,6 +270,28 @@ module Retrieval =
                                   // operators use. Sorting these would be a
                                   // different type.
                                   "values", JArray(e.Values |> List.map JString) ]
+                    | Some (DomainObject d) ->
+                        JObject [ "name", JString(QualifiedName.display d.Name)
+                                  "kind", JString "domain-type"
+                                  "scope", managementScope d.Scope
+                                  "base-type", JString d.BaseType
+                                  "collation",
+                                  (match d.Collation with Some c -> JString c | None -> JNull)
+                                  "not-null", JBool d.NotNull
+                                  "default",
+                                  (match d.Default with Some e -> JString e | None -> JNull)
+                                  "constraints",
+                                  JArray(
+                                      d.Constraints
+                                      |> List.map (fun c ->
+                                          JObject [ // `null`, not a placeholder: a constraint
+                                                    // the declaring file did not name has no
+                                                    // name until the server assigns one.
+                                                    "name",
+                                                    (match c.Name with Some n -> JString n.Display | None -> JNull)
+                                                    "definition", JString c.Definition
+                                                    "validated", JBool c.IsValidated ])
+                                  ) ]
                     | None ->
                         // Not in the snapshot is not "does not exist".
                         JObject [ "name", JString(QualifiedName.display name)

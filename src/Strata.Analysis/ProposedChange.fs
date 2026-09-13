@@ -172,6 +172,44 @@ module ProposedChange =
         | AddEnumValue of enumType: QualifiedName * value: string * after: string option
         /// Removes an enumerated type.
         | DropEnumType of enumType: QualifiedName
+        /// Creates a domain. Additive: nothing can depend on a type that does
+        /// not exist.
+        | CreateDomainType of domain: QualifiedName
+        /// Removes a domain, and with it every column declared of that type.
+        | DropDomainType of domain: QualifiedName
+        /// Gives an existing domain a DEFAULT, or changes the one it has.
+        ///
+        /// `replacing` is the expression being overwritten, `None` when the
+        /// domain had no default. Carried so a reader is told what is being
+        /// replaced rather than only what it becomes.
+        | SetDomainDefault of domain: QualifiedName * expression: string * replacing: string option
+        /// Takes an existing domain's DEFAULT away.
+        | DropDomainDefault of domain: QualifiedName
+        /// Makes an existing domain reject NULL.
+        ///
+        /// Tightening, and LOUD: PostgreSQL scans every column declared with
+        /// the domain and the statement fails if one holds a NULL. A plan is one
+        /// transaction, so a failure here costs the run and nothing else.
+        | SetDomainNotNull of domain: QualifiedName
+        /// Lets an existing domain admit NULL again.
+        | DropDomainNotNull of domain: QualifiedName
+        /// Adds a CHECK to an existing domain.
+        ///
+        /// `name` is `None` for a constraint the declaring file did not name;
+        /// PostgreSQL then invents one. `definition` is the whole clause as the
+        /// catalog renders it, a trailing `NOT VALID` included.
+        | AddDomainConstraint of domain: QualifiedName * name: Identifier option * definition: string
+        /// Removes a CHECK from an existing domain.
+        | DropDomainConstraint of domain: QualifiedName * name: Identifier option
+        /// Checks the values a constraint added `NOT VALID` was allowed to skip.
+        ///
+        /// A `NOT VALID` constraint applies to new values and says nothing about
+        /// the ones already stored, so a domain carrying one has NOT converged
+        /// to a project that declares the constraint plainly. Validating is the
+        /// operation that closes that gap, and it is the whole operation — the
+        /// predicate is already there, so a drop and a re-add would scan the same
+        /// values for the same answer.
+        | ValidateDomainConstraint of domain: QualifiedName * name: Identifier
         /// Creates a relation. Additive.
         | CreateTable of table: QualifiedName
         /// Creates an index. Additive to READERS — nothing can depend on an
@@ -288,6 +326,15 @@ module ProposedChange =
             | CreateEnumType _ -> "create-enum-type"
             | AddEnumValue _ -> "add-enum-value"
             | DropEnumType _ -> "drop-enum-type"
+            | CreateDomainType _ -> "create-domain-type"
+            | DropDomainType _ -> "drop-domain-type"
+            | SetDomainDefault _ -> "set-domain-default"
+            | DropDomainDefault _ -> "drop-domain-default"
+            | SetDomainNotNull _ -> "set-domain-not-null"
+            | DropDomainNotNull _ -> "drop-domain-not-null"
+            | AddDomainConstraint _ -> "add-domain-constraint"
+            | DropDomainConstraint _ -> "drop-domain-constraint"
+            | ValidateDomainConstraint _ -> "validate-domain-constraint"
             | CreateSequence _ -> "create-sequence"
             | DropSequence _ -> "drop-sequence"
             | AlterSequence _ -> "alter-sequence"
@@ -321,6 +368,15 @@ module ProposedChange =
             | CreateEnumType table
             | DropEnumType table
             | AddEnumValue (table, _, _)
+            | CreateDomainType table
+            | DropDomainType table
+            | SetDomainDefault (table, _, _)
+            | DropDomainDefault table
+            | SetDomainNotNull table
+            | DropDomainNotNull table
+            | AddDomainConstraint (table, _, _)
+            | DropDomainConstraint (table, _)
+            | ValidateDomainConstraint (table, _)
             | CreateSequence table
             | DropSequence table
             | AlterSequence table
@@ -394,6 +450,22 @@ module ProposedChange =
             // Dropping a type takes every column declared with it. There is no
             // quieter version of this: the columns go with it.
             | DropEnumType _
+            // Same: the columns go with the type.
+            | DropDomainType _
+            // Every insert that omitted a column of this type used to get one
+            // value and now gets another, or none. Nothing errors — the same
+            // shape as `AlterSequence`. Both sit here rather than only the drop
+            // because the domain ALREADY EXISTS: columns are declared with it
+            // and writes are relying on what it does today. A domain arriving
+            // for the first time brings its default with it under
+            // `CreateDomainType`, which is additive.
+            | SetDomainDefault _
+            | DropDomainDefault _
+            // Loosening. Nothing breaks and nothing errors; what is lost is the
+            // promise that the excluded values cannot arrive — `DropConstraint`
+            // exactly.
+            | DropDomainNotNull _
+            | DropDomainConstraint _
             // Whatever ran as that role starts failing on its next statement.
             | RevokePrivileges _
             // Rows stop being visible, and nothing errors. Replacing a policy
@@ -428,6 +500,17 @@ module ProposedChange =
             // not: no existing value stops being valid.
             | AddEnumValue _
             | CreateEnumType _
+            | CreateDomainType _
+            // Tightening, and it cannot break a reader quietly: PostgreSQL
+            // scans the columns declared with the domain and raises if one
+            // would violate. A plan is one transaction, so the failure costs the
+            // run rather than the data. `AddConstraint` is judged the same way.
+            | SetDomainNotNull _
+            | AddDomainConstraint _
+            // Reports on values that are already stored; it changes none of
+            // them and removes nothing. It can FAIL, loudly, which is the point
+            // of running it.
+            | ValidateDomainConstraint _
             | CreateSequence _
             | CreateExtension _
             | CreatePolicy _

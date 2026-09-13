@@ -594,6 +594,17 @@ module PgParserAdapter =
             | [ schema; name ] -> qualifiedNameOf schema (withModifiers name)
             | _ -> QualifiedName.unqualified (identifierOf "unknown")
 
+    /// The name the file gave a constraint, if it gave one.
+    ///
+    /// `None`, never a fabricated placeholder. An unnamed constraint's name is
+    /// assigned by the server at CREATE time, so inventing one here made the
+    /// declared side permanently disagree with the catalog — see
+    /// `Schema.ConstraintName`. Shared by tables and domains, which have the
+    /// same two states for the same reason.
+    let private constraintNameOf (c: Constraint) : ConstraintName =
+        if isNull (box c) || String.IsNullOrEmpty c.Conname then None
+        else Some(identifierOf c.Conname)
+
     let private constraintsOf (col: ColumnDef) =
         if isNull (box col.Constraints) then []
         else
@@ -735,15 +746,7 @@ module PgParserAdapter =
             columnDefs
             |> List.collect (fun c -> constraintsOf c |> List.map (fun con -> identifierOf c.Colname, con))
 
-        /// The name the file gave the constraint, if it gave one.
-        ///
-        /// `None`, never a fabricated placeholder. An unnamed constraint's name
-        /// is assigned by the server at CREATE time, so inventing one here made
-        /// the declared side permanently disagree with the catalog — see
-        /// `Schema.ConstraintName`.
-        let constraintName (c: Constraint) : ConstraintName =
-            if isNull (box c) || String.IsNullOrEmpty c.Conname then None
-            else Some(identifierOf c.Conname)
+        let constraintName (c: Constraint) : ConstraintName = constraintNameOf c
 
         // PrimaryKey and UniqueConstraint are structurally identical, so these
         // are annotated: without it F# infers the later-declared type and the
@@ -1890,6 +1893,81 @@ module PgParserAdapter =
                                 else
                                     [ Declared(EnumObject { Name = qualified; Values = values; Scope = Managed }) ]
 
+                        // `CREATE DOMAIN`. The base type, the DEFAULT and every
+                        // CHECK are read as STRUCTURE here and as TEXT nowhere:
+                        // the predicate of a check is not recoverable from the
+                        // parse tree without deparsing, exactly as for a table's
+                        // check constraint, and the catalog reports both already
+                        // normalised. So each constraint arrives with its
+                        // declared name (or its declared namelessness) and an
+                        // EMPTY definition, which `ShadowNormalisation` fills in
+                        // by asking the server what the declaration means. A
+                        // domain that was never normalised has its default and
+                        // constraints DISCLOSED rather than compared — the
+                        // alternative is diffing the catalog against an empty
+                        // string and proposing the same change forever.
+                        | Node.NodeOneofCase.CreateDomainStmt ->
+                            let stmt' = stmt.CreateDomainStmt
+
+                            let parts =
+                                stmt'.Domainname
+                                |> Seq.choose (fun n ->
+                                    if not (isNull (box n.String)) && not (String.IsNullOrEmpty n.String.Sval) then
+                                        Some n.String.Sval
+                                    else
+                                        None)
+                                |> List.ofSeq
+
+                            match parts with
+                            | [] -> [ Unmodelled "CREATE DOMAIN with no domain name" ]
+                            | parts ->
+                                let qualified =
+                                    match parts with
+                                    | [ single ] -> QualifiedName.unqualified (identifierOf single)
+                                    | _ ->
+                                        QualifiedName.qualified
+                                            (identifierOf (List.item (List.length parts - 2) parts))
+                                            (identifierOf (List.last parts))
+
+                                let constraints =
+                                    if isNull (box stmt'.Constraints) then []
+                                    else
+                                        stmt'.Constraints
+                                        |> Seq.choose (fun n ->
+                                            if isNull (box n.Constraint) then None else Some n.Constraint)
+                                        |> List.ofSeq
+
+                                let hasKind kind =
+                                    constraints |> List.exists (fun c -> c.Contype = kind)
+
+                                [ Declared(
+                                      DomainObject
+                                          { Name = qualified
+                                            // As written, rendered the way the
+                                            // catalog spells it. Shadow
+                                            // normalisation replaces it with
+                                            // `format_type`'s own rendering,
+                                            // which is the only authority on
+                                            // whether two spellings are one type.
+                                            BaseType = QualifiedName.display (typeNameOf stmt'.TypeName)
+                                            // A domain's COLLATE is not read
+                                            // from the tree for the same reason
+                                            // its default is not: the server
+                                            // resolves it, and `None` here means
+                                            // "not yet rendered" rather than
+                                            // "no collation".
+                                            Collation = None
+                                            NotNull = hasKind ConstrType.ConstrNotnull
+                                            Default = None
+                                            Constraints =
+                                              constraints
+                                              |> List.filter (fun c -> c.Contype = ConstrType.ConstrCheck)
+                                              |> List.map (fun c ->
+                                                  { Name = constraintNameOf c
+                                                    Definition = ""
+                                                    IsValidated = true })
+                                            Scope = Managed }) ]
+
                         // `CREATE TYPE ... AS (...)` is a COMPOSITE type, and it
                         // is refused rather than ignored. It used to fall
                         // through to the catch-all, where it produced no
@@ -1900,7 +1978,7 @@ module PgParserAdapter =
                         // the file cannot be represented, which is true.
                         | Node.NodeOneofCase.CompositeTypeStmt ->
                             [ Unmodelled
-                                "CREATE TYPE ... AS (...) declares a COMPOSITE type, which Strata does not model. Only enumerated types are read so far." ]
+                                "CREATE TYPE ... AS (...) declares a COMPOSITE type, which Strata does not model. Enumerated types and domains are read; composite and range types are not." ]
 
                         | Node.NodeOneofCase.CreatePolicyStmt ->
                             match policyOf stmt.CreatePolicyStmt with

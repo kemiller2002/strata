@@ -47,3 +47,8 @@ ROS_BASE_REF="$MERGE_BASE" ./ros validate
 # is written one mutation behind (WI-0061) — so it is quietly wrong in exactly
 # the commit that changes it, which is the commit someone reads.
 scripts/check-queue-mirror.sh
+
+# A field the diff reads and nobody supplies compiles clean and reports every
+# object it describes as not-compared. Nothing else notices: `Inputs` is built by
+# record update, so the compiler has no missing field to complain about.
+scripts/check-resolved-state-wiring.sh

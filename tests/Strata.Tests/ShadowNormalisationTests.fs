@@ -273,3 +273,50 @@ let ``a quoted name that merely contains the spelling keeps its own name`` () =
     Assert.Equal(
         "SELECT \"my shop.product notes\" FROM _shadow.\"product\"",
         rewrite "SELECT \"my shop.product notes\" FROM shop.product")
+
+/// Splitting a `CREATE DOMAIN` at its name.
+///
+/// Everything after the name — `AS text`, a `COLLATE`, the `DEFAULT`, every
+/// `CHECK` — is carried into the shadow declaration verbatim, so the only thing
+/// this has to get right is where the name ends. Getting it wrong hands the
+/// server a fragment, the declaration fails on its savepoint, and the domain is
+/// disclosed as not-compared: honest, and a comparison that should have happened.
+
+let private domainRest (ddl: string) =
+    ShadowNormalisation.domainNameEnd ddl
+    |> Option.map (fun i -> ddl.Substring(i).Trim())
+
+[<Fact>]
+let ``a qualified domain name is split from the rest of its declaration`` () =
+    Assert.Equal(Some "AS text NOT NULL", domainRest "CREATE DOMAIN app.email AS text NOT NULL")
+
+[<Fact>]
+let ``the AS is optional, as PostgreSQL allows`` () =
+    Assert.Equal(Some "text NOT NULL", domainRest "CREATE DOMAIN app.email text NOT NULL")
+
+[<Fact>]
+let ``a quoted domain name is one name, dot included`` () =
+    Assert.Equal(Some "AS text", domainRest "CREATE DOMAIN \"odd.name\" AS text")
+
+[<Fact>]
+let ``a domain named domain does not match its own keyword`` () =
+    // The quoted name is hidden from the scanner, so the keyword is the keyword.
+    Assert.Equal(Some "AS text", domainRest "CREATE DOMAIN \"domain\" AS text")
+
+[<Fact>]
+let ``the keyword is not found inside a leading comment`` () =
+    // `-- the email DOMAIN` above the statement would make a looser match split
+    // at the comment and hand the server everything after it.
+    Assert.Equal(
+        Some "AS text",
+        domainRest "-- the email DOMAIN, for addresses\nCREATE DOMAIN app.email AS text")
+
+[<Fact>]
+let ``a declaration with no DOMAIN keyword yields None rather than a guess`` () =
+    Assert.Equal(None, ShadowNormalisation.domainNameEnd "CREATE TABLE t (a int)")
+
+[<Fact>]
+let ``whitespace and newlines between the parts of the name are skipped`` () =
+    Assert.Equal(
+        Some "AS text",
+        domainRest "CREATE DOMAIN\n    app\n    .\n    email\n    AS text")

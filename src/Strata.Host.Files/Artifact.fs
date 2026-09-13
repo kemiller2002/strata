@@ -65,7 +65,7 @@ module Artifact =
     /// than parsed optimistically: the failure mode of guessing is a deployment
     /// that thinks it knows what the project declares.
     [<Literal>]
-    let FormatVersion = 1
+    let FormatVersion = 2
 
     // ---- reading helpers ----------------------------------------------------
     //
@@ -465,6 +465,42 @@ module Artifact =
           Values = getStrings "values" el
           Scope = readScope (prop "scope" el) }
 
+    /// A domain, written field by field like everything else here.
+    ///
+    /// `Constraints` keep DECLARATION order and are never sorted: an unnamed
+    /// constraint is paired with the server's rendering by POSITION, so a reader
+    /// that reordered them would attach one predicate to another constraint's
+    /// name.
+    let renderDomain (d: DomainType) =
+        JObject [ "name", renderQualifiedName d.Name
+                  "baseType", JString d.BaseType
+                  "collation", (match d.Collation with Some c -> JString c | None -> JNull)
+                  "notNull", JBool d.NotNull
+                  "default", (match d.Default with Some e -> JString e | None -> JNull)
+                  "constraints",
+                  JArray(
+                      d.Constraints
+                      |> List.map (fun c ->
+                          JObject [ "constraintName", renderConstraintName c.Name
+                                    "definition", JString c.Definition
+                                    "validated", JBool c.IsValidated ])
+                  )
+                  "scope", renderScope d.Scope ]
+
+    let readDomain (el: JsonElement) : DomainType =
+        { Name = readQualifiedName (prop "name" el)
+          BaseType = getString "baseType" el
+          Collation = optionalString "collation" el
+          NotNull = getBool "notNull" el
+          Default = optionalString "default" el
+          Constraints =
+            items "constraints" el
+            |> List.map (fun c ->
+                { Name = readConstraintName c
+                  Definition = getString "definition" c
+                  IsValidated = getBool "validated" c })
+          Scope = readScope (prop "scope" el) }
+
     let renderObject (o: SchemaObject) =
         match o with
         | TableObject t -> JObject [ "kind", JString "table"; "table", renderTable t ]
@@ -472,6 +508,7 @@ module Artifact =
         | RoutineObject r -> JObject [ "kind", JString "routine"; "routine", renderRoutine r ]
         | SequenceObject s -> JObject [ "kind", JString "sequence"; "sequence", renderSequence s ]
         | EnumObject e -> JObject [ "kind", JString "enum-type"; "enum", renderEnum e ]
+        | DomainObject d -> JObject [ "kind", JString "domain-type"; "domain", renderDomain d ]
 
     let readObject (e: JsonElement) : SchemaObject =
         match getString "kind" e with
@@ -480,6 +517,7 @@ module Artifact =
         | "routine" -> RoutineObject(readRoutine (prop "routine" e))
         | "sequence" -> SequenceObject(readSequence (prop "sequence" e))
         | "enum-type" -> EnumObject(readEnum (prop "enum" e))
+        | "domain-type" -> DomainObject(readDomain (prop "domain" e))
         | other -> failwithf "unknown object kind '%s'" other
 
     // ---- Grants, extensions, policies ---------------------------------------
@@ -696,6 +734,33 @@ module Artifact =
           Defaults = readPairs "defaults" e
           Checks = readPairs "checks" e }
 
+    /// A declared domain as the compiling server rendered it.
+    ///
+    /// The constraint triples keep the order resolution gave them — declaration
+    /// order — for the same reason `renderDomain` does.
+    let renderNormalisedDomain (n: SchemaDiff.NormalisedDomain) =
+        JObject [ "domain", JString n.Domain
+                  "baseType", JString n.BaseType
+                  "collation", (match n.Collation with Some c -> JString c | None -> JNull)
+                  "notNull", JBool n.NotNull
+                  "default", (match n.Default with Some e -> JString e | None -> JNull)
+                  "constraints",
+                  JArray(
+                      n.Constraints
+                      |> List.map (fun (definition, validated) ->
+                          JObject [ "definition", JString definition; "validated", JBool validated ])
+                  ) ]
+
+    let readNormalisedDomain (e: JsonElement) : SchemaDiff.NormalisedDomain =
+        { Domain = getString "domain" e
+          BaseType = getString "baseType" e
+          Collation = optionalString "collation" e
+          NotNull = getBool "notNull" e
+          Default = optionalString "default" e
+          Constraints =
+            items "constraints" e
+            |> List.map (fun c -> getString "definition" c, getBool "validated" c) }
+
     let renderResolvedRow (r: SchemaDiff.ResolvedRow) =
         JObject [ "key", JString r.Key
                   "rendered", JString r.Rendered
@@ -756,6 +821,7 @@ module Artifact =
                   "declared", renderLoaded r.Declared
                   "normalisedViews", renderPairs r.NormalisedViews
                   "normalisedTables", JArray(r.NormalisedTables |> List.map renderNormalisedTable)
+                  "normalisedDomains", JArray(r.NormalisedDomains |> List.map renderNormalisedDomain)
                   "policies",
                   JArray(r.Policies |> List.map (fun (t, p) ->
                       JObject [ "table", renderQualifiedName t; "policy", renderPolicy p ]))
@@ -797,6 +863,7 @@ module Artifact =
                 { Declared = readLoaded (prop "declared" root)
                   NormalisedViews = readPairs "normalisedViews" root
                   NormalisedTables = items "normalisedTables" root |> List.map readNormalisedTable
+                  NormalisedDomains = items "normalisedDomains" root |> List.map readNormalisedDomain
                   Policies =
                     items "policies" root
                     |> List.map (fun i -> readQualifiedName (prop "table" i), readPolicy (prop "policy" i))

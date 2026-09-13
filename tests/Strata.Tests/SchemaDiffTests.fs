@@ -2627,3 +2627,263 @@ let ``a label added AND the order changed is reported as the order problem`` () 
 let ``a type the project no longer declares is dropped only with --allow-drops`` () =
     let withDrops = enumDiff [] [ enumOf "status" [ "a" ] ]
     Assert.Contains(withDrops.Changes, fun c -> c = DropEnumType(qn "sales" "status"))
+
+// ---- domains ----------------------------------------------------------------
+//
+// A domain carries more than an enum does and PostgreSQL lets you change less of
+// it than a table. `ALTER DOMAIN` can set and drop a DEFAULT, set and drop NOT
+// NULL, add, drop and validate a CHECK. It cannot change the BASE TYPE or the
+// COLLATION at all — measured against a live server, `ALTER DOMAIN ... TYPE` is
+// a syntax error — so those two are disclosed rather than proposed.
+//
+// Every declared domain here is paired with a `NormalisedDomain`, because that
+// is the only way one is ever compared: the parser recovers no predicate text
+// from a `CREATE DOMAIN`, so an unrendered domain is disclosed and never diffed.
+
+let private domainCheck name definition validated : DomainConstraint =
+    { Name = name |> Option.map Identifier.unquoted
+      Definition = definition
+      IsValidated = validated }
+
+let private domainOf name baseType notNull dflt constraints : SchemaObject =
+    DomainObject
+        { Name = qn "sales" name
+          BaseType = baseType
+          Collation = None
+          NotNull = notNull
+          Default = dflt
+          Constraints = constraints
+          Scope = Managed }
+
+/// The rendering a server would return for a declared domain. Paired with the
+/// declared one by name, and positionally with its constraints.
+let private normalisedOf name baseType notNull dflt (constraints: (string * bool) list) : Strata.Application.SchemaDiff.NormalisedDomain =
+    { Domain = "sales." + name
+      BaseType = baseType
+      Collation = None
+      NotNull = notNull
+      Default = dflt
+      Constraints = constraints }
+
+let private domainDiff normalised declared deployed =
+    Strata.Application.SchemaDiff.run
+        { Strata.Application.SchemaDiff.Inputs.between (complete declared) (complete deployed) with
+            AllowDrops = true
+            ManagedSchemas = managed
+            ExistingSchemas = Some managed
+            NormalisedDomains = normalised }
+
+[<Fact>]
+let ``a domain the database does not have is created`` () =
+    let result =
+        domainDiff
+            [ normalisedOf "email" "text" false None [] ]
+            [ domainOf "email" "text" false None [] ]
+            []
+
+    Assert.Contains(result.Changes, fun c -> c = CreateDomainType(qn "sales" "email"))
+
+[<Fact>]
+let ``an identical domain proposes nothing`` () =
+    let deployed =
+        domainOf "email" "text" true (Some "'x'::text") [ domainCheck (Some "shape") "CHECK ((VALUE ~ '@'::text))" true ]
+
+    let result =
+        domainDiff
+            [ normalisedOf "email" "text" true (Some "'x'::text") [ "CHECK ((VALUE ~ '@'::text))", true ] ]
+            [ domainOf "email" "text" true (Some "'x'::text") [ domainCheck (Some "shape") "" true ] ]
+            [ deployed ]
+
+    Assert.Empty result.Changes
+
+[<Fact>]
+let ``a changed default carries the expression it replaces`` () =
+    let result =
+        domainDiff
+            [ normalisedOf "email" "text" false (Some "'new'::text") [] ]
+            [ domainOf "email" "text" false None [] ]
+            [ domainOf "email" "text" false (Some "'old'::text") [] ]
+
+    Assert.Contains(
+        result.Changes,
+        fun c -> c = SetDomainDefault(qn "sales" "email", "'new'::text", Some "'old'::text"))
+
+[<Fact>]
+let ``a default the project no longer declares is dropped`` () =
+    let result =
+        domainDiff
+            [ normalisedOf "email" "text" false None [] ]
+            [ domainOf "email" "text" false None [] ]
+            [ domainOf "email" "text" false (Some "'old'::text") [] ]
+
+    Assert.Contains(result.Changes, fun c -> c = DropDomainDefault(qn "sales" "email"))
+
+[<Fact>]
+let ``nullability moves in both directions`` () =
+    let tighten =
+        domainDiff
+            [ normalisedOf "email" "text" true None [] ]
+            [ domainOf "email" "text" true None [] ]
+            [ domainOf "email" "text" false None [] ]
+
+    Assert.Contains(tighten.Changes, fun c -> c = SetDomainNotNull(qn "sales" "email"))
+
+    let loosen =
+        domainDiff
+            [ normalisedOf "email" "text" false None [] ]
+            [ domainOf "email" "text" false None [] ]
+            [ domainOf "email" "text" true None [] ]
+
+    Assert.Contains(loosen.Changes, fun c -> c = DropDomainNotNull(qn "sales" "email"))
+
+[<Fact>]
+let ``a named constraint whose definition changed is dropped before it is re-added`` () =
+    // Both statements name the same constraint, so the ADD fails on a name still
+    // taken. Order, not merely presence, is the property.
+    let result =
+        domainDiff
+            [ normalisedOf "email" "text" false None [ "CHECK ((VALUE <> ''::text))", true ] ]
+            [ domainOf "email" "text" false None [ domainCheck (Some "shape") "" true ] ]
+            [ domainOf "email" "text" false None [ domainCheck (Some "shape") "CHECK ((VALUE ~ '@'::text))" true ] ]
+
+    let index predicate = result.Changes |> List.findIndex predicate
+
+    let dropAt =
+        index (fun c -> c = DropDomainConstraint(qn "sales" "email", Some(Identifier.unquoted "shape")))
+
+    let addAt =
+        index (fun c ->
+            c = AddDomainConstraint(
+                qn "sales" "email",
+                Some(Identifier.unquoted "shape"),
+                "CHECK ((VALUE <> ''::text))"))
+
+    Assert.True(dropAt < addAt, "the drop must come before the re-add that takes its name back")
+
+[<Fact>]
+let ``an unnamed declared constraint is matched by its predicate, not by a fabricated name`` () =
+    // WI-0054's shape on a domain: the deployed side carries PostgreSQL's own
+    // `email_check`, which no file can predict. Matching by predicate is what
+    // keeps this converged rather than proposing a drop and an add forever.
+    let result =
+        domainDiff
+            [ normalisedOf "email" "text" false None [ "CHECK ((length(VALUE) < 100))", true ] ]
+            [ domainOf "email" "text" false None [ domainCheck None "" true ] ]
+            [ domainOf "email" "text" false None [ domainCheck (Some "email_check") "CHECK ((length(VALUE) < 100))" true ] ]
+
+    Assert.Empty result.Changes
+
+[<Fact>]
+let ``an unnamed constraint is added without a name so the server assigns one`` () =
+    let result =
+        domainDiff
+            [ normalisedOf "email" "text" false None [ "CHECK ((length(VALUE) < 100))", true ] ]
+            [ domainOf "email" "text" false None [ domainCheck None "" true ] ]
+            [ domainOf "email" "text" false None [] ]
+
+    Assert.Contains(
+        result.Changes,
+        fun c -> c = AddDomainConstraint(qn "sales" "email", None, "CHECK ((length(VALUE) < 100))"))
+
+    let sql =
+        result.Statements
+        |> List.pick (fun s -> match s.Change with AddDomainConstraint _ -> s.Sql | _ -> None)
+
+    Assert.DoesNotContain("CONSTRAINT", sql)
+
+[<Fact>]
+let ``a constraint added NOT VALID is validated rather than rebuilt`` () =
+    // Same predicate on both sides; only `convalidated` differs. Dropping and
+    // re-adding would scan the same values for the same answer.
+    let result =
+        domainDiff
+            [ normalisedOf "email" "text" false None [ "CHECK ((VALUE ~ '@'::text))", true ] ]
+            [ domainOf "email" "text" false None [ domainCheck (Some "shape") "" true ] ]
+            [ domainOf "email" "text" false None [ domainCheck (Some "shape") "CHECK ((VALUE ~ '@'::text))" false ] ]
+
+    Assert.Equal<Change list>(
+        [ ValidateDomainConstraint(qn "sales" "email", Identifier.unquoted "shape") ],
+        result.Changes)
+
+[<Fact>]
+let ``a base type difference stops every other comparison on that domain`` () =
+    // Measured, not assumed: proposing the rest applied seven statements and
+    // re-proposed six of them on the next run, forever. A domain's default and
+    // its predicates are rendered THROUGH the base type, so while the base types
+    // differ the two sides can never agree on any of them.
+    let result =
+        domainDiff
+            [ normalisedOf
+                  "email"
+                  "character varying(255)"
+                  false
+                  (Some "'x'::character varying")
+                  [ "CHECK (((VALUE)::text ~ '@'::text))", true ] ]
+            [ domainOf "email" "character varying(255)" false None [ domainCheck (Some "shape") "" true ] ]
+            [ domainOf "email" "text" true (Some "'y'::text") [] ]
+
+    Assert.Empty result.Changes
+
+    Assert.Contains(
+        result.Suppressed,
+        fun s -> s.Detail.Contains "ALTER DOMAIN ... TYPE" && s.Detail.Contains "Nothing else about this domain")
+
+[<Fact>]
+let ``a domain whose declaration could not be rendered is disclosed, never diffed`` () =
+    // No entry in `NormalisedDomains`. The declared side then carries empty
+    // predicates, and diffing those would propose dropping and re-adding every
+    // constraint on every run.
+    let result =
+        domainDiff
+            []
+            [ domainOf "email" "text" false None [ domainCheck (Some "shape") "" true ] ]
+            [ domainOf "email" "text" true (Some "'y'::text") [ domainCheck (Some "shape") "CHECK ((VALUE ~ '@'::text))" true ] ]
+
+    Assert.Empty result.Changes
+    Assert.Contains(result.Suppressed, fun s -> s.Detail.Contains "could not be rendered by the server")
+
+[<Fact>]
+let ``a domain the project no longer declares is dropped only with --allow-drops`` () =
+    let deployed = [ domainOf "email" "text" false None [] ]
+
+    let withDrops = domainDiff [] [] deployed
+    Assert.Contains(withDrops.Changes, fun c -> c = DropDomainType(qn "sales" "email"))
+
+    let withoutDrops =
+        Strata.Application.SchemaDiff.run
+            { Strata.Application.SchemaDiff.Inputs.between (complete []) (complete deployed) with
+                ManagedSchemas = managed
+                ExistingSchemas = Some managed }
+
+    Assert.DoesNotContain(withoutDrops.Changes, fun c -> c = DropDomainType(qn "sales" "email"))
+    Assert.Contains(withoutDrops.Suppressed, fun s -> s.Detail.Contains "--allow-drops")
+
+[<Fact>]
+let ``a domain is created before a table that uses it`` () =
+    let result =
+        domainDiff
+            [ normalisedOf "email" "text" false None [] ]
+            [ domainOf "email" "text" false None []
+              TableObject
+                  { Name = qn "sales" "account"
+                    Columns =
+                      [ { Name = Identifier.unquoted "contact"
+                          Type = { TypeName = qn "sales" "email"; IsNullable = true }
+                          Position = 1
+                          HasDefault = false
+                          DefaultExpression = None
+                          IsGenerated = false
+                          IsIdentity = false } ]
+                    PrimaryKey = None
+                    UniqueConstraints = []
+                    CheckConstraints = []
+                    ForeignKeys = []
+                    Indexes = []
+                    Triggers = []
+                    Scope = Managed } ]
+            []
+
+    let domainAt = result.Changes |> List.findIndex (fun c -> c = CreateDomainType(qn "sales" "email"))
+    let tableAt = result.Changes |> List.findIndex (fun c -> c = CreateTable(qn "sales" "account"))
+
+    Assert.True(domainAt < tableAt, "a column cannot be declared of a type that does not exist yet")

@@ -254,46 +254,33 @@ module ShadowNormalisation =
             && (i + 2 >= n || not (isWordChar ddl.[i + 2])))
         |> Option.map (fun i -> i + 2)
 
-    /// Where a view's NAME ends: the offset just past the object name that
-    /// follows the `VIEW` keyword.
+    /// Where the object name that follows `keyword` ends.
     ///
-    /// Authority for: which part of a view declaration is the name, so the rest
+    /// Authority for: which part of a CREATE statement is the name, so the rest
     /// can be carried over verbatim.
     ///
-    /// ## Why the rest has to be carried over
+    /// The keyword counts only as a bare word at parenthesis depth zero and
+    /// outside everything `scanFor` hides, so a view named `"view"` does not
+    /// match its own name and a `DOMAIN` inside a leading comment does not
+    /// either. The name itself is one or more dot-separated parts, each quoted
+    /// or a bare word.
     ///
-    /// `CREATE VIEW v (a, b) AS SELECT id, weight` was reconstructed for the
-    /// shadow as `CREATE VIEW <shadow> AS SELECT id, weight`, dropping the
-    /// column-alias list. That looks harmless and is not: `pg_get_viewdef`
-    /// FOLDS the list into the query it renders, so the deployed view comes back
-    /// as `SELECT id AS a, weight AS b` and the shadow as `SELECT id, weight`.
-    /// The two never match, so Strata proposes `replace-view` on every run
-    /// forever — the same shape as WI-0054, where an unnamed constraint could
-    /// never converge.
-    ///
-    /// The `WITH (...)` options sit in the same span and are carried for the
-    /// same reason: whatever the author wrote between the name and the keyword
-    /// belongs to the view, and guessing which parts matter is how the first
-    /// version got it wrong.
-    ///
-    /// `None` when there is no `VIEW` keyword or no name after it.
-    let viewNameEnd (ddl: string) : int option =
+    /// `None` when the keyword is absent or nothing name-shaped follows it, and
+    /// the caller must not guess: a declaration Strata cannot split is one it
+    /// cannot normalise, which is disclosed rather than assumed to match.
+    let private nameAfterKeyword (keyword: string) (ddl: string) : int option =
         let n = ddl.Length
+        let k = keyword.Length
 
-        // The `VIEW` keyword itself, as a bare word at depth zero — so a view
-        // named `"view"` does not match its own name.
-        let keyword =
+        let found =
             ddl
-            |> scanFor (fun i c depth ->
+            |> scanFor (fun i _ depth ->
                 depth = 0
-                && (c = 'v' || c = 'V')
-                && i + 3 < n
-                && String.Equals(ddl.Substring(i, 4), "VIEW", StringComparison.OrdinalIgnoreCase)
+                && i + k <= n
+                && String.Equals(ddl.Substring(i, k), keyword, StringComparison.OrdinalIgnoreCase)
                 && (i = 0 || not (isWordChar ddl.[i - 1]))
-                && (i + 4 >= n || not (isWordChar ddl.[i + 4])))
+                && (i + k >= n || not (isWordChar ddl.[i + k])))
 
-        // A qualified name is one or more parts separated by dots, each either
-        // quoted or a bare word.
         let rec skipSpace i =
             if i < n && Char.IsWhiteSpace ddl.[i] then skipSpace (i + 1) else i
 
@@ -325,7 +312,42 @@ module ShadowNormalisation =
                 let afterDot = skipSpace e
                 if afterDot < n && ddl.[afterDot] = '.' then namePart (afterDot + 1) else Some e
 
-        keyword |> Option.bind (fun k -> namePart (k + 4))
+        found |> Option.bind (fun i -> namePart (i + k))
+
+    /// Where a domain's NAME ends: the offset just past the name that follows
+    /// the `DOMAIN` keyword.
+    ///
+    /// Everything after it — `AS text`, the `COLLATE`, the `DEFAULT`, every
+    /// `CHECK` — is carried over verbatim into the shadow declaration, for the
+    /// same reason a view's column-alias list is: whatever the author wrote
+    /// belongs to the object, and guessing which parts matter is how a
+    /// normaliser stops normalising the thing that was written.
+    let domainNameEnd (ddl: string) : int option = nameAfterKeyword "DOMAIN" ddl
+
+    /// Where a view's NAME ends: the offset just past the object name that
+    /// follows the `VIEW` keyword.
+    ///
+    /// Authority for: which part of a view declaration is the name, so the rest
+    /// can be carried over verbatim.
+    ///
+    /// ## Why the rest has to be carried over
+    ///
+    /// `CREATE VIEW v (a, b) AS SELECT id, weight` was reconstructed for the
+    /// shadow as `CREATE VIEW <shadow> AS SELECT id, weight`, dropping the
+    /// column-alias list. That looks harmless and is not: `pg_get_viewdef`
+    /// FOLDS the list into the query it renders, so the deployed view comes back
+    /// as `SELECT id AS a, weight AS b` and the shadow as `SELECT id, weight`.
+    /// The two never match, so Strata proposes `replace-view` on every run
+    /// forever — the same shape as WI-0054, where an unnamed constraint could
+    /// never converge.
+    ///
+    /// The `WITH (...)` options sit in the same span and are carried for the
+    /// same reason: whatever the author wrote between the name and the keyword
+    /// belongs to the view, and guessing which parts matter is how the first
+    /// version got it wrong.
+    ///
+    /// `None` when there is no `VIEW` keyword or no name after it.
+    let viewNameEnd (ddl: string) : int option = nameAfterKeyword "VIEW" ddl
 
     /// What a view declaration says between its name and its `AS`: a column
     /// alias list, view options, or nothing.
@@ -705,6 +727,227 @@ module ShadowNormalisation =
                         with _ ->
                             try exec (sprintf "ROLLBACK TO SAVEPOINT %s" savepoint) with _ -> ()
                             [])
+
+                transaction.Rollback()
+                Ok normalised
+            with ex ->
+                try transaction.Rollback() with _ -> ()
+                Error ex.Message
+        with ex ->
+            Error ex.Message
+
+    /// One declared domain, as the catalog would render it.
+    ///
+    /// `Constraints` are in DECLARATION order — `pg_constraint`'s oid order
+    /// within a single `CREATE DOMAIN`, verified against a live server — so the
+    /// caller can pair them positionally with the constraints the file wrote and
+    /// keep each one's declared name, or its declared namelessness.
+    type DomainNormalisation =
+        { Domain: string
+          /// The base type as `format_type` renders it: `text`,
+          /// `character varying(50)`, `numeric(10,2)`.
+          BaseType: string
+          /// The collation the domain pins, `None` when it simply inherits the
+          /// base type's.
+          Collation: string option
+          NotNull: bool
+          Default: string option
+          /// `(definition, validated)` per declared constraint, in declaration
+          /// order.
+          ///
+          /// The NAME the shadow assigned is deliberately not here. It names a
+          /// constraint on a throwaway domain built under a per-run GUID, so an
+          /// unnamed declaration came back as `d_7eab41dfea5e_check` — different
+          /// on every compile. Carried into an artifact it made two compiles of
+          /// the same source produce two different files, which breaks NFR-001
+          /// and any signature over one (WI-0089). It was also never read: the
+          /// diff matches a declared constraint by the name the FILE gave it, or
+          /// by its predicate when the file gave none.
+          Constraints: (string * bool) list }
+
+    /// Read a domain's own properties, by the oid of the type.
+    ///
+    /// Shared verbatim with `CatalogQueries.domainTypes` in everything but the
+    /// WHERE clause, because the shadow's rendering and the catalog's have to be
+    /// produced by the same expressions or the two sides compare formatting
+    /// rather than meaning.
+    let internal domainPropertyColumns =
+        """
+        pg_catalog.format_type(t.typbasetype, t.typtypmod),
+        t.typnotnull,
+        pg_catalog.pg_get_expr(t.typdefaultbin, 0),
+        CASE
+            WHEN t.typcollation <> 0 AND t.typcollation <> bt.typcollation
+            THEN pg_catalog.quote_ident(cn.nspname) || '.' || pg_catalog.quote_ident(c.collname)
+        END
+        """
+
+    let internal domainPropertyJoins =
+        """
+        FROM pg_catalog.pg_type t
+        JOIN pg_catalog.pg_type bt ON bt.oid = t.typbasetype
+        LEFT JOIN pg_catalog.pg_collation c ON c.oid = t.typcollation
+        LEFT JOIN pg_catalog.pg_namespace cn ON cn.oid = c.collnamespace
+        """
+
+    /// Normalise declared domain DDL into the catalog's rendering.
+    ///
+    /// `DEFAULT 'x'` is stored and reported as `'x'::text`, and
+    /// `CHECK (VALUE ~ '@')` as `CHECK ((VALUE ~ '@'::text))`. Neither matches
+    /// what the author wrote, so without this a domain's default and constraints
+    /// could only be disclosed rather than compared — and the parse tree does
+    /// not carry the predicate text at all, so there is nothing to disclose
+    /// them AGAINST. A domain absent from this result therefore has its default
+    /// and constraints reported as not-compared; it is never diffed against the
+    /// empty strings a bare parse produces.
+    ///
+    /// ## The domain is built under a SHADOW name, deliberately
+    ///
+    /// Declared enums are created under their REAL names, the way
+    /// `ReferenceData` does, because a domain's base type may be one of them and
+    /// the declaring text names it that way. The DOMAIN under normalisation is
+    /// not: if the database already has a domain of that name with a DIFFERENT
+    /// definition, creating it would fail and the read would return the
+    /// DEPLOYED definition instead of the declared one — reporting the two sides
+    /// as identical precisely when they differ.
+    ///
+    /// Same transaction discipline as everywhere in this module: one
+    /// transaction, always rolled back, a savepoint and a schema of its own per
+    /// domain so one rejected declaration does not lose the rest and two
+    /// domains cannot collide on a constraint name.
+    let normaliseDomains
+        (connectionString: string)
+        /// Enum types the project declares, as `(qualified name, values)`, for
+        /// a domain whose base type arrives in the same plan.
+        (declaredEnums: (string * string list) list)
+        (domains: (string * string) list)
+        : Result<DomainNormalisation list, string> =
+
+        if List.isEmpty domains then Ok []
+        else
+
+        try
+            use connection = new NpgsqlConnection(connectionString)
+            connection.Open()
+            use transaction = connection.BeginTransaction()
+
+            try
+                let exec (sql: string) =
+                    use command = new NpgsqlCommand(sql, connection, transaction)
+                    command.ExecuteNonQuery() |> ignore
+
+                let present (name: string) (regFunction: string) =
+                    use command =
+                        new NpgsqlCommand(sprintf "SELECT %s($1) IS NOT NULL" regFunction, connection, transaction)
+
+                    command.Parameters.AddWithValue name |> ignore
+
+                    match command.ExecuteScalar() with
+                    | :? bool as b -> b
+                    | _ -> false
+
+                // A type the database already has is left alone: re-creating it
+                // would fail, and the real one is what a column will meet.
+                for enumName, values in declaredEnums do
+                    let savepoint = "sp_" + Guid.NewGuid().ToString("N").Substring(0, 8)
+
+                    try
+                        exec (sprintf "SAVEPOINT %s" savepoint)
+
+                        if not (present enumName "pg_catalog.to_regtype") then
+                            exec (
+                                sprintf
+                                    "CREATE TYPE %s AS ENUM (%s)"
+                                    enumName
+                                    (values
+                                     |> List.map (fun v -> "'" + v.Replace("'", "''") + "'")
+                                     |> String.concat ", ")
+                            )
+                    with _ ->
+                        // Not fatal: the domains that need it fail on their own
+                        // savepoint below and report why, which is a better
+                        // message than anything this loop could invent.
+                        try exec (sprintf "ROLLBACK TO SAVEPOINT %s" savepoint) with _ -> ()
+
+                let normalised =
+                    domains
+                    |> List.choose (fun (name, ddl) ->
+                        let savepoint = "sp_" + Guid.NewGuid().ToString("N").Substring(0, 8)
+
+                        try
+                            exec (sprintf "SAVEPOINT %s" savepoint)
+
+                            match domainNameEnd ddl with
+                            | None ->
+                                try exec (sprintf "ROLLBACK TO SAVEPOINT %s" savepoint) with _ -> ()
+                                None
+                            | Some nameEnd ->
+                                let schema = shadowSchema ()
+                                exec (sprintf "CREATE SCHEMA %s" schema)
+
+                                let shadowName = sprintf "%s.d_%s" schema (Guid.NewGuid().ToString("N").Substring(0, 12))
+                                exec (sprintf "CREATE DOMAIN %s %s" shadowName (ddl.Substring nameEnd))
+
+                                let quoted = shadowName.Replace("'", "''")
+
+                                let properties =
+                                    use command =
+                                        new NpgsqlCommand(
+                                            sprintf
+                                                "SELECT %s %s WHERE t.oid = '%s'::regtype"
+                                                domainPropertyColumns
+                                                domainPropertyJoins
+                                                quoted,
+                                            connection,
+                                            transaction
+                                        )
+
+                                    use reader = command.ExecuteReader()
+
+                                    if reader.Read() then
+                                        Some(
+                                            reader.GetString 0,
+                                            reader.GetBoolean 1,
+                                            (if reader.IsDBNull 2 then None else Some(reader.GetString 2)),
+                                            (if reader.IsDBNull 3 then None else Some(reader.GetString 3))
+                                        )
+                                    else
+                                        None
+
+                                let constraints =
+                                    use command =
+                                        new NpgsqlCommand(
+                                            sprintf
+                                                """
+                                                SELECT regexp_replace(
+                                                           pg_catalog.pg_get_constraintdef(con.oid),
+                                                           ' NOT VALID$', ''),
+                                                       con.convalidated
+                                                FROM pg_catalog.pg_constraint con
+                                                WHERE con.contypid = '%s'::regtype
+                                                ORDER BY con.oid
+                                                """
+                                                quoted,
+                                            connection,
+                                            transaction
+                                        )
+
+                                    use reader = command.ExecuteReader()
+
+                                    [ while reader.Read() do
+                                        yield reader.GetString 0, reader.GetBoolean 1 ]
+
+                                properties
+                                |> Option.map (fun (baseType, notNull, dflt, collation) ->
+                                    { Domain = name
+                                      BaseType = baseType
+                                      Collation = collation
+                                      NotNull = notNull
+                                      Default = dflt
+                                      Constraints = constraints })
+                        with _ ->
+                            try exec (sprintf "ROLLBACK TO SAVEPOINT %s" savepoint) with _ -> ()
+                            None)
 
                 transaction.Rollback()
                 Ok normalised
