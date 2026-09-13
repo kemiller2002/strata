@@ -307,7 +307,8 @@ module DesiredState =
                 | TableObject t -> QualifiedName.display t.Name = QualifiedName.display name
                 | ViewObject _
                 | RoutineObject _
-                | SequenceObject _ -> false)
+                | SequenceObject _
+                | EnumObject _ -> false)
 
         let orphanIndexes =
             declaredIndexes
@@ -380,6 +381,9 @@ module DesiredState =
                                 Indexes = (if List.isEmpty attached then t.Indexes else attached)
                                 Triggers =
                                     (if List.isEmpty attachedTriggers then t.Triggers else attachedTriggers) }
+                // Nothing attaches to an enum type: an index or a trigger is on
+                // a table, and a type has neither.
+                | EnumObject _ -> o
                 | ViewObject _
                 | RoutineObject _
                 | SequenceObject _ -> o)

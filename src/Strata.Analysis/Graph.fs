@@ -146,7 +146,10 @@ module Graph =
                                       (fk.ReferencedColumns |> List.map (fun c -> c.Text) |> String.concat ", ") } ] })
                 | SequenceObject _
                 | ViewObject _
-                | RoutineObject _ -> [])
+                | RoutineObject _
+                // An enum type is a dependency of the COLUMNS that use it, not
+                // a relationship between tables, so it contributes no edge here.
+                | EnumObject _ -> [])
             // Deterministic order (NFR-001).
             |> List.sortBy (fun r ->
                 QualifiedName.display r.FromTable, QualifiedName.display r.ToTable)

@@ -1,0 +1,12 @@
+-- CONTRACT: Strata must read this the way the server does — the diff after
+--           introspecting it back must be EMPTY, and nothing this case declares
+--           may come back not-compared. See AwkwardFormsTests.fs.
+--
+-- The ORDER is the type. PostgreSQL stores an enumsortorder per label and its
+-- comparison operators use it, so 'pending' < 'shipped' is decided here, and
+-- two types with the same labels in a different order are different types.
+-- Anything that sorted these would declare something else.
+--
+-- The labels are deliberately not in alphabetical order, so a sort would show
+-- up as a difference rather than passing by luck.
+CREATE TYPE order_status AS ENUM ('pending', 'packing', 'shipped', 'delivered', 'cancelled');

@@ -152,7 +152,14 @@ let private sample : ResolvedDesiredState =
                   ViewObject materialized
                   RoutineObject routine
                   RoutineObject procedure'
-                  SequenceObject sequence ]
+                  SequenceObject sequence
+                  EnumObject
+                      { Name = qn "shop" "order_status"
+                        // Deliberately NOT alphabetical: the order is the type,
+                        // and a renderer that sorted would round-trip to a
+                        // different type while looking correct.
+                        Values = [ "pending"; "shipped"; "cancelled" ]
+                        Scope = Managed } ]
               ServerVersion =
                 Fact.create
                     High
@@ -342,14 +349,15 @@ let ``the sample carries every SchemaObject case`` () =
     let cases = FSharpType.GetUnionCases typeof<SchemaObject> |> Array.map (fun c -> c.Name)
 
     Assert.Equal<string array>(
-        [| "TableObject"; "ViewObject"; "RoutineObject"; "SequenceObject" |],
+        [| "TableObject"; "ViewObject"; "RoutineObject"; "SequenceObject"; "EnumObject" |],
         cases)
 
     assertEveryCaseReaches
         [ "TableObject", "\"kind\":\"table\""
           "ViewObject", "\"kind\":\"view\""
           "RoutineObject", "\"kind\":\"routine\""
-          "SequenceObject", "\"kind\":\"sequence\"" ]
+          "SequenceObject", "\"kind\":\"sequence\""
+          "EnumObject", "\"kind\":\"enum-type\"" ]
 
 [<Fact>]
 let ``the sample carries every GrantTarget case`` () =
@@ -747,3 +755,17 @@ let ``a valid signature satisfies the requirement`` () =
     | Ok signature ->
         let wrapper = { Attestation.none with Signature = Some(Attestation.SignatureAlgorithm, signature) }
         Assert.Equal(None, Attestation.provenanceProblem true (Some publicPem) sample wrapper)
+
+[<Fact>]
+let ``an enum's value order survives a round trip`` () =
+    // The order IS the type: PostgreSQL's comparison operators use
+    // `enumsortorder`, so a renderer or reader that sorted would produce a
+    // DIFFERENT type while every other assertion still passed.
+    match Artifact.ofText (Artifact.toText sample) with
+    | Ok restored ->
+        let values =
+            restored.Declared.Snapshot.Objects
+            |> List.choose (fun o -> match o with EnumObject e -> Some e.Values | _ -> None)
+
+        Assert.Equal<string list list>([ [ "pending"; "shipped"; "cancelled" ] ], values)
+    | Microsoft.FSharp.Core.Error message -> failwithf "the artifact could not be read: %s" message

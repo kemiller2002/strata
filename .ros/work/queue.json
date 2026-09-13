@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 99,
+  "nextSeq": 100,
   "items": [
     {
       "id": "WI-0001",
@@ -1652,10 +1652,24 @@
       "description": "SchemaObject models Table, View, Routine and Sequence only. CREATE TYPE ... AS ENUM and CREATE DOMAIN are refused at compile: 'CreateEnumStmt/CreateDomainStmt is not yet read as a desired-state declaration'. The refusal is loud and correct per ER-008, but it means Strata cannot manage a schema containing either -- and an enum is one of the commonest things in a real PostgreSQL schema, so this is the single largest gap between 'works' and 'usable on an existing database'. Needs a SchemaObject case, introspection, diff, and DDL emission; enum value ORDER and ALTER TYPE ... ADD VALUE (which cannot run in a transaction) are the hard parts. Composite types compile but are silently unmodelled, which is worse than refusing and should be made a refusal in the same change.",
       "tags": [],
       "priority": "high",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-13T00:31:00Z",
-      "updatedAt": "2026-09-13T00:31:00Z",
+      "updatedAt": "2026-09-13T03:08:22Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0099",
+      "title": "Domain types cannot be declared",
+      "description": "CREATE DOMAIN is refused with 'CreateDomainStmt is not yet read as a desired-state declaration'. Enums landed in WI-0098 and domains are the next most common user-defined type. A domain is a base type plus constraints plus an optional default and NOT NULL, so it needs its own SchemaObject case, a pg_type/pg_constraint query, and diff rules -- ALTER DOMAIN can add and drop constraints and change the default, which is more than an enum allows and less than a table. Composite types and ranges are refused for the same reason and are separate again.",
+      "tags": [],
+      "priority": "medium",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-13T03:07:53Z",
+      "updatedAt": "2026-09-13T03:07:53Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null

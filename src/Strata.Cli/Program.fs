@@ -161,6 +161,20 @@ PROJECT LAYOUT
   indexes/, triggers/, sequences/, policies/, extensions/ and grants/ are the
   conventional ones.
 
+  Object kinds read as desired state: tables, views, materialized views,
+  routines, sequences, ENUM types, indexes, triggers, grants, row-level
+  security policies, extensions and reference rows. A declaration Strata does
+  not model is REFUSED by name rather than ignored — a composite type
+  (CREATE TYPE ... AS (...)) and a DOMAIN both say so and stop the compile,
+  because a file that read as nothing would drop the object out of desired
+  state in silence.
+
+  An enum's VALUE ORDER is part of the type: PostgreSQL's comparison operators
+  use it. Strata can add a value at a position; it cannot remove one or reorder
+  them, because PostgreSQL cannot — there is no ALTER TYPE ... DROP VALUE at
+  all. Those are reported as differences it will not act on, naming what would
+  have to happen instead.
+
   strata.json is REQUIRED and lists every object file explicitly:
 
       {

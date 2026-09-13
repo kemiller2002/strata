@@ -153,6 +153,25 @@ module ProposedChange =
         ///
         /// Not additive. The numbers it hands out change, and nothing errors.
         | AlterSequence of sequence: QualifiedName
+        /// Creates an enumerated type. Additive: nothing can depend on a type
+        /// that does not exist.
+        | CreateEnumType of enumType: QualifiedName
+        /// Adds a label to an existing enumerated type.
+        ///
+        /// Additive to the TYPE, and carries a position because an enum's order
+        /// is semantic — `'a' < 'b'` is decided by `enumsortorder`, so where the
+        /// label goes is part of what is being asked for. `None` means append.
+        ///
+        /// NOT additive to a transaction, which is the trap. PostgreSQL refuses
+        /// to let a value added in a transaction be USED in that same
+        /// transaction: "unsafe use of new value". Strata applies a whole plan
+        /// in one transaction, so a plan that adds a label AND writes a
+        /// reference row using it would fail as a unit. A freshly CREATED type
+        /// is exempt — the restriction is about altering a type that already
+        /// existed when the transaction began.
+        | AddEnumValue of enumType: QualifiedName * value: string * after: string option
+        /// Removes an enumerated type.
+        | DropEnumType of enumType: QualifiedName
         /// Creates a relation. Additive.
         | CreateTable of table: QualifiedName
         /// Creates an index. Additive to READERS — nothing can depend on an
@@ -266,6 +285,9 @@ module ProposedChange =
             | DisableRowLevelSecurity _ -> "disable-row-level-security"
             | ForceRowLevelSecurity _ -> "force-row-level-security"
             | NoForceRowLevelSecurity _ -> "no-force-row-level-security"
+            | CreateEnumType _ -> "create-enum-type"
+            | AddEnumValue _ -> "add-enum-value"
+            | DropEnumType _ -> "drop-enum-type"
             | CreateSequence _ -> "create-sequence"
             | DropSequence _ -> "drop-sequence"
             | AlterSequence _ -> "alter-sequence"
@@ -296,6 +318,9 @@ module ProposedChange =
             | AlterColumnType (table, _, _)
             | AddColumn (table, _)
             | CreateTable table
+            | CreateEnumType table
+            | DropEnumType table
+            | AddEnumValue (table, _, _)
             | CreateSequence table
             | DropSequence table
             | AlterSequence table
@@ -366,6 +391,9 @@ module ProposedChange =
             // numbers it hands out.
             | DropSequence _
             | AlterSequence _
+            // Dropping a type takes every column declared with it. There is no
+            // quieter version of this: the columns go with it.
+            | DropEnumType _
             // Whatever ran as that role starts failing on its next statement.
             | RevokePrivileges _
             // Rows stop being visible, and nothing errors. Replacing a policy
@@ -394,6 +422,12 @@ module ProposedChange =
             | UnclassifiedChange _ -> true
             | AddColumn _
             | CreateSchema _
+            // Additive to the type. The transaction-level hazard is real and is
+            // reported by the diff as a disclosure, but this predicate is about
+            // whether the CHANGE destroys something, and adding a label does
+            // not: no existing value stops being valid.
+            | AddEnumValue _
+            | CreateEnumType _
             | CreateSequence _
             | CreateExtension _
             | CreatePolicy _

@@ -1846,6 +1846,62 @@ module PgParserAdapter =
                             [ Unmodelled
                                 "ALTER EXTENSION is not read as declared state: a file says which version should be installed, and getting there is the diff's decision — write CREATE EXTENSION ... VERSION instead" ]
 
+                        // `CREATE TYPE ... AS ENUM`. The labels are read in
+                        // the order they were written, which is the order
+                        // PostgreSQL stores as `enumsortorder` and the order its
+                        // comparison operators use. Sorting them here would
+                        // silently declare a different type.
+                        | Node.NodeOneofCase.CreateEnumStmt ->
+                            let stmt' = stmt.CreateEnumStmt
+
+                            let name =
+                                stmt'.TypeName
+                                |> Seq.choose (fun n ->
+                                    if not (isNull (box n.String)) && not (String.IsNullOrEmpty n.String.Sval) then
+                                        Some n.String.Sval
+                                    else
+                                        None)
+                                |> List.ofSeq
+
+                            let values =
+                                stmt'.Vals
+                                |> Seq.choose (fun n ->
+                                    if not (isNull (box n.String)) then Some n.String.Sval else None)
+                                |> List.ofSeq
+
+                            match name with
+                            | [] -> [ Unmodelled "CREATE TYPE ... AS ENUM with no type name" ]
+                            | parts ->
+                                let qualified =
+                                    match parts with
+                                    | [ single ] -> QualifiedName.unqualified (identifierOf single)
+                                    | _ ->
+                                        QualifiedName.qualified
+                                            (identifierOf (List.item (List.length parts - 2) parts))
+                                            (identifierOf (List.last parts))
+
+                                if List.isEmpty values then
+                                    // PostgreSQL allows an enum with no labels,
+                                    // and it is useless: no value can be of that
+                                    // type. Read rather than refused, because
+                                    // the catalog reports it the same way and
+                                    // the two sides must agree.
+                                    [ Declared(EnumObject { Name = qualified; Values = []; Scope = Managed }) ]
+                                else
+                                    [ Declared(EnumObject { Name = qualified; Values = values; Scope = Managed }) ]
+
+                        // `CREATE TYPE ... AS (...)` is a COMPOSITE type, and it
+                        // is refused rather than ignored. It used to fall
+                        // through to the catch-all, where it produced no
+                        // declaration at all — so a file declaring one compiled
+                        // clean and the type was simply absent from desired
+                        // state. Silently unmodelled is the failure this whole
+                        // vocabulary exists to prevent (ER-008): refusing says
+                        // the file cannot be represented, which is true.
+                        | Node.NodeOneofCase.CompositeTypeStmt ->
+                            [ Unmodelled
+                                "CREATE TYPE ... AS (...) declares a COMPOSITE type, which Strata does not model. Only enumerated types are read so far." ]
+
                         | Node.NodeOneofCase.CreatePolicyStmt ->
                             match policyOf stmt.CreatePolicyStmt with
                             | Ok (table, policy) -> [ DeclaredPolicy(table, policy) ]

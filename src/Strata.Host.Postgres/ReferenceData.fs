@@ -102,6 +102,20 @@ module ReferenceData =
     /// it, with the first run reporting rows it had not written.
     let resolve
         (connectionString: string)
+        /// Enum types the project declares, as `(qualified name, values)`.
+        ///
+        /// Created here when the database does not have them yet, inside the
+        /// same always-rolled-back transaction. Without this, a reference table
+        /// whose column uses a type that arrives in the SAME plan cannot be
+        /// built in the shadow at all — `type "app.kind" does not exist` — so
+        /// its rows are disclosed as not-compared and land a run later. Honest,
+        /// and one run more than it needs to be.
+        ///
+        /// They are created under their REAL names rather than in the throwaway
+        /// schema, because the declaring table's DDL names them that way and
+        /// rewriting an author's text is what `WI-0094` was about. The
+        /// transaction rolls back either way, so nothing survives it.
+        (declaredEnums: (string * string list) list)
         (declared: (string * string list * string list list * string option) list)
         : Result<Resolution list * Failure list, string> =
 
@@ -157,6 +171,42 @@ module ReferenceData =
                     | :? bool as b -> b
                     | _ -> false
 
+                // Before any table is built, because a table's columns may
+                // be declared with one. A type the database already has is left
+                // alone: re-creating it would fail, and the real one is what the
+                // table will actually meet.
+                for enumName, values in declaredEnums do
+                    let savepoint = "sp_" + Guid.NewGuid().ToString("N").Substring(0, 8)
+
+                    try
+                        exec (sprintf "SAVEPOINT %s" savepoint)
+
+                        use command =
+                            new NpgsqlCommand("SELECT to_regtype($1) IS NOT NULL", connection, transaction)
+
+                        command.Parameters.AddWithValue enumName |> ignore
+
+                        let present =
+                            match command.ExecuteScalar() with
+                            | :? bool as b -> b
+                            | _ -> false
+
+                        if not present then
+                            exec (
+                                sprintf
+                                    "CREATE TYPE %s AS ENUM (%s)"
+                                    enumName
+                                    (values
+                                     |> List.map (fun v -> "'" + v.Replace("'", "''") + "'")
+                                     |> String.concat ", ")
+                            )
+                    with _ ->
+                        // A type that could not be created is not fatal: the
+                        // tables that need it fail on their own savepoint below
+                        // and report why, which is a better message than
+                        // anything this loop could invent.
+                        try exec (sprintf "ROLLBACK TO SAVEPOINT %s" savepoint) with _ -> ()
+
                 for table, columns, rows, declaringDdl in declared do
                     let savepoint = "sp_" + Guid.NewGuid().ToString("N").Substring(0, 8)
 
@@ -210,9 +260,19 @@ module ReferenceData =
                                     // there is nothing to copy from. Its own
                                     // declaring file is the next best thing and
                                     // is exactly what the apply will execute.
-                                    // The column list starts at the first `(`;
-                                    // everything before it is the name.
-                                    let bodyStart = ddl.IndexOf '('
+                                    //
+                                    // Through the scanner, not `IndexOf '('`.
+                                    // This file escaped WI-0092 because that
+                                    // one fixed ShadowNormalisation, and the
+                                    // identical search lived here too: one
+                                    // leading comment containing a parenthesis
+                                    // — `-- bins (aisle, shelf)`, or a
+                                    // `strata:renamed_from` annotation — put
+                                    // the split inside the comment and the
+                                    // shadow CREATE TABLE became garbage, so
+                                    // the rows "could not be checked".
+                                    let bodyStart =
+                                        ShadowNormalisation.tableBodyStart ddl |> Option.defaultValue -1
 
                                     if bodyStart < 0 then false
                                     else

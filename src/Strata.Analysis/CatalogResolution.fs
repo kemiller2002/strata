@@ -30,10 +30,12 @@ module CatalogResolution =
                 Some { Qualified = t.Name; Columns = t.Columns |> List.map (fun c -> c.Name) }
             | ViewObject v ->
                 Some { Qualified = v.Name; Columns = v.Columns |> List.map (fun c -> c.Name) }
-            // Neither has columns to resolve a reference against. A sequence
-            // is named in a DEFAULT, never selected from with a column list.
+            // None of these has columns to resolve a reference against. A
+            // sequence is named in a DEFAULT and an enum type in a column's
+            // TYPE; neither is ever selected from with a column list.
             | RoutineObject _
-            | SequenceObject _ -> None)
+            | SequenceObject _
+            | EnumObject _ -> None)
 
     let private matchesName (indexed: Indexed) (name: Identifier) =
         Identifier.sameName indexed.Qualified.Name name
