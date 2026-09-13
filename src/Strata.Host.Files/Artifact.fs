@@ -451,12 +451,27 @@ module Artifact =
           Cycle = getBool "cycle" e
           Scope = readScope (prop "scope" e) }
 
+    /// An enum's values are rendered in order and never sorted: the order IS
+    /// the type. Two artifacts whose labels differ only in order describe two
+    /// different types, and a reader that sorted them would erase the
+    /// difference.
+    let renderEnum (e: EnumType) =
+        JObject [ "name", renderQualifiedName e.Name
+                  "values", renderStrings e.Values
+                  "scope", renderScope e.Scope ]
+
+    let readEnum (el: JsonElement) : EnumType =
+        { Name = readQualifiedName (prop "name" el)
+          Values = getStrings "values" el
+          Scope = readScope (prop "scope" el) }
+
     let renderObject (o: SchemaObject) =
         match o with
         | TableObject t -> JObject [ "kind", JString "table"; "table", renderTable t ]
         | ViewObject v -> JObject [ "kind", JString "view"; "view", renderView v ]
         | RoutineObject r -> JObject [ "kind", JString "routine"; "routine", renderRoutine r ]
         | SequenceObject s -> JObject [ "kind", JString "sequence"; "sequence", renderSequence s ]
+        | EnumObject e -> JObject [ "kind", JString "enum-type"; "enum", renderEnum e ]
 
     let readObject (e: JsonElement) : SchemaObject =
         match getString "kind" e with
@@ -464,6 +479,7 @@ module Artifact =
         | "view" -> ViewObject(readView (prop "view" e))
         | "routine" -> RoutineObject(readRoutine (prop "routine" e))
         | "sequence" -> SequenceObject(readSequence (prop "sequence" e))
+        | "enum-type" -> EnumObject(readEnum (prop "enum" e))
         | other -> failwithf "unknown object kind '%s'" other
 
     // ---- Grants, extensions, policies ---------------------------------------

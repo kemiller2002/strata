@@ -133,7 +133,8 @@ module SchemaDiff =
             | TableObject t -> Some t
             | ViewObject _
             | RoutineObject _
-            | SequenceObject _ -> None)
+            | SequenceObject _
+            | EnumObject _ -> None)
 
     let private sameName (a: QualifiedName) (b: QualifiedName) =
         QualifiedName.display a = QualifiedName.display b
@@ -753,6 +754,120 @@ module SchemaDiff =
 
         created @ altered @ dropped
 
+    /// Enumerated types, compared on their VALUES and their ORDER.
+    ///
+    /// ## Three outcomes, and only one of them is a change
+    ///
+    /// PostgreSQL lets you ADD a label, at a position. It does not let you
+    /// remove one — `ALTER TYPE ... DROP VALUE` is a syntax error, not a
+    /// privilege problem — and it does not let you reorder them. Measured
+    /// against a live server, not taken from the documentation.
+    ///
+    /// So a declared type that has gained labels converges, and one that has
+    /// LOST a label or moved one cannot, at all, without recreating the type and
+    /// everything declared with it. Proposing a change Strata cannot write would
+    /// produce a plan that fails halfway; saying nothing would report a project
+    /// as deployed when it is not. Both are disclosures instead, naming what
+    /// would have to happen.
+    ///
+    /// ## Prefix, not subset
+    ///
+    /// The declared values must START with the deployed ones, in order. That is
+    /// stricter than "contains every deployed label" and it is the correct test:
+    /// the only edit PostgreSQL permits is inserting new labels, so any deployed
+    /// label whose relative order has changed is a reorder, which it cannot do.
+    let private enumChanges
+        (allowDrops: bool)
+        (managedSchemas: string list)
+        (desiredComplete: bool)
+        (desired: SchemaObject list)
+        (actual: SchemaObject list)
+        =
+        let enums objects =
+            objects
+            |> List.choose (fun o ->
+                match o with
+                | EnumObject e -> Some e
+                | _ -> None)
+
+        let declared = enums desired
+        let deployed = enums actual
+
+        let created =
+            declared
+            |> List.filter (fun d -> not (deployed |> List.exists (fun a -> sameName a.Name d.Name)))
+            |> List.map (fun d -> Ok(CreateEnumType d.Name))
+
+        /// The labels a deployed type is missing, each with the label it must
+        /// follow in the DECLARED order — which is what `ALTER TYPE ... ADD
+        /// VALUE AFTER` needs.
+        let additions (declaredValues: string list) (deployedValues: string list) =
+            declaredValues
+            |> List.mapi (fun i v -> i, v)
+            |> List.filter (fun (_, v) -> not (List.contains v deployedValues))
+            |> List.map (fun (i, v) -> v, (if i = 0 then None else List.tryItem (i - 1) declaredValues))
+
+        let altered =
+            declared
+            |> List.collect (fun d ->
+                match deployed |> List.tryFind (fun a -> sameName a.Name d.Name) with
+                | None -> []
+                | Some a ->
+                    let kept = d.Values |> List.filter (fun v -> List.contains v a.Values)
+
+                    if kept <> a.Values then
+                        // Either a deployed label is gone from the project, or
+                        // the shared labels are in a different order. PostgreSQL
+                        // can do neither.
+                        let lost = a.Values |> List.filter (fun v -> not (List.contains v d.Values))
+
+                        [ Microsoft.FSharp.Core.Error
+                              { Object = d.Name
+                                Reason = NotCompared
+                                Detail =
+                                  if List.isEmpty lost then
+                                      sprintf
+                                          "the project orders this type's values differently from the database (project: %s; database: %s). PostgreSQL cannot reorder an enum's values, so nothing here can converge without recreating the type and everything declared with it."
+                                          (String.concat ", " d.Values)
+                                          (String.concat ", " a.Values)
+                                  else
+                                      sprintf
+                                          "the database has %d value(s) this project does not declare: %s. PostgreSQL has no ALTER TYPE ... DROP VALUE, so they cannot be removed — recreate the type, or declare them."
+                                          (List.length lost)
+                                          (String.concat ", " lost) } ]
+                    else
+                        additions d.Values a.Values
+                        |> List.map (fun (value, after) -> Ok(AddEnumValue(d.Name, value, after))))
+
+        let dropped =
+            deployed
+            |> List.filter (fun a -> not (declared |> List.exists (fun d -> sameName d.Name a.Name)))
+            |> List.map (fun a ->
+                if not (isManaged managedSchemas a.Name) then
+                    Microsoft.FSharp.Core.Error
+                        { Object = a.Name
+                          Reason = OutsideManagedSchemas
+                          Detail = "a type outside the project's managed schemas" }
+                elif a.Scope = ExtensionOwned then
+                    Microsoft.FSharp.Core.Error
+                        { Object = a.Name
+                          Reason = ExtensionOwnedObject
+                          Detail = "an extension owns this type" }
+                elif not desiredComplete then
+                    Microsoft.FSharp.Core.Error
+                        { Object = a.Name
+                          Reason = DesiredStateIncomplete
+                          Detail = "absent from desired state, but desired state did not load completely" }
+                elif not allowDrops then
+                    Microsoft.FSharp.Core.Error
+                        { Object = a.Name
+                          Reason = DropsNotEnabled
+                          Detail = "this type would be dropped; pass --allow-drops" }
+                else
+                    Ok(DropEnumType a.Name))
+
+        created @ altered @ dropped
+
     /// Privileges, compared per object AND per grantee.
     ///
     /// ## Why the ownership rule is finer here than anywhere else
@@ -932,6 +1047,15 @@ module SchemaDiff =
     let private quote (identifier: Identifier) =
         "\"" + identifier.Text.Replace("\"", "\"\"") + "\""
 
+    /// Render a string as a SQL literal.
+    ///
+    /// An enum label is DATA, not an identifier: `CREATE TYPE t AS ENUM ('a')`
+    /// takes single quotes, and a label containing one has to double it. Kept
+    /// separate from `quote` so the two cannot be confused at a call site — they
+    /// look alike and produce different statements.
+    let private literal (value: string) =
+        "'" + value.Replace("'", "''") + "'"
+
     let private quoteName (name: QualifiedName) =
         match name.Schema with
         | Some schema -> sprintf "%s.%s" (quote schema) (quote name.Name)
@@ -1016,6 +1140,7 @@ module SchemaDiff =
         (policyDeclarations: ((QualifiedName * Identifier) * string) list)
         (data: ResolvedData list)
         (desiredSequences: Sequence list)
+        (desiredEnums: EnumType list)
         /// Declared check expressions as the SERVER renders them. A check's
         /// expression is not recoverable from the parse tree, so this is the
         /// only source for one.
@@ -1049,6 +1174,9 @@ module SchemaDiff =
 
         let desiredSequence name =
             desiredSequences |> List.tryFind (fun (sq: Sequence) -> sameName sq.Name name)
+
+        let desiredEnum name =
+            desiredEnums |> List.tryFind (fun (e: EnumType) -> sameName e.Name name)
 
         let declaredRow table key =
             data
@@ -1104,6 +1232,39 @@ module SchemaDiff =
         // the file asked for; where the sequence already exists, ALTER leaves
         // the current value alone, which is the point — RESTART would hand out
         // a number twice.
+        | CreateEnumType name ->
+            desiredEnum name
+            |> Option.map (fun e ->
+                sprintf
+                    "CREATE TYPE %s AS ENUM (%s)"
+                    (quoteName name)
+                    (e.Values |> List.map literal |> String.concat ", "))
+
+        | AddEnumValue (name, value, after) ->
+            // `AFTER` rather than `BEFORE` throughout: the diff walks the
+            // declared order and always knows the label a new one follows, and
+            // one form is easier to reason about than two. A value with no
+            // predecessor is the first in the type, which is `BEFORE` the
+            // current first.
+            Some(
+                match after with
+                | Some predecessor ->
+                    sprintf "ALTER TYPE %s ADD VALUE %s AFTER %s" (quoteName name) (literal value) (literal predecessor)
+                | None ->
+                    match desiredEnum name with
+                    | Some e ->
+                        match e.Values |> List.tryItem 1 with
+                        | Some successor ->
+                            sprintf
+                                "ALTER TYPE %s ADD VALUE %s BEFORE %s"
+                                (quoteName name)
+                                (literal value)
+                                (literal successor)
+                        | None -> sprintf "ALTER TYPE %s ADD VALUE %s" (quoteName name) (literal value)
+                    | None -> sprintf "ALTER TYPE %s ADD VALUE %s" (quoteName name) (literal value))
+
+        | DropEnumType name -> Some(sprintf "DROP TYPE %s" (quoteName name))
+
         | CreateSequence name
         | AlterSequence name ->
             desiredSequence name
@@ -1502,6 +1663,12 @@ module SchemaDiff =
         // DEFAULT draws from one.
         | CreateSequence _ -> 2
         | AlterSequence _ -> 2
+        // With sequences, and for the same reason one rank up: a column can be
+        // declared WITH this type, so the type has to exist before the table
+        // does. Adding a label ranks here too — a table created later in the
+        // same plan may use it as a default.
+        | CreateEnumType _ -> 2
+        | AddEnumValue _ -> 2
         | RenameColumn _ -> 3
         | RenameTable _ -> 4
         | CreateTable _ -> 4
@@ -1576,7 +1743,11 @@ module SchemaDiff =
         | DropColumn _ -> 15
         | DropSequence _ -> 16
         | DropTable _ -> 16
-        | UnclassifiedChange _ -> 17
+        // LAST, and after the tables: a type cannot be dropped while a column
+        // is still declared with it, so every table that used it has to go
+        // first or the statement fails.
+        | DropEnumType _ -> 17
+        | UnclassifiedChange _ -> 18
 
     /// Constraint and default differences for a table present on both sides.
     ///
@@ -2260,6 +2431,7 @@ module SchemaDiff =
             | RoutineObject r ->
                 sprintf "routine:%s(%s)" (QualifiedName.display r.Name) (String.concat "," r.ArgumentTypes)
             | SequenceObject s -> "sequence:" + QualifiedName.display s.Name
+            | EnumObject e -> "enum:" + QualifiedName.display e.Name
 
         let nonTable (objects: SchemaObject list) =
             objects
@@ -2270,7 +2442,11 @@ module SchemaDiff =
                 // and a sequence has a start, an increment and bounds that a
                 // presence check would pass over in silence.
                 | TableObject _
-                | SequenceObject _ -> false
+                | SequenceObject _
+                // Excluded for the same reason a sequence is: this path
+                // compares by PRESENCE, and an enum's VALUES are most of what it
+                // is. `enumChanges` compares them.
+                | EnumObject _ -> false
                 | ViewObject _
                 | RoutineObject _ -> true)
 
@@ -2285,6 +2461,7 @@ module SchemaDiff =
             // Excluded from this path by `nonTable`; the compiler still wants
             // the arm, and inventing a wrong one would be worse than saying so.
             | SequenceObject _ -> "sequence"
+            | EnumObject _ -> "enum type"
 
         let created =
             desiredOther
@@ -2294,7 +2471,8 @@ module SchemaDiff =
                 | ViewObject v -> Ok(CreateView v.Name)
                 | RoutineObject r -> Ok(CreateRoutine r.Name)
                 | TableObject t -> Ok(CreateTable t.Name)
-                | SequenceObject sq -> Ok(CreateSequence sq.Name))
+                | SequenceObject sq -> Ok(CreateSequence sq.Name)
+                | EnumObject e -> Ok(CreateEnumType e.Name))
 
         let removed =
             actualOther
@@ -2823,7 +3001,49 @@ module SchemaDiff =
 
         let sequenceResults =
             sequenceChanges allowDrops managedSchemas desiredComplete desired.Objects actual.Objects
+
+        let enumResults =
+            enumChanges allowDrops managedSchemas desiredComplete desired.Objects actual.Objects
         let rowChanges, rowSuppressions = dataChanges data dataFailures
+
+        /// The one explanation PostgreSQL will not give you.
+        ///
+        /// A plan that adds an enum label AND declares reference rows using it
+        /// cannot do both at once, and the reason is not obvious from either
+        /// error. Resolving the rows fails with `invalid input value for enum`,
+        /// because the label does not exist yet; and if Strata created it in the
+        /// shadow so the rows resolved, the APPLY would fail instead, with
+        /// `unsafe use of new value` — PostgreSQL refuses to let a value added
+        /// inside a transaction be used in that same transaction, and Strata
+        /// applies a plan as one transaction.
+        ///
+        /// So the two-step is PostgreSQL's, not Strata's, and the honest thing
+        /// is to say which step this is. Without this the operator sees a raw
+        /// 22P02 and has no reason to think running again would help.
+        let enumTwoStepSuppressions =
+            let addedValues =
+                enumResults
+                |> List.choose (function
+                    | Ok (AddEnumValue (name, value, _)) -> Some(QualifiedName.display name, value)
+                    | _ -> None)
+
+            if List.isEmpty addedValues || List.isEmpty dataFailures then
+                []
+            else
+                dataFailures
+                |> List.filter (fun f ->
+                    addedValues |> List.exists (fun (_, value) -> f.Reason.Contains value))
+                |> List.map (fun f ->
+                    { Object = QualifiedName.unqualified (Identifier.unquoted f.Table)
+                      Reason = NotCompared
+                      Detail =
+                        sprintf
+                            "this plan adds %s AND declares rows using it. PostgreSQL will not let a value added inside a transaction be used in that same transaction, so the two cannot happen together: this run adds the value, and the rows land on the next one. Nothing is lost and no manual step is needed — re-run after this applies."
+                            (addedValues
+                             |> List.filter (fun (_, value) -> f.Reason.Contains value)
+                             |> List.map (fun (typeName, value) -> sprintf "'%s' to %s" value typeName)
+                             |> List.distinct
+                             |> String.concat " and ") })
 
         let otherChangeResults, otherNotCompared =
             otherObjectChanges
@@ -2839,6 +3059,7 @@ module SchemaDiff =
         let all =
             newSchemas
             @ sequenceResults
+            @ enumResults
             @ grantResults
             @ policyResults
             @ extensionResults
@@ -2878,6 +3099,8 @@ module SchemaDiff =
                         data
                         (desired.Objects
                          |> List.choose (function SequenceObject sq -> Some sq | _ -> None))
+                        (desired.Objects
+                         |> List.choose (function EnumObject e -> Some e | _ -> None))
                         normalisedTables
                         desiredTables
                         c })
@@ -2886,6 +3109,7 @@ module SchemaDiff =
             @ notCompared
             @ unmodelled
             @ rowSuppressions
+            @ enumTwoStepSuppressions
             @ schemaSuppressions
             @ grantSuppressions
             @ rlsSuppressions
@@ -2913,6 +3137,14 @@ module SchemaDiff =
     let private describe (change: Change) =
         match change with
         | UnclassifiedChange detail -> sprintf "unclassified: %s" detail
+        | CreateEnumType name -> sprintf "create-enum-type   %s" (QualifiedName.display name)
+        | DropEnumType name -> sprintf "drop-enum-type     %s" (QualifiedName.display name)
+        | AddEnumValue (name, value, after) ->
+            sprintf
+                "add-enum-value     %s '%s'%s"
+                (QualifiedName.display name)
+                value
+                (match after with Some p -> sprintf " after '%s'" p | None -> " (first)")
         | DropColumn (table, column) ->
             sprintf "drop-column        %s.%s" (QualifiedName.display table) column.Text
         | AlterColumnType (table, column, newType) ->

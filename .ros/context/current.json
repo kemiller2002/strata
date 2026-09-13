@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "claude",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-09-12T23:52:01Z",
+  "updatedAt": "2026-09-13T03:08:21Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -2213,6 +2213,52 @@
         "EXE-20260912T234722651Z-16178fc4"
       ],
       "completedAt": "2026-09-12T23:52:01Z"
+    },
+    {
+      "id": "WI-0097",
+      "type": "implementation",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Host.PgParser/PgParserAdapter.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/awkward/converges/generated-columns/01-generated.sql"
+        }
+      ],
+      "updatedAt": "2026-09-13T00:35:06Z",
+      "telemetryExecutionIds": [
+        "EXE-20260913T003110336Z-749cfd5c"
+      ],
+      "completedAt": "2026-09-13T00:35:06Z"
+    },
+    {
+      "id": "WI-0098",
+      "type": "implementation",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Semantic/Schema.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Application/SchemaDiff.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/SchemaDiffTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-13T03:08:21Z",
+      "telemetryExecutionIds": [
+        "EXE-20260913T024501901Z-d161054e"
+      ],
+      "completedAt": "2026-09-13T03:08:21Z"
     }
   ]
 }

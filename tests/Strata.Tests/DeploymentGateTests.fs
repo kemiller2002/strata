@@ -187,7 +187,10 @@ let ``exit codes distinguish all three verdicts`` () =
 /// coverage test below is what keeps this honest: a new case fails there until
 /// someone adds it here, and then the property runs over it automatically.
 let private everyChange : Change list =
-    [ DropColumn(orders, id' "c")
+    [ CreateEnumType(qn "sales" "status")
+      AddEnumValue(qn "sales" "status", "shipped", Some "pending")
+      DropEnumType(qn "sales" "status")
+      DropColumn(orders, id' "c")
       DropTable orders
       AlterColumnType(orders, id' "c", "bigint")
       AddColumn(orders, id' "c")
@@ -265,3 +268,33 @@ let ``an additive change is still allowed on a clean scan`` () =
     let result = run SemanticGraph.empty completeScope [ AddColumn(orders, id' "note") ]
 
     Assert.Equal(Allow, result.Verdict)
+
+// ---- enumerated types -------------------------------------------------------
+
+[<Fact>]
+let ``creating an enum type is allowed`` () =
+    Assert.Equal(
+        Allow,
+        (run SemanticGraph.empty completeScope [ CreateEnumType(qn "sales" "status") ]).Verdict)
+
+[<Fact>]
+let ``adding an enum value requires approval`` () =
+    // Additive to the type, and two things follow that no schema check can see.
+    // A value added inside a transaction cannot be USED in that transaction, so
+    // a plan that also writes a row with it fails as a unit. And every
+    // exhaustive CASE over the type in application code is now missing an arm.
+    let result = run SemanticGraph.empty completeScope [ AddEnumValue(qn "sales" "status", "shipped", Some "pending") ]
+
+    Assert.Equal(RequiresApproval, result.Verdict)
+    Assert.Contains("shipped", (List.head result.Findings).Detected)
+
+[<Fact>]
+let ``dropping an enum type is blocked`` () =
+    // Not a judgement call about blast radius: DROP TYPE takes every column
+    // declared with it, and the data in those columns goes too. PostgreSQL will
+    // refuse while a dependency exists, so this either fails or destroys
+    // something — which is what Block is for.
+    let result = run SemanticGraph.empty completeScope [ DropEnumType(qn "sales" "status") ]
+
+    Assert.Equal(Block, result.Verdict)
+    Assert.Contains("every column declared with it", (List.head result.Findings).Rationale)

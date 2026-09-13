@@ -487,6 +487,49 @@ module DeploymentGate =
               AffectedSources = []
               NextSafeMove = "Confirm nothing runs as this grantee against this object, then approve explicitly." }
 
+        | CreateEnumType name ->
+            { Change = change
+              Verdict = Allow
+              Detected = sprintf "creates enum type %s" (QualifiedName.display name)
+              Rationale = "Additive. Nothing can already be declared with a type that does not exist."
+              AffectedSources = []
+              NextSafeMove = "Proceed." }
+
+        | AddEnumValue (name, value, _) ->
+            // Additive to the type and still worth a human's attention, for a
+            // reason that has nothing to do with the schema: PostgreSQL refuses
+            // to let a value added inside a transaction be USED in that same
+            // transaction. Strata applies a plan as one transaction, so a plan
+            // that adds this label AND writes a reference row using it fails as
+            // a unit — "unsafe use of new value" — and rolls the whole thing
+            // back. The diff discloses that case specifically; this says why it
+            // is a judgement rather than a rubber stamp.
+            //
+            // The other half is that adding a value widens what the type admits,
+            // and every CASE and every exhaustive match over it in application
+            // code is now missing an arm. Strata cannot see that code.
+            { Change = change
+              Verdict = RequiresApproval
+              Detected = sprintf "adds value '%s' to enum type %s" value (QualifiedName.display name)
+              Rationale =
+                "Additive to the type, and two things follow that Strata cannot check. A value added inside a transaction cannot be USED in that same transaction, so a plan that also writes a row with it fails as a unit. And every exhaustive CASE over this type in application code is now missing an arm, which no schema check can see."
+              AffectedSources = []
+              NextSafeMove =
+                "Confirm nothing in this plan writes the new value, and that the code reading this type handles it." }
+
+        | DropEnumType name ->
+            { Change = change
+              Verdict = Block
+              Detected = sprintf "drops enum type %s" (QualifiedName.display name)
+              // A DROP TYPE takes every column declared with it. That is not a
+              // judgement call about blast radius, it is data loss with a known
+              // mechanism, which is what Block is for.
+              Rationale =
+                "Dropping a type drops every column declared with it, and the data in those columns goes with them. PostgreSQL will refuse while a dependency exists, so this either fails or destroys something."
+              AffectedSources = []
+              NextSafeMove =
+                "If the type really is unused, drop the columns that use it first, in their own reviewed change." }
+
         | CreateSequence name ->
             { Change = change
               Verdict = Allow

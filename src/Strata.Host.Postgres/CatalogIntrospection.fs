@@ -257,6 +257,16 @@ module CatalogIntrospection =
                       Scope = (if boolOf r "extension_owned" then ExtensionOwned else Observed) })
             |> categoryResult "sequences"
 
+        let enumTypes =
+            readCategory connection "enum_types" CatalogQueries.enumTypes (fun r ->
+                EnumObject
+                    { Name = qualified (str r "schema_name") (str r "type_name")
+                      // In enumsortorder, which the query guarantees. Never
+                      // sorted here: the order is the type.
+                      Values = r.GetFieldValue<string array>(r.GetOrdinal "labels") |> Array.toList
+                      Scope = (if boolOf r "extension_owned" then ExtensionOwned else Observed) })
+            |> categoryResult "enum_types"
+
         let viewDefinitions =
             readCategory connection "view_definitions" CatalogQueries.viewDefinitions (fun r ->
                 (str r "schema_name", str r "relation_name"), str r "definition")
@@ -431,6 +441,7 @@ module CatalogIntrospection =
                                 |> String.concat ", "))
                    | state -> state)
                   stateFor "sequences" (Option.isSome sequences)
+                  stateFor "enum_types" (Option.isSome enumTypes)
                   "rls_policies", NotRequested
                   "extensions", NotRequested
                   "grants", NotRequested
@@ -454,7 +465,10 @@ module CatalogIntrospection =
                        )) ]
 
         { Objects =
-            (objects @ routineObjects @ (sequences |> Option.defaultValue []))
+            (objects
+             @ routineObjects
+             @ (sequences |> Option.defaultValue [])
+             @ (enumTypes |> Option.defaultValue []))
             // Deterministic order regardless of catalog return order (NFR-001).
             |> List.sortBy (fun o -> QualifiedName.display (SchemaObject.name o))
           ServerVersion = serverVersion

@@ -453,11 +453,46 @@ module Schema =
           Forced: bool
           Policies: Policy list }
 
+    /// A user-defined enumerated type.
+    ///
+    /// ## The values are ORDERED, and the order is semantic
+    ///
+    /// PostgreSQL stores an `enumsortorder` per label, and the comparison
+    /// operators use it: `'pending' < 'shipped'` is true or false depending on
+    /// the order the type was declared in. `ORDER BY status` on an enum column
+    /// orders by that, not alphabetically. So this is a `list` and never a `set`,
+    /// and two types with the same labels in a different order are DIFFERENT
+    /// types.
+    ///
+    /// ## What PostgreSQL will and will not let you change
+    ///
+    /// Measured against a live server rather than taken from the documentation:
+    ///
+    ///   - `ALTER TYPE ... ADD VALUE 'x'` works, and takes an optional
+    ///     `BEFORE`/`AFTER` so a value can be inserted mid-order. The server
+    ///     gives it a fractional `enumsortorder` to fit.
+    ///   - There is NO `DROP VALUE`. It is a syntax error, not a permission
+    ///     problem: a label that exists cannot be removed, at any privilege, by
+    ///     anyone. Removing one means recreating the type and everything that
+    ///     depends on it.
+    ///   - Values cannot be reordered. Same reason.
+    ///
+    /// That asymmetry is why this type exists as its own case rather than as
+    /// another string on a column: the diff can propose SOME enum changes and
+    /// must refuse others, and a reader has to be told which they are looking
+    /// at.
+    type EnumType =
+        { Name: QualifiedName
+          /// Labels in `enumsortorder`, which is declaration order.
+          Values: string list
+          Scope: ManagementScope }
+
     type SchemaObject =
         | TableObject of Table
         | ViewObject of View
         | RoutineObject of Routine
         | SequenceObject of Sequence
+        | EnumObject of EnumType
 
     [<RequireQualifiedAccess>]
     module SchemaObject =
@@ -468,6 +503,7 @@ module Schema =
             | ViewObject v -> v.Name
             | RoutineObject r -> r.Name
             | SequenceObject s -> s.Name
+            | EnumObject e -> e.Name
 
         let kind (o: SchemaObject) =
             match o with
@@ -475,6 +511,7 @@ module Schema =
             | ViewObject v -> if v.IsMaterialized then ObjectKind.MaterializedView else ObjectKind.View
             | RoutineObject _ -> ObjectKind.Routine
             | SequenceObject _ -> ObjectKind.Sequence
+            | EnumObject _ -> ObjectKind.EnumType
 
         let scope (o: SchemaObject) =
             match o with
@@ -482,6 +519,7 @@ module Schema =
             | ViewObject v -> v.Scope
             | RoutineObject r -> r.Scope
             | SequenceObject s -> s.Scope
+            | EnumObject e -> e.Scope
 
     /// Server identity for a snapshot.
     type ServerVersion =

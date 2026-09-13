@@ -99,7 +99,8 @@ module Wire =
             | ObjectKind.Sequence -> "sequence"
             | ObjectKind.Routine -> "routine"
             | ObjectKind.Trigger -> "trigger"
-            | ObjectKind.Constraint -> "constraint")
+            | ObjectKind.Constraint -> "constraint"
+            | ObjectKind.EnumType -> "enum-type")
 
     let managementScope (scope: ManagementScope) =
         JString(

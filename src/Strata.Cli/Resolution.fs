@@ -171,7 +171,16 @@ let resolveData connectionString (declared: DesiredState.Loaded) =
             // the table that holds them can arrive in one plan.
             declarationOf declared d.Table)
 
-    match ReferenceData.resolve connectionString declaredData with
+    // The types the project declares, so a reference table whose column uses
+    // one that arrives in this same plan can still be built in the shadow.
+    let declaredEnums =
+        declared.Snapshot.Objects
+        |> List.choose (fun o ->
+            match o with
+            | EnumObject e -> Some(QualifiedName.display e.Name, e.Values)
+            | _ -> None)
+
+    match ReferenceData.resolve connectionString declaredEnums declaredData with
     | Ok (resolutions, failures) ->
         let row (r: ReferenceData.ResolvedRow) =
             ({ Key = r.Key

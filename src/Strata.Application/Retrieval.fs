@@ -261,6 +261,15 @@ module Retrieval =
                                   // it is data, and it changes on every
                                   // nextval.
                                   "note", JString "The sequence's current value is not reported: it is data, not structure." ]
+                    | Some (EnumObject e) ->
+                        JObject [ "name", JString(QualifiedName.display e.Name)
+                                  "kind", JString "enum-type"
+                                  "scope", managementScope e.Scope
+                                  // In declaration order, which is
+                                  // `enumsortorder` and is what the comparison
+                                  // operators use. Sorting these would be a
+                                  // different type.
+                                  "values", JArray(e.Values |> List.map JString) ]
                     | None ->
                         // Not in the snapshot is not "does not exist".
                         JObject [ "name", JString(QualifiedName.display name)

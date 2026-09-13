@@ -235,6 +235,7 @@ let ``Strata reads the declaration the way the server does`` (name: string) =
             | ViewObject v -> ViewObject { v with Name = qualify v.Name }
             | RoutineObject r -> RoutineObject { r with Name = qualify r.Name }
             | SequenceObject s -> SequenceObject { s with Name = qualify s.Name }
+            | EnumObject e -> EnumObject { e with Name = qualify e.Name }
 
         let desired =
             { declared.Snapshot with Objects = declared.Snapshot.Objects |> List.map requalify }

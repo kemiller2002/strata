@@ -305,6 +305,39 @@ module CatalogQueries =
         ORDER BY n.nspname, c.relname
         """
 
+    /// Enumerated types and their labels, in `enumsortorder`.
+    ///
+    /// The ORDER BY is not cosmetic. `enumsortorder` is what PostgreSQL's
+    /// comparison operators use, so it is part of the type's identity, and it
+    /// is a float: `ALTER TYPE ... ADD VALUE 'b' BEFORE 'c'` gives the new label
+    /// a fractional order to fit between its neighbours. Ordering by label or by
+    /// oid would report a type as different from itself.
+    ///
+    /// Labels come back as one ordered array per type rather than a row each, so
+    /// a type with no labels — which PostgreSQL permits and which is useless —
+    /// still arrives, as an empty array. A row-per-label shape would drop it,
+    /// and an absent type reads as one to create.
+    let enumTypes =
+        """
+        SELECT n.nspname AS schema_name,
+               t.typname AS type_name,
+               (dx.objid IS NOT NULL) AS extension_owned,
+               COALESCE(
+                   (SELECT array_agg(e.enumlabel ORDER BY e.enumsortorder)
+                    FROM pg_catalog.pg_enum e
+                    WHERE e.enumtypid = t.oid),
+                   ARRAY[]::name[]) AS labels
+        FROM pg_catalog.pg_type t
+        JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
+        LEFT JOIN pg_catalog.pg_depend dx
+               ON dx.objid = t.oid
+              AND dx.classid = 'pg_type'::regclass
+              AND dx.deptype = 'e'
+        WHERE t.typtype = 'e'
+          AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+        ORDER BY n.nspname, t.typname
+        """
+
     /// Privileges granted on relations and sequences.
     ///
     /// Three things here are not obvious, and each was verified against a live

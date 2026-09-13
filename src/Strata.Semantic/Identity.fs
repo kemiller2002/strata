@@ -54,6 +54,7 @@ module Identity =
         | Routine
         | Trigger
         | Constraint
+        | EnumType
 
     /// A name as it appeared in SQL or the catalog: optionally schema-qualified.
     ///

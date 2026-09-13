@@ -2540,3 +2540,90 @@ let ``a default-denying table nobody declares a policy for is still reported`` (
             s.Reason = NotModelled
             && s.Detail.Contains "every row is hidden"
             && s.Detail.Contains "nothing here will change that")
+
+// ---- enumerated types -------------------------------------------------------
+//
+// Three outcomes, and only one of them is a change. PostgreSQL lets you ADD a
+// label at a position; it has no DROP VALUE at all, and it cannot reorder. So a
+// declared type that gained labels converges, and one that LOST a label or moved
+// one cannot without recreating the type — which Strata discloses rather than
+// proposing a statement it cannot write.
+
+let private enumOf name values : SchemaObject =
+    EnumObject { Name = qn "sales" name; Values = values; Scope = Managed }
+
+let private enumDiff declared deployed =
+    Strata.Application.SchemaDiff.run
+        { Strata.Application.SchemaDiff.Inputs.between (complete declared) (complete deployed) with
+            AllowDrops = true
+            ManagedSchemas = managed
+            ExistingSchemas = Some managed }
+
+[<Fact>]
+let ``a type the database does not have is created`` () =
+    let result = enumDiff [ enumOf "status" [ "a"; "b" ] ] []
+    Assert.Contains(result.Changes, fun c -> c = CreateEnumType(qn "sales" "status"))
+
+[<Fact>]
+let ``an identical type proposes nothing`` () =
+    let result = enumDiff [ enumOf "status" [ "a"; "b" ] ] [ enumOf "status" [ "a"; "b" ] ]
+    Assert.Empty result.Changes
+
+[<Fact>]
+let ``a label appended is added after its predecessor`` () =
+    let result = enumDiff [ enumOf "status" [ "a"; "b"; "c" ] ] [ enumOf "status" [ "a"; "b" ] ]
+    Assert.Contains(result.Changes, fun c -> c = AddEnumValue(qn "sales" "status", "c", Some "b"))
+
+[<Fact>]
+let ``a label inserted in the middle carries the label it must follow`` () =
+    // The position is not cosmetic: it decides the type's ordering, which its
+    // comparison operators use.
+    let result = enumDiff [ enumOf "status" [ "a"; "b"; "c" ] ] [ enumOf "status" [ "a"; "c" ] ]
+    Assert.Contains(result.Changes, fun c -> c = AddEnumValue(qn "sales" "status", "b", Some "a"))
+
+[<Fact>]
+let ``a label inserted at the front has no predecessor`` () =
+    let result = enumDiff [ enumOf "status" [ "z"; "a"; "b" ] ] [ enumOf "status" [ "a"; "b" ] ]
+    Assert.Contains(result.Changes, fun c -> c = AddEnumValue(qn "sales" "status", "z", None))
+
+[<Fact>]
+let ``several labels added at once each carry their own position`` () =
+    let result = enumDiff [ enumOf "status" [ "a"; "b"; "c"; "d" ] ] [ enumOf "status" [ "a"; "c" ] ]
+
+    Assert.Contains(result.Changes, fun c -> c = AddEnumValue(qn "sales" "status", "b", Some "a"))
+    Assert.Contains(result.Changes, fun c -> c = AddEnumValue(qn "sales" "status", "d", Some "c"))
+
+[<Fact>]
+let ``a label the project no longer declares is disclosed, never proposed`` () =
+    // There is no ALTER TYPE ... DROP VALUE. Proposing anything here would be a
+    // plan that fails halfway; saying nothing would report the project as
+    // deployed when it is not.
+    let result = enumDiff [ enumOf "status" [ "a" ] ] [ enumOf "status" [ "a"; "b" ] ]
+
+    Assert.Empty result.Changes
+
+    Assert.Contains(
+        result.Suppressed,
+        fun s -> s.Detail.Contains "no ALTER TYPE ... DROP VALUE" && s.Detail.Contains "b")
+
+[<Fact>]
+let ``reordered labels are disclosed, never proposed`` () =
+    // Same labels, different order. PostgreSQL cannot reorder an enum.
+    let result = enumDiff [ enumOf "status" [ "b"; "a" ] ] [ enumOf "status" [ "a"; "b" ] ]
+
+    Assert.Empty result.Changes
+    Assert.Contains(result.Suppressed, fun s -> s.Detail.Contains "cannot reorder")
+
+[<Fact>]
+let ``a label added AND the order changed is reported as the order problem`` () =
+    // The blocking fact is the reorder: adding is possible, reordering is not,
+    // so reporting the addition would tell the reader the half that can proceed.
+    let result = enumDiff [ enumOf "status" [ "b"; "a"; "c" ] ] [ enumOf "status" [ "a"; "b" ] ]
+
+    Assert.Empty result.Changes
+    Assert.Contains(result.Suppressed, fun s -> s.Detail.Contains "cannot reorder")
+
+[<Fact>]
+let ``a type the project no longer declares is dropped only with --allow-drops`` () =
+    let withDrops = enumDiff [] [ enumOf "status" [ "a" ] ]
+    Assert.Contains(withDrops.Changes, fun c -> c = DropEnumType(qn "sales" "status"))

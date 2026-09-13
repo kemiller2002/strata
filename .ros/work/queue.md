@@ -99,3 +99,6 @@
 | WI-0094 | normalisePolicies rewrites the table name by blind string replacement | complete |  | medium |
 | WI-0095 | A view with a column-alias list never converges | complete |  | high |
 | WI-0096 | No harness for running the CLI as a process | complete |  | medium |
+| WI-0097 | A generated column never converges | complete |  | high |
+| WI-0098 | Enum and domain types cannot be declared | complete |  | high |
+| WI-0099 | Domain types cannot be declared | captured |  | medium |
