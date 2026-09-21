@@ -1,0 +1,102 @@
+name: Temporary Echelon 3.1.2 rollout
+
+on:
+  push:
+    branches:
+      - "chore/echelon-capabilities-2026-09-21"
+
+permissions:
+  contents: write
+
+jobs:
+  rollout:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: "chore/echelon-capabilities-2026-09-21"
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Install or upgrade SDE 1.3.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/kemiller2002/state-directed-engineering.git "$RUNNER_TEMP/sde-source"
+          (cd "$RUNNER_TEMP/sde-source/distribution" && npm run build:payload)
+          if [[ -d .sde || -f .echelon/sde.json ]]; then cmd=upgrade; else cmd=init; fi
+          SDE_PAYLOAD_DIR="$RUNNER_TEMP/sde-source/distribution/dist" dotnet run --project "$RUNNER_TEMP/sde-source/src/Sde.Cli/Sde.Cli.fsproj" -c Release -- "$cmd"
+          SDE_PAYLOAD_DIR="$RUNNER_TEMP/sde-source/distribution/dist" dotnet run --project "$RUNNER_TEMP/sde-source/src/Sde.Cli/Sde.Cli.fsproj" -c Release -- verify
+
+      - name: Adopt or reconcile ROS 3.1.2 candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch fix/legacy-ros-adoption-3.1.2 https://github.com/kemiller2002/repository-operating-system.git "$RUNNER_TEMP/ros-source"
+          if [[ -f .echelon/ros.json ]]; then cmd=init
+          elif [[ -f .ros/installation.json ]]; then cmd=upgrade
+          else cmd=init
+          fi
+          (cd "$RUNNER_TEMP/ros-source" && dotnet run --project src/Ros.Cli/Ros.Cli.fsproj -c Release -- "$cmd")
+
+      - name: Install or upgrade Visual Engineering 1.0.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f .echelon/visual-engineering.json ]]; then cmd=upgrade; else cmd=init; fi
+          npx --yes @echelon-foundry/visual-engineering@1.0.0 "$cmd"
+
+      - name: Install or upgrade Communication Engineering 1.0.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/kemiller2002/communication-engineering.git "$RUNNER_TEMP/communication-engineering-source"
+          if [[ -f .echelon/communication-engineering.json ]]; then cmd=upgrade; else cmd=init; fi
+          node "$RUNNER_TEMP/communication-engineering-source/bin/communication-engineering.mjs" "$cmd"
+
+      - name: Install or upgrade Limen 0.6.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -f limen.config.json ]]; then
+            printf '%s\n' '{"configurationVersion":1,"boundary":{"engine":[],"kernel":[]}}' > limen.config.json
+          fi
+          if [[ -f .echelon/limen.json ]]; then cmd=upgrade; else cmd=init; fi
+          npx --yes @echelon-foundry/typescript-wasm-kernel@0.6.1 "$cmd"
+
+      - name: Verify combined candidate state
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd "$RUNNER_TEMP/ros-source" && dotnet run --project src/Ros.Cli/Ros.Cli.fsproj -c Release -- init)
+          (cd "$RUNNER_TEMP/ros-source" && dotnet run --project src/Ros.Cli/Ros.Cli.fsproj -c Release -- verify --strict)
+          SDE_PAYLOAD_DIR="$RUNNER_TEMP/sde-source/distribution/dist" dotnet run --project "$RUNNER_TEMP/sde-source/src/Sde.Cli/Sde.Cli.fsproj" -c Release -- verify
+          npx --yes @echelon-foundry/visual-engineering@1.0.0 verify --strict
+          node "$RUNNER_TEMP/communication-engineering-source/bin/communication-engineering.mjs" verify --strict
+          npx --yes @echelon-foundry/typescript-wasm-kernel@0.6.1 verify --strict
+
+      - name: Commit non-workflow capability state
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Echelon Upgrade Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git checkout HEAD -- .github/workflows
+          git add -A
+          git reset .github/workflows
+          if git diff --cached --quiet; then
+            echo "No non-workflow changes required."
+            exit 0
+          fi
+          git commit -m "chore: install current Echelon engineering capabilities"
+          git push origin HEAD:"chore/echelon-capabilities-2026-09-21"
