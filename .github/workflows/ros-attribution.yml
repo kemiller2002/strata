@@ -32,9 +32,14 @@ jobs:
           export ROS_BASE_REF=origin/main
           work_id="ECHELON-UPGRADE-2026-09-21"
           ./ros add "Reconcile current Echelon engineering capabilities"             --id "$work_id"             --tag tooling,ordo,ros,limen             --priority high             --source agent-discovery             --source-reference "public-repository-upgrade-2026-09-21"
-          ./ros work ready "$work_id"
-          ./ros work start "$work_id" --type mechanical
-          ./ros work done "$work_id"
+          ready_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          ./ros work backlog-transition --id "$work_id" --action ready --occurred-at "$ready_at"
+          sleep 1
+          start_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          ./ros work start --id "$work_id" --occurred-at "$start_at" --type mechanical --actor agent:chatgpt
+          sleep 1
+          done_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          ./ros work complete --id "$work_id" --occurred-at "$done_at" --actor agent:chatgpt
           ./ros validate
 
       - name: Commit ROS attribution
