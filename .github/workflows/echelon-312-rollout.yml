@@ -42,12 +42,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git clone --depth 1 --branch fix/legacy-ros-adoption-3.1.2 https://github.com/kemiller2002/repository-operating-system.git "$RUNNER_TEMP/ros-source"
+          git clone --depth 1 https://github.com/kemiller2002/repository-operating-system.git "$RUNNER_TEMP/ros-source"
           if [[ -f .echelon/ros.json ]]; then cmd=init
           elif [[ -f .ros/installation.json ]]; then cmd=upgrade
           else cmd=init
           fi
-          (cd "$RUNNER_TEMP/ros-source" && dotnet run --project src/Ros.Cli/Ros.Cli.fsproj -c Release -- "$cmd")
+          (cd "$RUNNER_TEMP/ros-source" && dotnet run --project src/Ros.Cli/Ros.Cli.fsproj -c Release -- --root "$GITHUB_WORKSPACE" "$cmd")
 
       - name: Install or upgrade Visual Engineering 1.0.0
         shell: bash
@@ -78,8 +78,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          (cd "$RUNNER_TEMP/ros-source" && dotnet run --project src/Ros.Cli/Ros.Cli.fsproj -c Release -- init)
-          (cd "$RUNNER_TEMP/ros-source" && dotnet run --project src/Ros.Cli/Ros.Cli.fsproj -c Release -- verify --strict)
+          (cd "$RUNNER_TEMP/ros-source" && dotnet run --project src/Ros.Cli/Ros.Cli.fsproj -c Release -- --root "$GITHUB_WORKSPACE" init)
+          (cd "$RUNNER_TEMP/ros-source" && dotnet run --project src/Ros.Cli/Ros.Cli.fsproj -c Release -- --root "$GITHUB_WORKSPACE" verify --strict)
           SDE_PAYLOAD_DIR="$RUNNER_TEMP/sde-source/distribution/dist" dotnet run --project "$RUNNER_TEMP/sde-source/src/Sde.Cli/Sde.Cli.fsproj" -c Release -- verify
           npx --yes @echelon-foundry/visual-engineering@1.0.0 verify --strict
           node "$RUNNER_TEMP/communication-engineering-source/bin/communication-engineering.mjs" verify --strict
