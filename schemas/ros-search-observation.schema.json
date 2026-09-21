@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://echelonfoundry.com/schemas/ros-search-observation.schema.json",
+  "title": "ROS Scoped Search Observation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schemaVersion",
+    "observationId",
+    "target",
+    "scope",
+    "method",
+    "stateReference",
+    "coverage",
+    "coverageEvidenceIds",
+    "exclusions",
+    "errors",
+    "outcome",
+    "observedAt"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ros.search-observation"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "observationId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "target": {
+      "type": "string",
+      "minLength": 1
+    },
+    "scope": {
+      "type": "string",
+      "minLength": 1
+    },
+    "method": {
+      "type": "string",
+      "minLength": 1
+    },
+    "query": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "stateReference": {
+      "type": "string",
+      "minLength": 1
+    },
+    "coverage": {
+      "enum": [
+        "complete",
+        "partial",
+        "unknown"
+      ]
+    },
+    "coverageEvidenceIds": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "exclusions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "outcome": {
+      "enum": [
+        "found",
+        "searched-not-found"
+      ]
+    },
+    "observedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

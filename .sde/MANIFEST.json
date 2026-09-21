@@ -1,25 +1,29 @@
 {
   "schemaVersion": 1,
-  "sdeVersion": "1.1.1",
+  "sdeVersion": "1.3.0",
   "methodVersion": "0.2",
-  "sourceRevision": "7844e6ae81f06dc34568ac54a4b55eded2d04bab",
+  "sourceRevision": "5e686d29f000b50d6258552224dfd12fe625e225",
   "packageName": "@echelon-foundry/sde",
   "files": [
     {
       "path": "README.md",
-      "sha256": "0c79759429dc369ce60fa229d53d78024960916ead7096a21083469d9aec7c79"
+      "sha256": "de8bcf75571e13880b3d5f97f9e8326c36b1dc152c7315c9c11785181f9c29bc"
     },
     {
       "path": "VERSION",
-      "sha256": "cc52f678848b814373757b460383bf61960e4943c203735adde0a350b3e50989"
+      "sha256": "64d23f858ef51b0f996e4966d4e27c0371b437e2d2787890b1f7ad22d4ec5663"
     },
     {
       "path": "architecture/BOUNDARY-PRESERVATION.md",
       "sha256": "f7089e07c8d0a5dacf47b5561f8d20acff08debfb3c59c07fc1184506c6eaf97"
     },
     {
+      "path": "architecture/DECISION-AND-EVIDENCE-SEMANTICS.md",
+      "sha256": "ff54bc8a254f7bd697a03099c6cce7d1ad50cd2da122cd744fc280ec63e1d9bc"
+    },
+    {
       "path": "architecture/FOUR-TIER-ARCHITECTURE.md",
-      "sha256": "43fa34f12eadc0fbb82b650adb1fff179122ce9ed728f862fb7afc9ca5a07134"
+      "sha256": "9f6c2757e938977dd0fb997bd1267b0235580531b4e36b3e3489512146f8d61b"
     },
     {
       "path": "architecture/STRUCTURAL-LOCALITY.md",
@@ -55,7 +59,7 @@
     },
     {
       "path": "reference/GLOSSARY.md",
-      "sha256": "5e506a0bd5e0603e7227ddcacb2c05f4b9ab89f6a9fdb6e2c1f8275ba5c3ae6e"
+      "sha256": "8e3a3680838306f431a8dd1b2b4bca58888e4f137eccede7bdca35bd13cec800"
     },
     {
       "path": "templates/completion-report.md",

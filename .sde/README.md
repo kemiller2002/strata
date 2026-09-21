@@ -27,9 +27,21 @@ outside this directory rather than editing these files.
 
 Installed SDE version: see `VERSION`.
 Installation provenance and file hashes: see `MANIFEST.json`.
+What is installed, in machine-readable form: see `../.echelon/sde.json`.
 
-Check installation status at any time: `npx @echelon-foundry/sde status`.
-Run integrity and portable structural review with
-`npx @echelon-foundry/sde verify`. Structural findings are review warnings,
-not proof of nonconformance; use project-root `sde.config.json` only when the
-default source extensions or line bands do not fit the project.
+Managing this installation:
+
+```
+npx @echelon-foundry/sde status    # what is installed (read-only)
+npx @echelon-foundry/sde verify    # integrity and structural review (read-only)
+npx @echelon-foundry/sde doctor    # explain any problem and how to fix it
+npx @echelon-foundry/sde upgrade   # move to a newer SDE release
+```
+
+Every command accepts `--json` for machine-readable output, and `upgrade`
+accepts `--dry-run` to see what it would change without changing anything.
+
+Structural findings from `verify` are review warnings, not proof of
+nonconformance; use a project-root `sde.config.json` only when the default
+source extensions or line bands do not fit the project. That file belongs to
+this project — SDE reads it and never rewrites it.

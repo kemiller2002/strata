@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "tool": "communication-engineering",
+  "package": "@echelon-foundry/communication-engineering",
+  "installedVersion": "1.0.0",
+  "configurationVersion": 1,
+  "installRoot": ".communication-engineering",
+  "managedArtifacts": [
+    {
+      "path": ".communication-engineering/COMMUNICATION-ANTI-PATTERNS.md",
+      "ownership": "tool-owned",
+      "sha256": "4258250d51b40575a3a68d33297c6edbcf6af6af30d0cfe3c3a5e0624ceef1ed"
+    },
+    {
+      "path": ".communication-engineering/COMMUNICATION-DECISION-CHECKLIST.md",
+      "ownership": "tool-owned",
+      "sha256": "738ff16d7e7b6cfc535acf2d4fe410fdfafc82cf4566c76ae52d1fa64202a430"
+    },
+    {
+      "path": ".communication-engineering/COMMUNICATION-FOUNDATIONS.md",
+      "ownership": "tool-owned",
+      "sha256": "e6b6a4af733d511b20914e48f9bcd838ae417f447a6d271a4ed975ee39c48cbd"
+    },
+    {
+      "path": ".communication-engineering/PURPOSE-OUTCOME-MATRIX.md",
+      "ownership": "tool-owned",
+      "sha256": "bf0bf42c83b07430c129f5cc4d77818acb8a2304dd568a0ee00bfb6009afc1c9"
+    },
+    {
+      "path": ".communication-engineering/RESEARCH-STATUS.md",
+      "ownership": "tool-owned",
+      "sha256": "6bc7bc84412ca303da570c0f2dbaa89c5e262f9969fbb71ad1eee30151ea9f39"
+    },
+    {
+      "path": "AGENTS.md#communication-engineering-region",
+      "ownership": "shared-region",
+      "sha256": "9efa2078fa03bd4c5f1986ce7f7008c8af69ba049c655acfdfe2f5459e32be7c"
+    }
+  ]
+}

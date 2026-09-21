@@ -59,11 +59,11 @@ from that point the in-flight record in `.ros/context/current.json` is
 authoritative, and `work list`/`work show` always prefer its live state over
 the backlog's own status field. `work block`/`work ready` on an ID already
 being executed dispatch to the existing in-flight transitions, unchanged.
-See [`DF-ROS-2026-A008`](../research/decisions/DF-ROS-2026-A008--repository-local-work-backlog.md)
+See [`DF-ROS-2026-A008`](https://github.com/kemiller2002/repository-operating-system/blob/main/research/decisions/DF-ROS-2026-A008--repository-local-work-backlog.md)
 for why this stays a staging layer rather than repository-owned work-item
 authority (that boundary belongs to the external system; see below). For a
 worked, example-heavy walkthrough of every command, see
-[`work-backlog-guide.md`](work-backlog-guide.md).
+[`work-backlog-guide.md`](https://github.com/kemiller2002/repository-operating-system/blob/main/docs/work-backlog-guide.md).
 
 ## Adapter contract
 

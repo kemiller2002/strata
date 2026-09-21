@@ -2,9 +2,9 @@
 id: SDE-DOCTRINE-005
 title: SDE Glossary
 status: accepted
-version: 0.2.0
+version: 0.2.1
 created: 2026-09-02
-updated: 2026-09-05
+updated: 2026-09-20
 tags: [doctrine, glossary]
 ---
 
@@ -107,6 +107,36 @@ picking one meaning.
 - **Discovery Expansion (DE)** — files read outside a declared feature
   boundary, optionally classified as declared dependency, undeclared
   dependency, unrelated, or cross-boundary edit; an experimental diagnostic.
+
+## Executable Ordo decision/evidence terms
+
+- **Semantically complete state view** - the smallest contract/version-specific
+  state projection containing every authoritative fact whose different value
+  could change choice legality, evidence/coverage sufficiency, capability or
+  obligation applicability, policy, or transition legality.
+- **Scoped coverage** - a claim about completeness for one explicitly named
+  domain/contract scope, never a global property of a request.
+- **Partial coverage** - incompleteness is known.
+- **Unknown coverage** - whether sufficient coverage exists has not been
+  established. It is not the same as Partial.
+- **Derived-evidence closure** - the transitive input set reached through
+  `EvidenceKind.Derived` references. This derivation relation must be acyclic.
+- **Unknown effect outcome** - an external effect was attempted but whether it
+  occurred cannot yet be established. It is not failure and creates an
+  explicit reconciliation obligation.
+- **Retry safety** - a host-supplied statement that the actual external
+  contract makes repeating an Unknown attempt semantically safe. Ordo never
+  infers it, and it never removes the reconciliation obligation.
+- **Ordo Capability** - a host/application-supplied semantic authority
+  prerequisite. It is not an authentication token, credential, object
+  capability, signature, or identity proof.
+- **Negative observation** - typed Evidence content stating that a declared
+  method actually ran against a named scope/state and did not find one target.
+  It records method/query, state reference, exclusions and errors. It is not
+  an unqualified absence claim.
+- **Absence support** - the structural condition that a negative observation's
+  Evidence is provenance for matching Complete scoped coverage. It permits a
+  domain to consider absence; it does not create truth by itself.
 
 ## SDE (methodology) terms
 
