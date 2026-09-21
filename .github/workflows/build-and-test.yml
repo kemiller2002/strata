@@ -106,7 +106,7 @@ jobs:
           fi
 
   echelon-capability-rollout:
-    if: github.event_name == 'pull_request' && github.event.action == 'opened'
+    if: github.event_name == 'pull_request'
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -139,18 +139,14 @@ jobs:
         run: |
           set -euo pipefail
           git clone --depth 1 https://github.com/kemiller2002/repository-operating-system.git "$RUNNER_TEMP/ros-source"
-          profile=greenfield
           if [[ -f .echelon/ros.json ]]; then
-            profile="$(node -e 'const fs=require("fs");const x=JSON.parse(fs.readFileSync(".echelon/ros.json","utf8"));process.stdout.write(x.profile||"greenfield")')"
             cmd=init
           elif [[ -f .ros/installation.json ]]; then
-            profile="$(node -e 'const fs=require("fs");const x=JSON.parse(fs.readFileSync(".ros/installation.json","utf8"));process.stdout.write(x.profile||"greenfield")')"
             cmd=upgrade
           else
             cmd=init
           fi
-          echo "ROS_PROFILE=$profile" >> "$GITHUB_ENV"
-          dotnet run --project "$RUNNER_TEMP/ros-source/src/Ros.Cli/Ros.Cli.fsproj" -c Release -- "$cmd" --profile "$profile"
+          (cd "$RUNNER_TEMP/ros-source" && dotnet run --project src/Ros.Cli/Ros.Cli.fsproj -c Release -- "$cmd")
 
       - name: Install or upgrade Visual Engineering 1.0.0
         shell: bash
@@ -181,8 +177,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          dotnet run --project "$RUNNER_TEMP/ros-source/src/Ros.Cli/Ros.Cli.fsproj" -c Release -- init --profile "$ROS_PROFILE"
-          dotnet run --project "$RUNNER_TEMP/ros-source/src/Ros.Cli/Ros.Cli.fsproj" -c Release -- verify --strict
+          (cd "$RUNNER_TEMP/ros-source" && dotnet run --project src/Ros.Cli/Ros.Cli.fsproj -c Release -- init)
+          (cd "$RUNNER_TEMP/ros-source" && dotnet run --project src/Ros.Cli/Ros.Cli.fsproj -c Release -- verify --strict)
           SDE_PAYLOAD_DIR="$RUNNER_TEMP/sde-source/distribution/dist" dotnet run --project "$RUNNER_TEMP/sde-source/src/Sde.Cli/Sde.Cli.fsproj" -c Release -- verify
           npx --yes @echelon-foundry/visual-engineering@1.0.0 verify --strict
           node "$RUNNER_TEMP/communication-engineering-source/bin/communication-engineering.mjs" verify --strict
