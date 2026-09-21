@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://echelonfoundry.com/schemas/ros-handoff-authority.schema.json",
+  "title": "ROS Structured Handoff Authority",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schemaVersion",
+    "authority",
+    "resolutionId",
+    "facts",
+    "assumptions",
+    "unknowns",
+    "obligations",
+    "legalNextActions",
+    "supersededResolutionIds",
+    "authoritativeArtifacts",
+    "historicalDecisionReferences",
+    "completedVerification"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ros.handoff-authority"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repositoryRevision",
+        "source",
+        "stateFingerprint"
+      ],
+      "properties": {
+        "repositoryRevision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "stateFingerprint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "resolutionId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "facts": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "assumptions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "unknowns": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "obligations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "legalNextActions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "supersededResolutionIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "authoritativeArtifacts": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "historicalDecisionReferences": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "completedVerification": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

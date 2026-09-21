@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "tool": "sde",
+  "package": "@echelon-foundry/sde",
+  "installedVersion": "1.3.0",
+  "configurationVersion": 2,
+  "installRoot": ".sde",
+  "managedArtifacts": [
+    ".sde",
+    ".echelon/sde.json"
+  ]
+}

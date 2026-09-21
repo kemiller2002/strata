@@ -2,9 +2,9 @@
   "schemaVersion": "1.0.0",
   "protocolVersion": "1.0.0",
   "repository": "strata",
-  "actor": "claude",
+  "actor": "agent:chatgpt",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-09-13T11:48:24Z",
+  "updatedAt": "2026-09-21T15:45:51Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -2371,6 +2371,18 @@
         "EXE-20260913T114508295Z-4f08461d"
       ],
       "completedAt": "2026-09-13T11:48:24Z"
+    },
+    {
+      "id": "ECHELON-UPGRADE-2026-09-21",
+      "type": "mechanical",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [],
+      "updatedAt": "2026-09-21T15:45:51Z",
+      "telemetryExecutionIds": [
+        "EXE-20260921T154550778Z-10aa8747"
+      ],
+      "completedAt": "2026-09-21T15:45:51Z"
     }
   ]
 }

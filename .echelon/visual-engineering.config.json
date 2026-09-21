@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "tool": "visual-engineering",
+  "configurationVersion": 3,
+  "contextDirectory": ".visual-engineering",
+  "integrations": {
+    "agentsFile": "AGENTS.md",
+    "gitignore": true
+  }
+}

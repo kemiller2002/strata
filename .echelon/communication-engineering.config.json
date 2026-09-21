@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "tool": "communication-engineering",
+  "configurationVersion": 1,
+  "contextDirectory": ".communication-engineering",
+  "integrations": {
+    "agentsFile": "AGENTS.md"
+  }
+}

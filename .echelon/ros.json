@@ -1,0 +1,450 @@
+{
+  "schemaVersion": 1,
+  "tool": "ros",
+  "package": "@echelon-foundry/repository-operating-system",
+  "installedVersion": "3.1.3",
+  "configurationVersion": 1,
+  "profile": "greenfield",
+  "managedArtifacts": [
+    {
+      "path": ".editorconfig",
+      "ownership": "user-owned",
+      "sha256": "6297da6b1169de32dca2f6184b4eaa63a8bb6c7e1c66c20d6e813166256e3856"
+    },
+    {
+      "path": ".gitattributes",
+      "ownership": "user-owned",
+      "sha256": "489fb811f97deb0befb181e8eda6330bd155b6e1a3d7cc4b717391c31cf870f0"
+    },
+    {
+      "path": ".github/copilot-instructions.md",
+      "ownership": "user-owned",
+      "sha256": "6d73dbcff3faa092362c994120e091b40beec493030ce37da66f0ed573a5541e"
+    },
+    {
+      "path": ".github/workflows/ros-validation.yml",
+      "ownership": "shared",
+      "sha256": "5402fa4d2f9a148bee3ec7a84a10ec3c2afa24eacfed9891fde595335746507d"
+    },
+    {
+      "path": ".gitignore",
+      "ownership": "user-owned",
+      "sha256": "b0323b96c198a6ad9538588027f1e59575c9ad4afcbde7096f10a296443893fe"
+    },
+    {
+      "path": "AGENTS.md",
+      "ownership": "shared",
+      "sha256": "7c8c6fc37d632eb7bb1822dfb1cdc6121f4955c2941ba84033b1d4053ac8d708"
+    },
+    {
+      "path": "BOOTSTRAP.md",
+      "ownership": "tool-owned",
+      "sha256": "5f3c6db1d7a2d1823107c3e018951c9f40729f54138a7ceabe2cd5acc7410732"
+    },
+    {
+      "path": "CLAUDE.md",
+      "ownership": "user-owned",
+      "sha256": "5e2f284ed6fab2d6f9a4f095f8b63ba978347a49add11945efb08480dc3836e8"
+    },
+    {
+      "path": "GEMINI.md",
+      "ownership": "user-owned",
+      "sha256": "4c134735e005a1f8ff8277dc289116cfa13250cd90b709609b00f2738792949b"
+    },
+    {
+      "path": "HANDOFF.md",
+      "ownership": "shared",
+      "sha256": "cbf9e48e214b15954c5d0e54d85f38d615e7268833bf628d9e8c52bc56d3743c"
+    },
+    {
+      "path": "PROJECT-CHARTER.md",
+      "ownership": "shared",
+      "sha256": "5fef929b457e6536194b9b0c1038f82e9aebd2129f776e11384feaab3734bcde"
+    },
+    {
+      "path": "README.md",
+      "ownership": "user-owned",
+      "sha256": "29d1ed82f600afc1c1e09e3222aa06dda63e3d09bf3d74e64cceb8dea4155eaf"
+    },
+    {
+      "path": "context/ARCHITECTURE.md",
+      "ownership": "shared",
+      "sha256": "15408d72da91aedd47bd0804eda3e7d458f66b13acf693561595ef561c803d9a"
+    },
+    {
+      "path": "context/CURRENT-STATE.md",
+      "ownership": "shared",
+      "sha256": "d41f5cacf6d2cb8966462115ad68fc61455675314e0f539904bb3b3b3f4ec6e7"
+    },
+    {
+      "path": "context/DECISIONS.md",
+      "ownership": "shared",
+      "sha256": "e6ca15ef99969dec6d8a6f06aa5ff3e02b7ac1ccbd602cde2430037b4c2527ad"
+    },
+    {
+      "path": "context/KNOWN-RISKS.md",
+      "ownership": "shared",
+      "sha256": "09c29eaa35092c73c7b09ee7f6f7d3151deac6eb2bdf1a57083c478839c9a7cb"
+    },
+    {
+      "path": "context/RESEARCH-QUEUE.md",
+      "ownership": "shared",
+      "sha256": "63ee1925bb1d1be770f808d5819fcf2b324458460dc5b33b94643afc0f53c7d6"
+    },
+    {
+      "path": "docs/00-governance/AI-Repository-Operating-System.md",
+      "ownership": "tool-owned",
+      "sha256": "c1014fcad673b31d667d1e8206cef6e4b980ddc563f5ee2410fe5bfc07f879af"
+    },
+    {
+      "path": "docs/00-governance/Agent-Operating-Manual.md",
+      "ownership": "tool-owned",
+      "sha256": "7879b54b84c5d929fabe446cf9ac577005c27ee49536e8598b3d348ad176ab88"
+    },
+    {
+      "path": "docs/00-governance/Engineering-Standards.md",
+      "ownership": "tool-owned",
+      "sha256": "9369ecd92e09f4eb792f1052dd53253c48433c6105f6bac7d8805a975e7a0528"
+    },
+    {
+      "path": "docs/00-governance/Governance-Decision-Log.md",
+      "ownership": "tool-owned",
+      "sha256": "766d2cc419ff512d0dcffaf4c674d0a166af076e569c86a484acad4ef4a5d8a7"
+    },
+    {
+      "path": "docs/00-governance/README.md",
+      "ownership": "tool-owned",
+      "sha256": "448cc3a2d0c951ad25abf0811b9f59c4c2056c18b6a050713ad249654fdd1886"
+    },
+    {
+      "path": "docs/00-governance/Research-Execution-Package-Specification.md",
+      "ownership": "tool-owned",
+      "sha256": "1706eee1391bc2d83c9acd6b1108dd21f8eacfb1f4285637d3f9c800f4dce0be"
+    },
+    {
+      "path": "docs/PILOT-MEASUREMENT-PLAN.md",
+      "ownership": "shared",
+      "sha256": "b8b46774bb6a7a097d38d997f048489989e2774da899dbf40064eb6c797d0f23"
+    },
+    {
+      "path": "docs/architecture/README.md",
+      "ownership": "shared",
+      "sha256": "5c4f8eb3a64d5847c9b74cf242f6ae44ea3f5d7560390211b29628c0fdbe5d83"
+    },
+    {
+      "path": "docs/decisions/README.md",
+      "ownership": "shared",
+      "sha256": "000aa7b5264b445641285eb92f170a5fca3d7e61ab1bd107e5f8106ea2c49475"
+    },
+    {
+      "path": "docs/development-telemetry.md",
+      "ownership": "tool-owned",
+      "sha256": "0b707c333f2f21ab6b98b2fee8cc0b765c193969225230f5305807c28d5c7f20"
+    },
+    {
+      "path": "docs/ordo-observation.md",
+      "ownership": "tool-owned",
+      "sha256": "5f2962faab59eac5cd61825e2d16324d2b201360b32c338b0a945ff7e54eff4f"
+    },
+    {
+      "path": "docs/work-adapter-contract.md",
+      "ownership": "tool-owned",
+      "sha256": "bab8a1ee0a90b49a5b286d9a5d546f20c18e6715c2101b21d73bd70e4731aa39"
+    },
+    {
+      "path": "docs/work-protocol.md",
+      "ownership": "tool-owned",
+      "sha256": "fa214ad6b9a21ff053c79530f5b2ac492d23c8c025b2e1d1c4a14ca55ac10b5d"
+    },
+    {
+      "path": "framework/REP-SPECIFICATION.md",
+      "ownership": "tool-owned",
+      "sha256": "107a31d594e4d7d92c927224253907ccc8d7305ffe162c7dd9b07fe15b56a7e7"
+    },
+    {
+      "path": "framework/policies/EVIDENCE-POLICY.md",
+      "ownership": "tool-owned",
+      "sha256": "4a355f90897a40baabc8997f6e7a0749c4690b43b0dcbbda65c0e1c00ba2d415"
+    },
+    {
+      "path": "framework/policies/OUTPUT-POLICY.md",
+      "ownership": "tool-owned",
+      "sha256": "f8f0403b2ec80c1f65ad53669bd70d466b534f269bff386abc5f05827313f4e6"
+    },
+    {
+      "path": "framework/policies/RESEARCH-POLICY.md",
+      "ownership": "tool-owned",
+      "sha256": "476dbdac7555ce62e778eac7521f6728b18b62e2b442f6a7b2cd4ed308b2aed9"
+    },
+    {
+      "path": "framework/protocols/ARTIFACT-LIFECYCLE.md",
+      "ownership": "tool-owned",
+      "sha256": "5ce0ee1a392e225648be0cbb69eba9334b3e199ae28b520d7e26348df2b95e6d"
+    },
+    {
+      "path": "framework/protocols/SUPERSESSION.md",
+      "ownership": "tool-owned",
+      "sha256": "f890c37ea39901a7a5db5f7858ddbeb3a8414ce2b6c39f55cc77cc3af9b115ab"
+    },
+    {
+      "path": "framework/standards/ARTIFACT-TIERS.md",
+      "ownership": "tool-owned",
+      "sha256": "7dd5af22d242ce36fb160a52d0b9cbfabf188cc681f3387927250026e1d20943"
+    },
+    {
+      "path": "framework/standards/CONFIDENCE.md",
+      "ownership": "tool-owned",
+      "sha256": "8c384c21dedb039e6fe4c1d9921af1e9c3f279446954f8227679e8be3999a104"
+    },
+    {
+      "path": "framework/standards/IDENTIFIERS.md",
+      "ownership": "tool-owned",
+      "sha256": "18c7f078aef2e319777422d843ae9f20ddab38f28b50ea194567c4bef241bffd"
+    },
+    {
+      "path": "framework/standards/NAMING-STANDARD.md",
+      "ownership": "tool-owned",
+      "sha256": "fec4343ab4b8d149f4f0775d167a30300574d5b9b8a90baa096c2bb5dbc59505"
+    },
+    {
+      "path": "framework/standards/TAXONOMY.md",
+      "ownership": "tool-owned",
+      "sha256": "01bba2d2bb7745c3530fbe6d4afcecf47b5836c22d04121850f4afb3779638e0"
+    },
+    {
+      "path": "missions/active/.gitkeep",
+      "ownership": "tool-owned",
+      "sha256": "072520166434a815de5c4537089bbd0cc617a566dc4a0523598fda2972839715"
+    },
+    {
+      "path": "missions/backlog/.gitkeep",
+      "ownership": "tool-owned",
+      "sha256": "072520166434a815de5c4537089bbd0cc617a566dc4a0523598fda2972839715"
+    },
+    {
+      "path": "missions/completed/.gitkeep",
+      "ownership": "tool-owned",
+      "sha256": "072520166434a815de5c4537089bbd0cc617a566dc4a0523598fda2972839715"
+    },
+    {
+      "path": "registries/decisions.json",
+      "ownership": "generated",
+      "sha256": "4278f48f4109e442a81273e10ebfbc14b616dcec64973698f11f8d274022f75c"
+    },
+    {
+      "path": "registries/evidence.json",
+      "ownership": "generated",
+      "sha256": "40a31e6b84ec2de82063e6e2e5530c00df14f4d3c642624d4c5621a9b19da6ce"
+    },
+    {
+      "path": "registries/experiments.json",
+      "ownership": "generated",
+      "sha256": "74863585882ee502f54b833a6c7abbb0c384d0a52cfb7d2b1c1400ffc1d986df"
+    },
+    {
+      "path": "registries/hypotheses.json",
+      "ownership": "generated",
+      "sha256": "c0fe45799759a1386041ec6fbae9d55a93649cd0b64896480ea74eb4de0eea81"
+    },
+    {
+      "path": "registries/journals.json",
+      "ownership": "generated",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    {
+      "path": "registries/missions.json",
+      "ownership": "generated",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    {
+      "path": "registries/research-packages.json",
+      "ownership": "generated",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    {
+      "path": "registries/theories.json",
+      "ownership": "generated",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    {
+      "path": "research/decisions/.gitkeep",
+      "ownership": "tool-owned",
+      "sha256": "072520166434a815de5c4537089bbd0cc617a566dc4a0523598fda2972839715"
+    },
+    {
+      "path": "research/evidence/.gitkeep",
+      "ownership": "tool-owned",
+      "sha256": "072520166434a815de5c4537089bbd0cc617a566dc4a0523598fda2972839715"
+    },
+    {
+      "path": "research/experiments/.gitkeep",
+      "ownership": "tool-owned",
+      "sha256": "072520166434a815de5c4537089bbd0cc617a566dc4a0523598fda2972839715"
+    },
+    {
+      "path": "research/frontier/README.md",
+      "ownership": "shared",
+      "sha256": "c4cbbc2ef25d34040dd7e5f315f3b597447a1dc92778a9b37570d8f94428c590"
+    },
+    {
+      "path": "research/hypotheses/.gitkeep",
+      "ownership": "tool-owned",
+      "sha256": "072520166434a815de5c4537089bbd0cc617a566dc4a0523598fda2972839715"
+    },
+    {
+      "path": "research/journals/.gitkeep",
+      "ownership": "tool-owned",
+      "sha256": "072520166434a815de5c4537089bbd0cc617a566dc4a0523598fda2972839715"
+    },
+    {
+      "path": "research/packages/.gitkeep",
+      "ownership": "tool-owned",
+      "sha256": "072520166434a815de5c4537089bbd0cc617a566dc4a0523598fda2972839715"
+    },
+    {
+      "path": "research/theories/.gitkeep",
+      "ownership": "tool-owned",
+      "sha256": "072520166434a815de5c4537089bbd0cc617a566dc4a0523598fda2972839715"
+    },
+    {
+      "path": "ros",
+      "ownership": "tool-owned",
+      "sha256": "48abeafcbd2737d901d6ee14538ca9370607efaa0f171ad9d69a9674c0f35042"
+    },
+    {
+      "path": "ros.json",
+      "ownership": "shared",
+      "sha256": "976c7b6f3ba0d9c987dd2490a3febf36e95d97cf0d9cc1162372f06809deecfc"
+    },
+    {
+      "path": "schemas/artifact-metadata.schema.json",
+      "ownership": "tool-owned",
+      "sha256": "b397312d45d99b81e0f59aa2cecaf7e86e134c302e937636fc01299d3fa89871"
+    },
+    {
+      "path": "schemas/evidence.schema.json",
+      "ownership": "tool-owned",
+      "sha256": "7ba1080f9dfce16aaa78f7fa77942d8527ef60cba00bfc3cc8d4f8c018dde03c"
+    },
+    {
+      "path": "schemas/execution-telemetry.schema.json",
+      "ownership": "tool-owned",
+      "sha256": "0c48ea36cc0a682930627229a3fc066cbe3e17028250f76d08808a438ecc589f"
+    },
+    {
+      "path": "schemas/experiment.schema.json",
+      "ownership": "tool-owned",
+      "sha256": "f1b50d0fbe50d77c097dd3a054a3cee36d18aedd005f38d7ab6f89a1240bbaed"
+    },
+    {
+      "path": "schemas/hypothesis.schema.json",
+      "ownership": "tool-owned",
+      "sha256": "41b6f6564f9a543554a3b188253a4d4fb81bc621c6b0c00df92333df24560e93"
+    },
+    {
+      "path": "schemas/journal.schema.json",
+      "ownership": "tool-owned",
+      "sha256": "68e741ea277f9ea76865d045123a2ff01b6e69b6a2821e408cc1e1997ee61316"
+    },
+    {
+      "path": "schemas/mission.schema.json",
+      "ownership": "tool-owned",
+      "sha256": "1e4f4dba5c0a0755e401f9a87f5265877245509f1b5d802133542a4c4f3ca799"
+    },
+    {
+      "path": "schemas/rep.schema.json",
+      "ownership": "tool-owned",
+      "sha256": "113772ad0f940862db173072e6664fdc3d4ebf2cbd68c155e88dd70e21bb277f"
+    },
+    {
+      "path": "schemas/ros-effect-observation.schema.json",
+      "ownership": "tool-owned",
+      "sha256": "99556bbbb818a654225f868aa4b1c9c01fce3d61f278b53a1e8f4ff6b3ebe47a"
+    },
+    {
+      "path": "schemas/ros-effective-current.schema.json",
+      "ownership": "tool-owned",
+      "sha256": "37a62b67fd86bc04256962fafe5fad49eb433e1529dd05dc81c4563b0bfa4e61"
+    },
+    {
+      "path": "schemas/ros-handoff-authority.schema.json",
+      "ownership": "tool-owned",
+      "sha256": "92484f8fe726f6db241c32ff3837f1923765865c20f1b806818762277fea8006"
+    },
+    {
+      "path": "schemas/ros-resolution-assessment.schema.json",
+      "ownership": "tool-owned",
+      "sha256": "0533cbd58fc78ec22c206c4dcbb1a8057b489b3cde17629f74098de0489cd610"
+    },
+    {
+      "path": "schemas/ros-search-observation.schema.json",
+      "ownership": "tool-owned",
+      "sha256": "76ae1a96abf03567596845e6b716b6b231090638810fc73449dc71cd57dbe7a6"
+    },
+    {
+      "path": "schemas/theory.schema.json",
+      "ownership": "tool-owned",
+      "sha256": "08ce1ff682cd891a3c826a4002b26e0bb86e1a996a00ae37380974d6863c1380"
+    },
+    {
+      "path": "schemas/work-adapter-request.schema.json",
+      "ownership": "tool-owned",
+      "sha256": "b871adb760bba1658ebb1ff401883b2f17212aa6b46e1a9bf53cc51d4aa55a33"
+    },
+    {
+      "path": "schemas/work-adapter-result.schema.json",
+      "ownership": "tool-owned",
+      "sha256": "a028a706301658f3804a30665e69153074dcd32ef169f5ca713bdec1625807ed"
+    },
+    {
+      "path": "schemas/work-protocol.schema.json",
+      "ownership": "tool-owned",
+      "sha256": "dcea9f37709e512bf423916004a7cd7c48ba31264357cf0782d0084fb572f10b"
+    },
+    {
+      "path": "telemetry/metrics.json",
+      "ownership": "shared",
+      "sha256": "c249761a9271dd44c9127d9fcf5add984c025a128b2109f4bd8f347b2b2d1bd5"
+    },
+    {
+      "path": "templates/missions/MISSION-TEMPLATE.md",
+      "ownership": "tool-owned",
+      "sha256": "ed7b06defd8928f110b36793912a9d8b0b98e21f9d35fdb9dcac410865248ecd"
+    },
+    {
+      "path": "templates/research/EVIDENCE-TEMPLATE.md",
+      "ownership": "tool-owned",
+      "sha256": "a987e0d41482f5605e332d751bb9df111b8eed481d79dd7fb6814c624eb55f58"
+    },
+    {
+      "path": "templates/research/EXPERIMENT-TEMPLATE.md",
+      "ownership": "tool-owned",
+      "sha256": "814028b566cd93c57e9e3829f37b44c41350a6f0fbfecb4511f88a61d8002463"
+    },
+    {
+      "path": "templates/research/HYPOTHESIS-TEMPLATE.md",
+      "ownership": "tool-owned",
+      "sha256": "a3b7e68a200d6c25e24a5d1a885b8f94888332cb86818648de8677d6aaa628b9"
+    },
+    {
+      "path": "templates/research/JOURNAL-TEMPLATE.md",
+      "ownership": "tool-owned",
+      "sha256": "a8f564ffec8f39c8916ec4e3947ce3a9ccad98da12f3a19b7ac101f204c1b372"
+    },
+    {
+      "path": "templates/research/REP-TEMPLATE.md",
+      "ownership": "tool-owned",
+      "sha256": "a7c965249ca4d88ca1312f3443ad57cdc88ac1178158b8fa4124303de3d65b45"
+    },
+    {
+      "path": "templates/research/THEORY-TEMPLATE.md",
+      "ownership": "tool-owned",
+      "sha256": "35d583b955c1c3189c334a35d00077297e0abbdc4ccd916ee39c5011404dae53"
+    },
+    {
+      "path": "tools/ros_fs_launcher.mjs",
+      "ownership": "tool-owned",
+      "sha256": "416b34f91e20569b36398fe07519b59743e2614991686547805920d1606835d4"
+    }
+  ]
+}

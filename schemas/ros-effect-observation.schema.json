@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://echelonfoundry.com/schemas/ros-effect-observation.schema.json",
+  "title": "ROS External Effect Observation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schemaVersion",
+    "observationId",
+    "effectId",
+    "outcome",
+    "attemptedAt",
+    "observedAt",
+    "reconciliationRequested",
+    "reconciliationResult",
+    "reconciledAt",
+    "retryBlocked",
+    "compensationBlocked"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ros.effect-observation"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "observationId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "resolutionId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "effectId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "outcome": {
+      "enum": [
+        "succeeded",
+        "failed",
+        "unknown"
+      ]
+    },
+    "attemptedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "observedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "reconciliationRequested": {
+      "type": "boolean"
+    },
+    "reconciliationResult": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "retryBlocked": {
+      "type": "boolean"
+    },
+    "compensationBlocked": {
+      "type": "boolean"
+    },
+    "reconciledAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    }
+  }
+}

@@ -2,12 +2,13 @@
 id: SDE-DOCTRINE-003
 title: Four-Tier Architecture
 status: accepted
-version: 0.2.0
+version: 0.2.1
 created: 2026-09-02
-updated: 2026-09-05
+updated: 2026-09-20
 related_documents:
   - architecture/BOUNDARY-PRESERVATION.md
   - architecture/STRUCTURAL-LOCALITY.md
+  - architecture/DECISION-AND-EVIDENCE-SEMANTICS.md
 supersedes: []
 superseded_by: []
 tags: [doctrine, four-tier, architecture]
@@ -100,6 +101,33 @@ Semantic Model
 ```
 
 Dependencies point downward only. Tier 1 never imports from Tier 2, 3, or 4.
+
+## Ordo and ROS preservation guardrail
+
+Ordo refines Tier 1/2 semantics; it does not alter the dependency direction.
+
+No Ordo feature may require Tier 1/2 to perform external I/O or import browser, network, database, filesystem, provider SDK, persistence-adapter, or ROS implementation dependencies.
+
+External effects follow this responsibility flow:
+
+```text
+Tier 2: decide / request effect
+        |
+        v
+Tier 3: coordinate boundary
+        |
+        v
+Tier 4: perform or observe effect
+        |
+        v
+Tier 2: interpret Succeeded / Failed / Unknown
+```
+
+An Unknown external outcome may create a Tier 1/2 reconciliation obligation, but Tier 1/2 does not perform the probe.
+
+ROS is not Tier 5. It observes execution history from outside the application stack. Application correctness and legal transitions must not depend on ROS being available.
+
+See `DECISION-AND-EVIDENCE-SEMANTICS.md`.
 
 ## Layering does not imply one file per tier
 
