@@ -331,3 +331,11 @@ first-slice requirement.
    index is blocked by egress policy, so wrapper selection was made over the
    candidates the notebook named plus exact-id probes. A better wrapper may
    exist that could not be discovered here.
+
+---
+
+## Shared Echelon application foundations
+
+`docs/strata/SHARED-APPLICATION-FOUNDATIONS.md` is normative across the Strata requirement set.
+
+Aegis is required at Strata's operational boundaries. Forma becomes required for any interactive Strata web UI. Folio becomes required for any printable/PDF/paginated schema analysis, deployment plan, report, or other document output. Conditional capabilities MUST activate when the first requirement introduces the corresponding surface; they are not optional once applicable.
