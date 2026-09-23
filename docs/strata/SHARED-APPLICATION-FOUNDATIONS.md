@@ -15,6 +15,20 @@ Shared Echelon capabilities MUST be consumed rather than independently reimpleme
 
 Dependencies MUST be pinned to an explicit released version or immutable artifact. Floating versions and tracking a moving repository branch are not acceptable application baselines.
 
+Current baselines:
+
+- `EchelonFoundry.Aegis.Core` **1.0.0**.
+- `@echelon-foundry/design-system` (Forma) **0.2.0**, consumed from the
+  immutable v0.2.0 release artifact until npm is the selected canonical source.
+- `@echelon-foundry/print-components` (Folio) **0.3.0**. Until a canonical
+  v0.3.0 package/release artifact exists, pin immutable Folio commit
+  `2b101b6d840a670abb959148fff8e1477c059eda`; once published, pin the exact
+  canonical package version.
+
+Merely listing a shared dependency is not sufficient. Completion requires
+evidence that the applicable canonical capability is actually used.
+
+
 ## 2. Aegis
 
 **Applicability for Strata: required at database, filesystem, parser-adapter, deployment, process, and other operational boundaries.**
