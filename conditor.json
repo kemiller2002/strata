@@ -1,0 +1,19 @@
+{
+  "$schema": "https://raw.githubusercontent.com/kemiller2002/conditor/main/schemas/conditor.schema.json",
+  "schemaVersion": 1,
+  "name": "strata",
+  "components": [
+    { "id": "praxis", "version": "3.4.0" },
+    { "id": "ordo", "version": "1.4.0" },
+    { "id": "visual-engineering", "version": "1.0.0" },
+    { "id": "communication-engineering", "version": "1.0.0" },
+    { "id": "limen", "version": "0.6.1" },
+    { "id": "forma", "version": "0.2.0" },
+    { "id": "folio", "version": "0.3.0" },
+    { "id": "aegis", "version": "1.0.0" },
+    { "id": "tutela", "version": "0.1.0" }
+  ],
+  "execution": {
+    "enabled": false
+  }
+}
