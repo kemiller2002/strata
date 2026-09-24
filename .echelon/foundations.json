@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "application": "Strata",
+  "capabilities": {
+    "aegis": {
+      "required": true,
+      "version": "1.0.0",
+      "boundaryManifest": "aegis-boundaries.json"
+    },
+    "forma": {
+      "required": false,
+      "version": "0.2.0"
+    },
+    "folio": {
+      "required": false,
+      "version": "0.3.0",
+      "sourceCommit": "273b18f5b23db15cddd173c05af5d1a8484fc4cf"
+    },
+    "limen": {
+      "required": true,
+      "version": "0.6.2"
+    },
+    "ordo": {
+      "required": true,
+      "version": "1.4.0"
+    },
+    "praxis": {
+      "required": true,
+      "version": "3.4.0"
+    }
+  }
+}
