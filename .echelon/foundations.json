@@ -17,7 +17,7 @@
       "sourceCommit": "273b18f5b23db15cddd173c05af5d1a8484fc4cf"
     },
     "limen": {
-      "required": true,
+      "required": false,
       "version": "0.6.2"
     },
     "ordo": {
