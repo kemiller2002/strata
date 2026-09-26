@@ -1,0 +1,42 @@
+{
+  "schema": "aegis/boundaries/v1",
+  "application": "Strata",
+  "boundaries": [
+    {
+      "name": "CLI composition root",
+      "kind": "process-boundary",
+      "owner": "Strata.Cli",
+      "codes": [
+        "STRATA.CLI.UNEXPECTED"
+      ],
+      "guarded": true
+    },
+    {
+      "name": "PostgreSQL catalog and deployment adapter",
+      "kind": "database",
+      "owner": "Strata.Host.Postgres",
+      "codes": [],
+      "guarded": false,
+      "$comment": "Typed host/application outcomes remain authoritative. Unexpected exceptions escaping adapters are captured at the CLI composition boundary; future host-specific mappings should move stable codes closer to this boundary."
+    },
+    {
+      "name": "Filesystem corpus and artifact adapter",
+      "kind": "filesystem",
+      "owner": "Strata.Host.Files",
+      "codes": [],
+      "guarded": false,
+      "$comment": "Expected read/validation failures remain typed results. Unexpected exceptions escaping the host are captured at the CLI boundary."
+    }
+  ],
+  "persistence": {
+    "sinks": [
+      {
+        "name": "stderr",
+        "kind": "console",
+        "level": "optional",
+        "durable": false
+      }
+    ],
+    "requiredDurableStorage": false
+  }
+}
