@@ -2,6 +2,7 @@ module Strata.Cli.Program
 
 open System
 open System.IO
+open Aegis
 open Strata.Semantic.Identity
 open Strata.Semantic.Schema
 open Strata.Semantic.AnalysisScope
@@ -354,8 +355,7 @@ let private announceBuildConfiguration () =
     ()
 #endif
 
-[<EntryPoint>]
-let main argv =
+let private run argv =
     announceBuildConfiguration ()
     let args = List.ofArray argv
 
@@ -942,3 +942,35 @@ let main argv =
         // A host failure is reported as a failure, never as an empty result.
         eprintfn "error: %s" ex.Message
         1
+
+let private aegis =
+    let configured = Aegis.configure "Strata" None [ Sinks.standardError ]
+
+    match Bootstrap.validate None configured with
+    | Ok valid -> valid
+    | Result.Error problems ->
+        invalidOp $"Invalid Strata Aegis configuration: %A{problems}"
+
+let private classifyCliFailure scope (ex: exn) =
+    Aegis.faultOf
+        aegis
+        scope
+        (FaultCode "STRATA.CLI.UNEXPECTED")
+        IntegrationFailure
+        FaultSeverity.Error
+        OperationOnly
+        Transient
+        Continue
+        "Strata could not complete the requested operation."
+        ex
+
+[<EntryPoint>]
+let main argv =
+    let scope = Aegis.scope aegis "Strata.Cli" Map.empty
+
+    match Aegis.capture aegis scope classifyCliFailure (fun () -> run argv) with
+    | Ok exitCode -> exitCode
+    | Result.Error fault ->
+        eprintfn "error: %s [%s]" fault.UserMessage (Presentation.reference fault)
+        1
+
