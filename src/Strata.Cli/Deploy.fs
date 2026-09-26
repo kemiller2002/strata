@@ -136,7 +136,11 @@ let drift
           Json = json
           Brief = false
           CorpusRoots = corpusRoots
-          DriftOnly = true }
+          DriftOnly = true
+          Approver = Microsoft.FSharp.Core.Error "drift approves nothing"
+          RequireHumanApproval = false
+          ApprovalSubject = None
+          SubjectProvenance = None }
         (managedSchemas resolved)
         resolved.Declared.Snapshot
         { resolved with Data = data; DataFailures = dataFailures }
@@ -212,7 +216,9 @@ let run
     Deployment.run
         parser
         connectionString
-        options
+        { options with
+            ApprovalSubject = Some(Attestation.subjectOf (Attestation.digestOf resolved))
+            SubjectProvenance = wrapper.Provenance }
         (managedSchemas resolved)
         resolved.Declared.Snapshot
         { resolved with Data = data; DataFailures = dataFailures }

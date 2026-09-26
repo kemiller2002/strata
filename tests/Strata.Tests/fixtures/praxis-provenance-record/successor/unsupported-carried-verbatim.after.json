@@ -1,0 +1,10 @@
+{
+  "contract": "praxis.provenance-record",
+  "version": "2.0.0",
+  "contributions": [
+    {
+      "execution": "EXE-20260926T080000000Z-a1a1a1a1"
+    }
+  ],
+  "x-v2": true
+}

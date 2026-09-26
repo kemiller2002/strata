@@ -1,0 +1,58 @@
+{
+  "contract": "praxis.provenance-record",
+  "version": "1.0.0",
+  "subject": "praxis:RQ-APP-2026-A007",
+  "contributions": {
+    "EXE-20260926T080000000Z-a1a1a1a1": {
+      "operations": [
+        "created"
+      ],
+      "at": "2026-09-26T08:00:00.000Z",
+      "actor": {
+        "kind": "agent",
+        "id": "anthropic/claude-code",
+        "provider": "anthropic",
+        "model": "unknown",
+        "runtime": "claude-code"
+      },
+      "reason": "Initial capture"
+    },
+    "EXE-20260926T090000000Z-b2b2b2b2": {
+      "operations": [
+        "modified"
+      ],
+      "at": "2026-09-26T09:00:00.000Z",
+      "actor": {
+        "kind": "agent",
+        "id": "openai/codex",
+        "provider": "openai",
+        "model": "gpt-5-codex",
+        "runtime": "codex"
+      },
+      "reason": "Tighten acceptance criteria"
+    },
+    "EXE-20260926T093000000Z-99aa99aa": {
+      "operations": [
+        "reviewed"
+      ],
+      "at": "2026-09-26T09:30:00.000Z",
+      "actor": {
+        "kind": "automation",
+        "id": "github/github-actions",
+        "provider": "github",
+        "model": "unknown",
+        "runtime": "github-actions"
+      }
+    },
+    "CTB-20260926-5f2e19aa": {
+      "operations": [
+        "approved"
+      ],
+      "at": "2026-09-26T10:00:00.000Z",
+      "actor": {
+        "kind": "human",
+        "id": "kevin"
+      }
+    }
+  }
+}

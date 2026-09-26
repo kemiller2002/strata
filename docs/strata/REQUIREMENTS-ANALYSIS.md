@@ -31,9 +31,9 @@ changed the plan; see "Findings that change the notebook's assumptions".
 
 | Category | Count |
 |---|---:|
-| A. Product requirements (`PR-`) | 24 |
+| A. Product requirements (`PR-`) | 27 |
 | B. Engineering rules (`ER-`) | 20 |
-| C. Nonfunctional requirements (`NFR-`) | 12 |
+| C. Nonfunctional requirements (`NFR-`) | 13 |
 | D. Architecture decisions (`D-`) | 20 |
 | E. Hypotheses / experiments (`HY-`/`EX-`) | 6 |
 | F. Risks (`RK-`) | 18 |
@@ -74,6 +74,8 @@ if deployment execution never ships (§144.15).
 | PR-023 | Detect drift between environments | C-013, §27 | **ACTIVE, slice D** |
 | PR-024 | Plan, execute and verify deployments | C-014/018/019, §18, §28 | **ACTIVE, slice X** |
 | PR-025 | Read desired state from a project manifest and per-object SQL files (tables, views, materialized views, routines, indexes) | DF-STRATA-2026-B1E7, DF-STRATA-2026-A4D9 | **ACTIVE, slice P** |
+| PR-026 | Record who compiled and who signed an artifact — actor kind, stable id, and the run (propagated Praxis execution or `EXE-strata.<run>`) — as a Praxis provenance interchange record in the artifact's wrapper; name the project as lineage and never infer the SQL's author | Praxis RQ-ROS-2026-A001, A004, A013, A014; DF-STRATA-2026-E4B7 | **ACTIVE, WI-0104** |
+| PR-027 | `--approve` records the approving actor (with `--json`, machine-readably), reports an agent or unknown approver prominently, and `--require-human-approval` refuses a non-human approver as an opt-in policy over self-reported identity | WI-0089, Praxis RQ-ROS-2026-A010; DF-STRATA-2026-E4B7 | **ACTIVE, WI-0104** |
 
 Capabilities `C-015`–`C-023` map onto PR-022..PR-024 and the deferred list;
 they are not separate first-version requirements.
@@ -129,6 +131,7 @@ query and is never a harmless validation step (§13).
 | NFR-010 | Semantic snapshots are content-addressable / hashable | §7, §144.12 |
 | NFR-011 | Native dependency update and security review path | Q-029 |
 | NFR-012 | Explicit versioning of policy and model schemas | §11, §128 |
+| NFR-013 | Provenance is lossless and never perturbs what is signed: body bytes, digest and signature are unchanged by it; unknown fields and unsupported major versions are carried verbatim; malformed records are refused, not dropped; legacy artifacts read with none invented; no credential is ever recorded | Praxis RQ-ROS-2026-A013, A015; NFR-001; DF-STRATA-2026-E4B7 |
 
 ## D. Architecture decisions
 
@@ -165,6 +168,7 @@ Decisions added by this analysis, not present in the notebook:
 | `DF-STRATA-2026-4C7A` | Adopt `pgsqlparser` 1.0.0 as the PostgreSQL parser adapter, with `PostgresQuery` as the documented arm64/musl fallback |
 | `DF-STRATA-2026-9B2E` | Strata implements its own lexical scope resolution over the parse tree before emitting any dependency edge |
 | `DF-STRATA-2026-D3F8` | Strata adopts SDE's four-tier architecture with the semantic tier referencing only `FSharp.Core`, mechanically checked |
+| `DF-STRATA-2026-E4B7` | Who compiled, signed or approved an artifact is recorded in its wrapper as a Praxis provenance record, never in the signed body; SQL authorship is never inferred |
 
 ## E. Hypotheses and experiments
 

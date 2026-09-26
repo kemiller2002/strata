@@ -125,11 +125,18 @@ OPTIONS
   --project <dir>    Project root: a directory of object files (default: .)
   --confirm          Required by `apply`. Without it, apply dry-runs and stops.
   --approve          Accept the gate's requires-approval findings. This is the
-                     human decision the gate is asking for, so it is recorded
-                     in the output: each finding is restated as approved before
-                     anything runs. It NEVER overrides a block — a block is
+                     decision the gate is asking a human for, so it is recorded
+                     in the output with WHO passed it: each finding is restated
+                     as approved, with the approving actor, before anything
+                     runs (with --json, also as an "approval" JSON line). An
+                     approving actor that is an agent, or unknown, is reported
+                     as a WARNING. It NEVER overrides a block — a block is
                      known breakage, not a judgement call — and it does not
                      enable removals, which need --allow-drops as well.
+  --require-human-approval  Refuse an --approve whose actor is not a declared
+                     human. The identity is SELF-REPORTED (flags or
+                     environment): this stops an agent that says what it is,
+                     not one that lies. It is a policy, not authorization.
   --out <file>       Where `compile` writes the artifact
   --artifact <file>  The artifact `deploy` and `validate` read
   --types            Have the server PLAN each statement, with PREPARE, inside a
@@ -155,6 +162,25 @@ OPTIONS
   --brief            With --json, replace the scope block with a digest. Fetch
                      the full scope once via `strata scope`. Caveats that change
                      how a result must be read are ALWAYS kept inline.
+
+PROVENANCE (who compiled, signed or approved; self-reported, never authorship)
+  --actor-kind <k>   agent, human, automation, unknown, or x-<extension>
+                     (or ROS_ACTOR_KIND). Nothing declared or detected = unknown.
+  --actor <id>       Stable actor id, e.g. openai/codex or a person (ROS_ACTOR)
+  --provider <p>     With --model and --runtime, the non-human actor's
+  --model <m>        attributes (ROS_TELEMETRY_PROVIDER/_MODEL/_RUNTIME); a
+  --runtime <r>      known agent runtime or GitHub Actions is detected.
+  --execution <id>   The run to record under (or ROS_EXECUTION_ID, propagated
+                     by Praxis); otherwise this run is EXE-strata.<run>.
+  --source-provenance <file>  A provenance record for the source change,
+                     carried verbatim as lineage by `compile`. The compiling
+                     actor is recorded as the artifact's creator, never as the
+                     SQL's author.
+  --no-provenance    Write none. `compile` records provenance only when the
+                     actor or run is identified (or a source record is given);
+                     `sign` also extends a record the artifact already has.
+                     Provenance sits in the artifact's wrapper, outside the
+                     digest and the signature.
 
 PROJECT LAYOUT
   <project>/schema/<schema>/<kind>/<name>.sql, one object per file. `kind` is
@@ -383,8 +409,9 @@ let private run argv =
         // The flags that consume the argument after them. Listed rather than
         // guessed, because guessing is the bug above.
         let takesValue =
-            set [ "--connection"; "--corpus"; "--project"; "--out"; "--artifact"
-                  "--search-path"; "--key"; "--public-key" ]
+            set ([ "--connection"; "--corpus"; "--project"; "--out"; "--artifact"
+                   "--search-path"; "--key"; "--public-key" ]
+                 @ Attributing.valueFlags)
 
         let rec collect remaining acc =
             match remaining with
@@ -480,16 +507,56 @@ let private run argv =
                     eprintfn "error: %s" message
                     2
                 | Ok signature ->
+                    let digest = Attestation.digestOf resolved
+                    let request = Attributing.request args
+
+                    // Who signed, and with which key, recorded beside the
+                    // signature and outside what it covers. Recorded when the
+                    // signer is identified or the artifact already carries a
+                    // record; an existing record is extended, never replaced.
+                    let provenance =
+                        if request.Suppressed then
+                            Ok(wrapper.Provenance, None, None)
+                        else
+                            match Attributing.resolve request with
+                            | Error message -> Error message
+                            | Ok context when not context.Identified && wrapper.Provenance.IsNone ->
+                                Ok(None, None, None)
+                            | Ok context ->
+                                let contribution =
+                                    Attribution.contribution
+                                        context
+                                        Attribution.SignedOperation
+                                        (Attributing.now ())
+                                        None
+                                        [ Attributing.keyReference (IO.File.ReadAllText keyPath) ]
+
+                                Attributing.extend wrapper.Provenance (Attestation.subjectOf digest) contribution
+                                |> Result.map (fun (reading, note) -> reading, note, Some context)
+
+                    match provenance with
+                    | Error message ->
+                        eprintfn "error: could not record who signed (%s). Nothing was written." message
+                        2
+                    | Ok (recorded, note, context) ->
                     try
                         IO.File.WriteAllText(
                             artifactPath,
                             Attestation.renderFile
                                 { wrapper with
-                                    Digest = Some(Attestation.digestOf resolved)
-                                    Signature = Some(Attestation.SignatureAlgorithm, signature) }
+                                    Digest = Some digest
+                                    Signature = Some(Attestation.SignatureAlgorithm, signature)
+                                    Provenance = recorded }
                                 resolved)
 
                         printfn "Signed %s." artifactPath
+                        note |> Option.iter (eprintfn "note: %s")
+
+                        match context with
+                        | Some context when recorded.IsSome && note.IsNone ->
+                            printfn "Provenance: signed by %s." (Attributing.describe context)
+                        | _ -> ()
+
                         0
                     with ex ->
                         eprintfn "error: could not write the signed artifact (%s)" ex.Message
@@ -623,7 +690,11 @@ let private run argv =
           Json = List.contains "--json" args
           Brief = List.contains "--brief" args
           CorpusRoots = corpusRoots
-          DriftOnly = false }
+          DriftOnly = false
+          Approver = Attributing.resolve (Attributing.request args)
+          RequireHumanApproval = List.contains "--require-human-approval" args
+          ApprovalSubject = None
+          SubjectProvenance = None }
 
     if wantsDrift then
         match valueOf "--artifact" args with
@@ -682,7 +753,7 @@ let private run argv =
             2
         | Some outputPath ->
             let parser = PgParserAdapter.PostgresParser() :> Strata.Analysis.DialectPort.IDialectParser
-            Compile.run parser connectionString projectRoot outputPath
+            Compile.run parser connectionString projectRoot outputPath (Attributing.request args)
 
     elif wantsPlan then
         try
@@ -740,7 +811,11 @@ let private run argv =
                 Deployment.run
                     parser
                     connectionString
-                    { deploymentOptions corpusRoots with Apply = wantsApply }
+                    { deploymentOptions corpusRoots with
+                        Apply = wantsApply
+                        // No artifact: an `apply` approval is about the project
+                        // as read, named the way compile names it as lineage.
+                        ApprovalSubject = Some(Attributing.projectReference project) }
                     project.Schemas
                     desired
                     resolved

@@ -1,0 +1,410 @@
+{
+  "contract": "praxis.provenance-record",
+  "version": "1.0.0",
+  "description": "Conformance fixtures for the Praxis provenance interchange record (RQ-ROS-2026-A013, RQ-ROS-2026-A015). Any Echelon system that reads or writes the record should run its codec against these cases; vendored copies record the Praxis commit they came from.",
+  "cases": [
+    {
+      "file": "valid/minimal-agent.json",
+      "expect": "valid",
+      "why": "one agent creation keyed by its Praxis execution"
+    },
+    {
+      "file": "valid/human-agent-automation.json",
+      "expect": "valid",
+      "why": "multiple contributors: two agents, automation, and a human outside any execution"
+    },
+    {
+      "file": "valid/same-agent-two-executions.json",
+      "expect": "valid",
+      "why": "two executions of the same agent stay two entries"
+    },
+    {
+      "file": "valid/unknown-actor-attributes.json",
+      "expect": "valid",
+      "why": "unknown is recorded as unknown, never guessed"
+    },
+    {
+      "file": "valid/foreign-execution.json",
+      "expect": "valid",
+      "why": "a system with no propagated Praxis execution keys its own run as EXE-<system>.<run>"
+    },
+    {
+      "file": "valid/unknown-fields-preserved.json",
+      "expect": "valid",
+      "why": "fields this version does not model are legal and must survive"
+    },
+    {
+      "file": "valid/derived-with-sources.json",
+      "expect": "valid",
+      "why": "lineage names sources; the snapshot keeps the source's originator without making it an author"
+    },
+    {
+      "file": "valid/extension-kind-and-operation.json",
+      "expect": "valid",
+      "why": "namespaced x- kinds and operations are extensions, not errors"
+    },
+    {
+      "file": "valid/minor-version.json",
+      "expect": "valid",
+      "why": "a newer minor of a supported major is read; its new fields are preserved"
+    },
+    {
+      "file": "unversioned/legacy-registry-block.json",
+      "expect": "valid-unversioned",
+      "why": "an artifact's provenance as projected into a Praxis registry, without the envelope"
+    },
+    {
+      "file": "unsupported/future-major.json",
+      "expect": "unsupported-version",
+      "why": "a future major is preserved verbatim, never interpreted or extended"
+    },
+    {
+      "file": "invalid/wrong-contract.json",
+      "expect": "invalid",
+      "why": "contract discriminator mismatch"
+    },
+    {
+      "file": "invalid/bad-version.json",
+      "expect": "invalid",
+      "why": "version must be MAJOR.MINOR.PATCH"
+    },
+    {
+      "file": "invalid/agent-missing-model.json",
+      "expect": "invalid",
+      "why": "an agent must state provider, model, and runtime (unknown when unknown)"
+    },
+    {
+      "file": "invalid/agent-without-execution.json",
+      "expect": "invalid",
+      "why": "an agent contribution must be keyed by an execution"
+    },
+    {
+      "file": "invalid/two-created.json",
+      "expect": "invalid",
+      "why": "at most one contribution may claim created"
+    },
+    {
+      "file": "invalid/created-after-modified.json",
+      "expect": "invalid",
+      "why": "nothing may precede created"
+    },
+    {
+      "file": "invalid/unknown-kind.json",
+      "expect": "invalid",
+      "why": "kind outside the vocabulary"
+    },
+    {
+      "file": "invalid/unknown-operation.json",
+      "expect": "invalid",
+      "why": "operation outside the vocabulary (extensions must be x-...)"
+    },
+    {
+      "file": "invalid/bad-timestamp.json",
+      "expect": "invalid",
+      "why": "at must be ISO-8601 UTC"
+    },
+    {
+      "file": "invalid/empty-actor-id.json",
+      "expect": "invalid",
+      "why": "empty id; unknown must be spelled unknown"
+    },
+    {
+      "file": "invalid/bad-key.json",
+      "expect": "invalid",
+      "why": "keys are EXE- or CTB-"
+    },
+    {
+      "file": "invalid/missing-contributions.json",
+      "expect": "invalid",
+      "why": "contributions is required"
+    },
+    {
+      "file": "invalid/credential-in-actor.json",
+      "expect": "invalid",
+      "why": "identity must never carry a credential"
+    },
+    {
+      "file": "invalid/credential-in-reason.json",
+      "expect": "invalid",
+      "why": "a reason must never carry a credential"
+    },
+    {
+      "file": "invalid/source-not-in-lineage.json",
+      "expect": "invalid",
+      "why": "a lineage snapshot must be for a declared lineage reference"
+    },
+    {
+      "file": "invalid/self-lineage.json",
+      "expect": "invalid",
+      "why": "a subject cannot derive from itself"
+    },
+    {
+      "file": "invalid/malformed-source-snapshot.json",
+      "expect": "invalid",
+      "why": "a malformed lineage snapshot is reported, not silently dropped"
+    },
+    {
+      "file": "invalid/snapshot-subject-mismatch.json",
+      "expect": "invalid",
+      "why": "a lineage snapshot must be the named source's own provenance, not another subject's"
+    }
+  ],
+  "successors": [
+    {
+      "before": "successor/append-contribution.before.json",
+      "after": "successor/append-contribution.after.json",
+      "expect": "preserved",
+      "why": "another agent's contribution is appended; everything else is untouched"
+    },
+    {
+      "before": "successor/merge-own-entry.before.json",
+      "after": "successor/merge-own-entry.after.json",
+      "expect": "preserved",
+      "why": "the same execution extends its own entry"
+    },
+    {
+      "before": "successor/add-lineage.before.json",
+      "after": "successor/add-lineage.after.json",
+      "expect": "preserved",
+      "why": "lineage may grow"
+    },
+    {
+      "before": "successor/replaced-history.before.json",
+      "after": "successor/replaced-history.after.json",
+      "expect": "destructive",
+      "why": "contribution history replaced and originator changed"
+    },
+    {
+      "before": "successor/overwritten-actor.before.json",
+      "after": "successor/overwritten-actor.after.json",
+      "expect": "destructive",
+      "why": "the original actor was overwritten by a later one"
+    },
+    {
+      "before": "successor/lost-execution.before.json",
+      "after": "successor/lost-execution.after.json",
+      "expect": "destructive",
+      "why": "execution identity lost when the entry was re-keyed"
+    },
+    {
+      "before": "successor/dropped-unknown-fields.before.json",
+      "after": "successor/dropped-unknown-fields.after.json",
+      "expect": "destructive",
+      "why": "fields the consumer did not model were dropped"
+    },
+    {
+      "before": "successor/dropped-top-level-field.before.json",
+      "after": "successor/dropped-top-level-field.after.json",
+      "expect": "destructive",
+      "why": "an unknown top-level field was dropped"
+    },
+    {
+      "before": "successor/dropped-lineage.before.json",
+      "after": "successor/dropped-lineage.after.json",
+      "expect": "destructive",
+      "why": "lineage and its snapshot were stripped"
+    },
+    {
+      "before": "successor/rewritten-snapshot.before.json",
+      "after": "successor/rewritten-snapshot.after.json",
+      "expect": "destructive",
+      "why": "a lineage snapshot was rewritten instead of carried verbatim"
+    },
+    {
+      "before": "successor/removed-operation.before.json",
+      "after": "successor/removed-operation.after.json",
+      "expect": "destructive",
+      "why": "an operation (the creation) was removed"
+    },
+    {
+      "before": "successor/unsupported-carried-verbatim.before.json",
+      "after": "successor/unsupported-carried-verbatim.after.json",
+      "expect": "preserved",
+      "why": "an unsupported major carried verbatim"
+    },
+    {
+      "before": "successor/unsupported-modified.before.json",
+      "after": "successor/unsupported-modified.after.json",
+      "expect": "destructive",
+      "why": "an unsupported major must not be modified"
+    },
+    {
+      "before": "successor/major-changed-in-place.before.json",
+      "after": "successor/major-changed-in-place.after.json",
+      "expect": "destructive",
+      "why": "a record's major version never changes in place"
+    },
+    {
+      "before": "successor/version-lowered.before.json",
+      "after": "successor/version-lowered.after.json",
+      "expect": "destructive",
+      "why": "a newer minor record must not be relabelled as an older version"
+    },
+    {
+      "before": "successor/rewritten-reason.before.json",
+      "after": "successor/rewritten-reason.after.json",
+      "expect": "destructive",
+      "why": "another contributor's reason was rewritten"
+    }
+  ],
+  "e2e": {
+    "steps": [
+      {
+        "file": "e2e/01-requirement-created.json",
+        "successorOf": null,
+        "why": "Agent A (Claude Code) creates the requirement in execution A"
+      },
+      {
+        "file": "e2e/02-requirement-modified.json",
+        "successorOf": "e2e/01-requirement-created.json",
+        "why": "Agent B (Codex) modifies it in execution B; A stays the originator"
+      },
+      {
+        "file": "e2e/03-implementation.json",
+        "successorOf": null,
+        "why": "An implementation execution C (same agent as A, different run) produces the change"
+      },
+      {
+        "file": "e2e/04-dokimos-measurement.json",
+        "successorOf": null,
+        "why": "Dokimos analyzes the change; the measuring automation is recorded, the code author only as lineage"
+      },
+      {
+        "file": "e2e/05-aegis-finding.json",
+        "successorOf": null,
+        "why": "Aegis records a finding discovered by agent D (Gemini) in execution D"
+      },
+      {
+        "file": "e2e/06-vigila-followup.json",
+        "successorOf": null,
+        "why": "Vigila (a system, recorded as automation) generates the follow-up; the discovering agent stays in the snapshot"
+      },
+      {
+        "file": "e2e/07-followup-handled.json",
+        "successorOf": "e2e/06-vigila-followup.json",
+        "why": "Agent B (Codex) handles it in execution E"
+      },
+      {
+        "file": "e2e/08-followup-resolved.json",
+        "successorOf": "e2e/07-followup-handled.json",
+        "why": "Another execution F (Claude Code) resolves it"
+      },
+      {
+        "file": "e2e/09-followup-validated.json",
+        "successorOf": "e2e/08-followup-resolved.json",
+        "why": "A human validates the resolution outside any execution"
+      },
+      {
+        "file": "e2e/10-aegis-finding-remediated.json",
+        "successorOf": "e2e/05-aegis-finding.json",
+        "why": "The finding records its remediation actor (F) and validation actor (CI) without displacing the discoverer (D)"
+      }
+    ],
+    "expected": {
+      "final": "e2e/09-followup-validated.json",
+      "originatorOfFinal": {
+        "key": "EXE-vigila.20260926T130000000Z-0c0c0c0c",
+        "actor": "echelon/vigila"
+      },
+      "chain": [
+        {
+          "subject": "vigila:item/ITEM-42",
+          "key": "EXE-vigila.20260926T130000000Z-0c0c0c0c",
+          "actor": "echelon/vigila",
+          "operations": [
+            "created"
+          ]
+        },
+        {
+          "subject": "vigila:item/ITEM-42",
+          "key": "EXE-20260926T140000000Z-e5e5e5e5",
+          "actor": "openai/codex",
+          "operations": [
+            "x-handled"
+          ]
+        },
+        {
+          "subject": "vigila:item/ITEM-42",
+          "key": "EXE-20260926T150000000Z-f6f6f6f6",
+          "actor": "anthropic/claude-code",
+          "operations": [
+            "x-resolved"
+          ]
+        },
+        {
+          "subject": "vigila:item/ITEM-42",
+          "key": "CTB-20260926-5f2e19aa",
+          "actor": "kevin",
+          "operations": [
+            "x-validated",
+            "approved"
+          ]
+        },
+        {
+          "subject": "aegis:fault/F-17",
+          "key": "EXE-20260926T120000000Z-d4d4d4d4",
+          "actor": "google/gemini-cli",
+          "operations": [
+            "created"
+          ]
+        },
+        {
+          "subject": "git:commit/abc123",
+          "key": "EXE-20260926T100000000Z-c3c3c3c3",
+          "actor": "anthropic/claude-code",
+          "operations": [
+            "created"
+          ]
+        },
+        {
+          "subject": "praxis:RQ-APP-2026-A007",
+          "key": "EXE-20260926T080000000Z-a1a1a1a1",
+          "actor": "anthropic/claude-code",
+          "operations": [
+            "created"
+          ]
+        },
+        {
+          "subject": "praxis:RQ-APP-2026-A007",
+          "key": "EXE-20260926T090000000Z-b2b2b2b2",
+          "actor": "openai/codex",
+          "operations": [
+            "modified"
+          ]
+        },
+        {
+          "subject": "dokimos:snapshot/app:abc123",
+          "key": "EXE-dokimos.gh-run-9001",
+          "actor": "github/github-actions",
+          "operations": [
+            "created"
+          ]
+        },
+        {
+          "subject": "git:commit/abc123",
+          "key": "EXE-20260926T100000000Z-c3c3c3c3",
+          "actor": "anthropic/claude-code",
+          "operations": [
+            "created"
+          ]
+        },
+        {
+          "subject": "praxis:RQ-APP-2026-A007",
+          "key": "EXE-20260926T080000000Z-a1a1a1a1",
+          "actor": "anthropic/claude-code",
+          "operations": [
+            "created"
+          ]
+        },
+        {
+          "subject": "praxis:RQ-APP-2026-A007",
+          "key": "EXE-20260926T090000000Z-b2b2b2b2",
+          "actor": "openai/codex",
+          "operations": [
+            "modified"
+          ]
+        }
+      ]
+    }
+  }
+}

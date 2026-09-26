@@ -55,9 +55,20 @@ module private Cli =
 
         member this.Output = this.Stdout + "\n" + this.Stderr
 
-    let run (arguments: string list) : Outcome =
+    /// Runs with the identity environment set to exactly `environment`.
+    ///
+    /// The variables provenance reads are cleared first: a test run from inside
+    /// an agent session or CI would otherwise record THAT actor, and a compile
+    /// that records provenance is (deliberately) not byte-reproducible.
+    let runWith (environment: (string * string) list) (arguments: string list) : Outcome =
         let info = ProcessStartInfo("dotnet")
         info.ArgumentList.Add binary.Value
+
+        for name in Strata.Application.Attribution.environmentVariables do
+            info.Environment.Remove name |> ignore
+
+        for name, value in environment do
+            info.Environment.[name] <- value
 
         for argument in arguments do
             info.ArgumentList.Add argument
@@ -72,6 +83,8 @@ module private Cli =
         proc.WaitForExit()
 
         { ExitCode = proc.ExitCode; Stdout = stdout; Stderr = stderr }
+
+    let run (arguments: string list) : Outcome = runWith [] arguments
 
 type private RequiresCliAttribute() =
     inherit FactAttribute()
@@ -410,3 +423,172 @@ let ``keygen reports a path it cannot write rather than aborting`` () =
 
     Assert.Equal(2, outcome.ExitCode)
     Assert.Contains("could not write", outcome.Stderr)
+
+// ---- provenance (DF-STRATA-2026-E4B7) -----------------------------------------
+
+let private narrower =
+    [ "strata.json", manifest [ "schema/cli/tables/thing.sql" ]
+      "schema/cli/tables/thing.sql", "CREATE TABLE cli.thing (id bigint PRIMARY KEY);" ]
+
+let private agentEnvironment =
+    [ "ROS_ACTOR_KIND", "agent"
+      "ROS_TELEMETRY_PROVIDER", "openai"
+      "ROS_TELEMETRY_RUNTIME", "codex"
+      "ROS_EXECUTION_ID", "EXE-20260926T080000000Z-a1a1a1a1" ]
+
+let private member' (path: string) (name: string) =
+    use document = System.Text.Json.JsonDocument.Parse(File.ReadAllText path)
+
+    match document.RootElement.TryGetProperty name with
+    | true, value -> Some(value.GetRawText())
+    | _ -> None
+
+let private approvalLine (outcome: Cli.Outcome) =
+    outcome.Stdout.Split('\n')
+    |> Array.tryFind (fun line -> line.StartsWith "{\"approval\"")
+    |> Option.map (fun line -> System.Text.Json.Nodes.JsonNode.Parse(line).["approval"])
+
+[<RequiresCliAndPostgres>]
+let ``compile records the compiling agent beside an unchanged body, and sign extends it`` () =
+    database (fun connection ->
+        project wellFormed (fun root ->
+            let plain = Path.Combine(root, "plain.strata")
+            let attributed = Path.Combine(root, "attributed.strata")
+            let privatePath = Path.Combine(root, "k.pem")
+            let publicPath = Path.Combine(root, "k.pub")
+
+            Assert.Equal(0, (Cli.run [ "compile"; "--project"; root; "--connection"; connection; "--out"; plain ]).ExitCode)
+
+            let compiled =
+                Cli.runWith agentEnvironment [ "compile"; "--project"; root; "--connection"; connection; "--out"; attributed ]
+
+            Assert.Equal(0, compiled.ExitCode)
+
+            // Nothing identified: nothing recorded, and nothing invented.
+            Assert.Equal(None, member' plain "provenance")
+            // The body and its digest are the same bytes either way.
+            Assert.Equal(member' plain "artifact", member' attributed "artifact")
+            Assert.Equal(member' plain "integrity", member' attributed "integrity")
+
+            let provenance = System.Text.Json.Nodes.JsonNode.Parse((member' attributed "provenance").Value)
+            let creation = provenance.["contributions"].["EXE-20260926T080000000Z-a1a1a1a1"]
+            Assert.Equal("created", creation.["operations"].[0].GetValue<string>())
+            Assert.Equal("agent", creation.["actor"].["kind"].GetValue<string>())
+            Assert.Equal("openai/codex", creation.["actor"].["id"].GetValue<string>())
+            // The project is lineage, never an author.
+            Assert.StartsWith("strata:project/", provenance.["derivedFrom"].[0].GetValue<string>())
+
+            Assert.Equal(0, (Cli.run [ "keygen"; "--key"; privatePath; "--public-key"; publicPath ]).ExitCode)
+
+            let signed =
+                Cli.run [ "sign"; "--artifact"; attributed; "--key"; privatePath; "--actor-kind"; "human"; "--actor"; "kevin" ]
+
+            Assert.Equal(0, signed.ExitCode)
+            Assert.Equal(member' plain "artifact", member' attributed "artifact")
+
+            let after = System.Text.Json.Nodes.JsonNode.Parse((member' attributed "provenance").Value)
+            let contributions = after.["contributions"].AsObject() |> Seq.toList
+            Assert.Equal(2, contributions.Length)
+            // The creator is untouched.
+            Assert.True(System.Text.Json.Nodes.JsonNode.DeepEquals(creation, after.["contributions"].["EXE-20260926T080000000Z-a1a1a1a1"]))
+
+            let signing = contributions |> List.find (fun p -> p.Key.StartsWith "EXE-strata.")
+            Assert.Equal("x-signed", signing.Value.["operations"].[0].GetValue<string>())
+            Assert.Equal("human", signing.Value.["actor"].["kind"].GetValue<string>())
+            Assert.StartsWith("strata:key/sha256:", signing.Value.["evidence"].[0].GetValue<string>())
+
+            // Provenance beside the signature does not disturb it.
+            let deployed =
+                Cli.run
+                    [ "deploy"; "--artifact"; attributed; "--connection"; connection
+                      "--require-signature"; "--public-key"; publicPath; "--confirm" ]
+
+            Assert.Equal(0, deployed.ExitCode)
+            Assert.Contains("Signature verified", deployed.Stdout)))
+
+/// Deploys `wellFormed`, then compiles `narrower`, whose deployment drops a
+/// column: requires-approval, because with no corpus a removal can only be
+/// approved, never cleared.
+let private needingApproval (connection: string) (body: string -> unit) =
+    project wellFormed (fun first ->
+        let artifact = Path.Combine(first, "first.strata")
+        Assert.Equal(0, (Cli.run [ "compile"; "--project"; first; "--connection"; connection; "--out"; artifact ]).ExitCode)
+        Assert.Equal(0, (Cli.run [ "deploy"; "--artifact"; artifact; "--connection"; connection; "--confirm" ]).ExitCode))
+
+    project narrower (fun second ->
+        let artifact = Path.Combine(second, "second.strata")
+        Assert.Equal(0, (Cli.run [ "compile"; "--project"; second; "--connection"; connection; "--out"; artifact ]).ExitCode)
+        body artifact)
+
+let private columnExists (connection: string) =
+    use c = new NpgsqlConnection(connection)
+    c.Open()
+
+    use command =
+        new NpgsqlCommand(
+            "SELECT count(*) FROM information_schema.columns WHERE table_schema = 'cli' AND table_name = 'thing' AND column_name = 'label'",
+            c)
+
+    (command.ExecuteScalar() :?> int64) = 1L
+
+[<RequiresCliAndPostgres>]
+let ``an agent's approval is recorded as an agent, and refused when a human approval is required`` () =
+    database (fun connection ->
+        needingApproval connection (fun artifact ->
+            let deploy extra =
+                Cli.runWith
+                    agentEnvironment
+                    ([ "deploy"; "--artifact"; artifact; "--connection"; connection
+                       "--allow-drops"; "--approve"; "--confirm"; "--json" ]
+                     @ extra)
+
+            let refused = deploy [ "--require-human-approval" ]
+            Assert.Equal(2, refused.ExitCode)
+            Assert.Contains("REFUSED", refused.Stderr)
+            Assert.Contains("AGENT", refused.Stderr)
+            Assert.True(columnExists connection, "a refused approval still changed the database")
+
+            let accepted = deploy []
+            Assert.Equal(0, accepted.ExitCode)
+            Assert.Contains("WARNING: the approving actor is an AGENT", accepted.Stderr)
+            Assert.False(columnExists connection)
+
+            match approvalLine accepted with
+            | None -> failwithf "no approval record in the output:\n%s" accepted.Stdout
+            | Some approval ->
+                Assert.Equal("agent", approval.["actor"].["kind"].GetValue<string>())
+                Assert.Equal("EXE-20260926T080000000Z-a1a1a1a1", approval.["execution"].GetValue<string>())
+                Assert.True(approval.["selfReported"].GetValue<bool>())
+
+                let approvedEntry = approval.["provenance"].["contributions"].["EXE-20260926T080000000Z-a1a1a1a1"]
+                Assert.Equal("approved", approvedEntry.["operations"].[0].GetValue<string>())))
+
+[<RequiresCliAndPostgres>]
+let ``an approval with nothing declared is recorded as unknown, never as a human`` () =
+    database (fun connection ->
+        needingApproval connection (fun artifact ->
+            let required =
+                Cli.run
+                    [ "deploy"; "--artifact"; artifact; "--connection"; connection
+                      "--allow-drops"; "--approve"; "--confirm"; "--json"; "--require-human-approval" ]
+
+            Assert.Equal(2, required.ExitCode)
+            Assert.True(columnExists connection)
+
+            let accepted =
+                Cli.run
+                    [ "deploy"; "--artifact"; artifact; "--connection"; connection
+                      "--allow-drops"; "--approve"; "--confirm"; "--json" ]
+
+            Assert.Equal(0, accepted.ExitCode)
+            Assert.Contains("WARNING: the approving actor is UNKNOWN", accepted.Stderr)
+
+            match approvalLine accepted with
+            | None -> failwithf "no approval record in the output:\n%s" accepted.Stdout
+            | Some approval ->
+                Assert.Equal("unknown", approval.["actor"].["kind"].GetValue<string>())
+                Assert.StartsWith("EXE-strata.", approval.["execution"].GetValue<string>())
+                // The artifact carried no provenance, so the record holds only
+                // the approval: no creator is invented for it.
+                let keys = approval.["provenance"].["contributions"].AsObject() |> Seq.map (fun p -> p.Key) |> Seq.toList
+                Assert.Equal(1, keys.Length)))

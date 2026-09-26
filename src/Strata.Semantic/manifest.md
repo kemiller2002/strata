@@ -14,7 +14,10 @@ objects themselves, and the scope bounding every claim.
   `QualifiedName`, `ObjectKind`, `ManagementScope`), `Evidence.fs`
   (`EvidenceSource`, `Certainty`, `Fact<'T>`), `Resolution.fs`
   (`Resolution<'T>`, `ResolutionGap`), `Schema.fs` (`Table`, `View`, `Routine`,
-  `SchemaSnapshot`), `AnalysisScope.fs` (`Completeness`, `Scope`).
+  `SchemaSnapshot`), `AnalysisScope.fs` (`Completeness`, `Scope`),
+  `Provenance.fs` (`Actor`, `Contribution`, `Record` — the Praxis provenance
+  interchange record, PR-026, NFR-013, `DF-STRATA-2026-E4B7`; actor provenance
+  of artifacts, distinct from `Evidence`).
   No presentation state — this tier has no UI.
 - Transitions / commands / messages: none — Tier 1 holds no transitions.
   Derivation lives in Tier 2.

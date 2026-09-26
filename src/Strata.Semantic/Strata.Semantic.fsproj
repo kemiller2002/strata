@@ -27,6 +27,7 @@
     <Compile Include="AnalysisScope.fs" />
     <Compile Include="Schema.fs" />
     <Compile Include="Wire.fs" />
+    <Compile Include="Provenance.fs" />
   </ItemGroup>
 
 </Project>

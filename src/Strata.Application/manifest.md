@@ -11,7 +11,8 @@ that bounds it. Implements ER-017 / D-019 (retrieval, not dumping) and PR-021
 ## Ownership
 
 - State: `Retrieval.fs` (`Query`, `Answer`); `CorpusPipeline.fs`
-  (`CorpusAnalysis`).
+  (`CorpusAnalysis`); `Attribution.fs` (`Context`, `ApprovalCheck` — who is
+  acting and the opt-in human-approval policy, PR-026, PR-027).
 - Transitions / derivations: `Retrieval.answer`, `Retrieval.toJson`,
   `Retrieval.toText`; `CorpusPipeline.analyse`, `CorpusPipeline.buildGraph`,
   `CorpusPipeline.toScope`.
