@@ -31,4 +31,12 @@
     <!-- Deterministic output is NFR-001; deterministic builds support NFR-002. -->
     <Deterministic>true</Deterministic>
   </PropertyGroup>
+
+  <ItemGroup Condition="'$(MSBuildProjectExtension)' == '.fsproj'">
+    <!-- Aegis 1.0.0 is compiled against the current FSharp.Core. Pinning the
+         same runtime explicitly prevents the .NET 8 SDK's implicit 8.x
+         reference from creating a package downgrade across host/test projects. -->
+    <PackageReference Include="FSharp.Core" Version="10.1.400" />
+  </ItemGroup>
+
 </Project>
