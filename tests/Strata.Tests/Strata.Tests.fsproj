@@ -26,6 +26,7 @@
     <Compile Include="CatalogIntrospectionTests.fs" />
     <Compile Include="ShadowNormalisationTests.fs" />
     <Compile Include="ArtifactTests.fs" />
+    <Compile Include="ProvenanceTests.fs" />
     <Compile Include="TypeCheckTests.fs" />
     <Compile Include="InvariantTests.fs" />
     <Compile Include="ManifestTests.fs" />
@@ -38,6 +39,8 @@
     <!-- The awkward-forms corpus is read at runtime, so it has to reach the
          output directory; without this every theory over it runs zero cases. -->
     <Content Include="awkward/**/*.sql" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Praxis provenance conformance fixtures, vendored with their digests. -->
+    <Content Include="fixtures/**/*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

@@ -802,3 +802,147 @@ let ``an enum's value order survives a round trip`` () =
 
         Assert.Equal<string list list>([ [ "pending"; "shipped"; "cancelled" ] ], values)
     | Microsoft.FSharp.Core.Error message -> failwithf "the artifact could not be read: %s" message
+
+// ---- provenance in the wrapper (DF-STRATA-2026-E4B7) --------------------------
+//
+// Who compiled, signed or approved an artifact is recorded BESIDE the signed
+// body, never in it. The load-bearing property: adding, extending or removing
+// provenance changes neither the body's bytes, nor its digest, nor whether a
+// signature over it verifies.
+
+let private agentActor : Strata.Semantic.Provenance.Actor =
+    { Kind = Strata.Semantic.Provenance.ActorKind.Agent
+      Id = "anthropic/claude-code"
+      Provider = Some "anthropic"
+      Model = Some "unknown"
+      Runtime = Some "claude-code" }
+
+let private compiled (subject: string) =
+    let contribution : Strata.Semantic.Provenance.Contribution =
+        { Key = "EXE-strata.20260926T100000000Z-0a0b0c0d"
+          Operations = [ Strata.Semantic.Provenance.Operation.Created ]
+          At = "2026-09-26T10:00:00.000Z"
+          Last = None
+          Actor = agentActor
+          Reason = None
+          Evidence = [] }
+
+    match ProvenanceJson.derive subject contribution [ "strata:project/shop@sha256:00" ] [] with
+    | Ok raw ->
+        match ProvenanceJson.read raw with
+        | Ok reading -> reading
+        | Microsoft.FSharp.Core.Error problems -> failwithf "%A" problems
+    | Microsoft.FSharp.Core.Error problems -> failwithf "%A" problems
+
+let private bodyOf (fileText: string) =
+    use document = System.Text.Json.JsonDocument.Parse fileText
+    document.RootElement.GetProperty("artifact").GetRawText()
+
+[<Fact>]
+let ``provenance changes neither the body bytes, nor the digest, nor the signature`` () =
+    let digest = Attestation.digestOf sample
+    let privatePem, publicPem = Attestation.generateKeyPair ()
+
+    let signature =
+        match Attestation.sign privatePem sample with
+        | Ok s -> s
+        | Microsoft.FSharp.Core.Error message -> failwithf "signing failed: %s" message
+
+    let signed = { digested sample with Signature = Some(Attestation.SignatureAlgorithm, signature) }
+    let without = Attestation.renderFile signed sample
+    let withProvenance = Attestation.renderFile { signed with Provenance = Some(compiled (Attestation.subjectOf digest)) } sample
+
+    Assert.NotEqual<string>(without, withProvenance)
+    Assert.Equal(Artifact.toText sample, bodyOf without)
+    Assert.Equal(bodyOf without, bodyOf withProvenance)
+
+    for text in [ without; withProvenance ] do
+        match Attestation.readFile text with
+        | Ok (restored, wrapper) ->
+            Assert.Equal(Some digest, wrapper.Digest)
+            Assert.Equal(digest, Attestation.digestOf restored)
+            Assert.Equal(None, Attestation.provenanceProblem true (Some publicPem) restored wrapper)
+        | Microsoft.FSharp.Core.Error message -> failwithf "refused: %s" message
+
+[<Fact>]
+let ``an artifact without provenance is written exactly as before`` () =
+    // The pre-provenance wrapper layout, spelled out: no member added, none
+    // reordered, so an unsigned compile stays byte-for-byte reproducible.
+    let digest = Attestation.digestOf sample
+
+    let expected =
+        "{\"integrity\":{\"algorithm\":\"sha-256\",\"digest\":\"" + digest + "\"},\"artifact\":" + Artifact.toText sample + "}"
+
+    Assert.Equal(expected, Attestation.renderFile (digested sample) sample)
+
+[<Fact>]
+let ``the wrapper round-trips provenance and unknown members verbatim`` () =
+    let digest = Attestation.digestOf sample
+    let reading = compiled (Attestation.subjectOf digest)
+    let raw = (ProvenanceJson.raw reading).DeepClone().AsObject()
+    // Fields this build does not model, at every level.
+    raw.["x-future-envelope"] <- System.Text.Json.Nodes.JsonNode.Parse """{"a":[1,2.50,"é+<>"]}"""
+    let entry = raw.["contributions"].AsObject().["EXE-strata.20260926T100000000Z-0a0b0c0d"].AsObject()
+    entry.["attestation"] <- System.Text.Json.Nodes.JsonNode.Parse """{"type":"x-future"}"""
+    entry.["actor"].AsObject().["x-team"] <- System.Text.Json.Nodes.JsonValue.Create "platform"
+
+    let withUnknown =
+        match ProvenanceJson.read raw with
+        | Ok r -> r
+        | Microsoft.FSharp.Core.Error problems -> failwithf "%A" problems
+
+    let extra = [ "x-wrapper-extension", System.Text.Json.Nodes.JsonNode.Parse """{"kept":true}""" ]
+    let text = Attestation.renderFile { digested sample with Provenance = Some withUnknown; Extra = extra } sample
+
+    match Attestation.readFile text with
+    | Ok (restored, wrapper) ->
+        let back = wrapper.Provenance |> Option.map ProvenanceJson.raw |> Option.toObj
+        Assert.True(System.Text.Json.Nodes.JsonNode.DeepEquals(raw, back))
+        Assert.Equal(1, List.length wrapper.Extra)
+        Assert.True(System.Text.Json.Nodes.JsonNode.DeepEquals(snd extra.Head, snd wrapper.Extra.Head))
+        // And writing it again is a fixed point.
+        Assert.Equal(text, Attestation.renderFile wrapper restored)
+    | Microsoft.FSharp.Core.Error message -> failwithf "refused: %s" message
+
+[<Fact>]
+let ``a legacy artifact reads with no provenance, and none is invented`` () =
+    for text in [ Artifact.toText sample; Attestation.renderFile (digested sample) sample ] do
+        match Attestation.readFile text with
+        | Ok (_, wrapper) -> Assert.True wrapper.Provenance.IsNone
+        | Microsoft.FSharp.Core.Error message -> failwithf "refused: %s" message
+
+[<Fact>]
+let ``malformed provenance is refused, not dropped`` () =
+    let text = Attestation.renderFile (digested sample) sample
+    let broken = "{\"provenance\":{\"contributions\":{\"RUN-1\":{}}}," + text.Substring 1
+
+    match Attestation.readFile broken with
+    | Ok _ -> failwith "malformed provenance was accepted"
+    | Microsoft.FSharp.Core.Error message -> Assert.Contains("provenance record is malformed", message)
+
+[<Fact>]
+let ``provenance describing another artifact is refused`` () =
+    let text =
+        Attestation.renderFile
+            { digested sample with Provenance = Some(compiled (Attestation.subjectOf (String.replicate 64 "0"))) }
+            sample
+
+    match Attestation.readFile text with
+    | Ok _ -> failwith "provenance for a different artifact was accepted"
+    | Microsoft.FSharp.Core.Error message -> Assert.Contains("describes a different artifact", message)
+
+[<Fact>]
+let ``an unsupported major provenance version is carried verbatim`` () =
+    let future = """{"contract":"praxis.provenance-record","version":"2.0.0","contributions":[{"execution":"EXE-x"}],"x-v2":true}"""
+    let text = Attestation.renderFile (digested sample) sample
+    let carrying = "{\"provenance\":" + future + "," + text.Substring 1
+
+    match Attestation.readFile carrying with
+    | Ok (restored, wrapper) ->
+        match wrapper.Provenance with
+        | Some (ProvenanceJson.Reading.Unsupported (version, raw)) ->
+            Assert.Equal("2.0.0", version)
+            Assert.True(System.Text.Json.Nodes.JsonNode.DeepEquals(System.Text.Json.Nodes.JsonNode.Parse future, raw))
+            Assert.Contains(future, Attestation.renderFile wrapper restored)
+        | other -> failwithf "expected an unsupported reading, got %A" other
+    | Microsoft.FSharp.Core.Error message -> failwithf "refused: %s" message

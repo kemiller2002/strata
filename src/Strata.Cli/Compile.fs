@@ -111,6 +111,7 @@ let run
     (connectionString: string)
     (projectRoot: string)
     (outputPath: string)
+    (provenance: Attributing.Request)
     : int =
 
     match load parser projectRoot with
@@ -164,6 +165,20 @@ let run
         for failure in resolved.DataFailures do
             eprintfn "warning: %s: %s" failure.Table failure.Reason
 
+        let digest = Attestation.digestOf resolved
+
+        // Who compiled it, recorded in the WRAPPER beside the digest and never
+        // in the body, so the body, its digest and any later signature are the
+        // same bytes with or without it (DF-STRATA-2026-E4B7). The compiling
+        // actor is the artifact's creator, not the SQL's author: the project is
+        // named as lineage only.
+        match Attributing.forCompile provenance loaded.Project digest with
+        | Microsoft.FSharp.Core.Error message ->
+            eprintfn "error: could not record provenance: %s" message
+            eprintfn "Nothing was written. Fix the declared identity, or pass --no-provenance."
+            2
+        | Ok recorded ->
+
         let directory = Path.GetDirectoryName(Path.GetFullPath outputPath)
 
         if not (Directory.Exists directory) then
@@ -177,11 +192,19 @@ let run
         // convenient lie.
         File.WriteAllText(
             outputPath,
-            Attestation.renderFile { Attestation.none with Digest = Some(Attestation.digestOf resolved) } resolved)
+            Attestation.renderFile
+                { Attestation.none with
+                    Digest = Some digest
+                    Provenance = recorded |> Option.map fst }
+                resolved)
 
         printfn "Compiled %d object(s) from %s to %s."
             (List.length loaded.Declared.Snapshot.Objects)
             loaded.Project.Root
             outputPath
+
+        match recorded with
+        | Some (_, context) -> printfn "Provenance: created by %s." (Attributing.describe context)
+        | None -> ()
 
         0

@@ -1,0 +1,19 @@
+{
+  "contract": "praxis.provenance-record",
+  "version": "1.0.0",
+  "contributions": {
+    "EXE-20260926T080000000Z-a1a1a1a1": {
+      "operations": [
+        "created"
+      ],
+      "at": "2026-09-26 08:00",
+      "actor": {
+        "kind": "agent",
+        "id": "anthropic/claude-code",
+        "provider": "anthropic",
+        "model": "unknown",
+        "runtime": "claude-code"
+      }
+    }
+  }
+}

@@ -20,6 +20,7 @@
     <Compile Include="Manifests.fs" />
     <Compile Include="RenameAnnotations.fs" />
     <Compile Include="Artifact.fs" />
+    <Compile Include="ProvenanceJson.fs" />
     <Compile Include="Attestation.fs" />
   </ItemGroup>
 

@@ -59,14 +59,32 @@ module Attestation =
     let SignatureAlgorithm = "ecdsa-p256-sha256"
 
     /// What an artifact file carries about its own provenance.
+    [<NoComparison>]
     type Wrapper =
         { /// Hex SHA-256 of the canonical body. Absent only in an artifact
           /// written before integrity existed.
           Digest: string option
           /// Base64 signature over the same bytes, and the key it names.
-          Signature: (string * string) option }
+          Signature: (string * string) option
+          /// Who compiled, signed or approved it: a Praxis provenance record,
+          /// kept as read so every field survives a rewrite
+          /// (DF-STRATA-2026-E4B7). Self-reported, OUTSIDE the signed body:
+          /// adding it changes neither the digest nor the signature. `None`
+          /// for an artifact that never carried one; nothing is invented.
+          Provenance: ProvenanceJson.Reading option
+          /// Wrapper members this build does not know, in file order. Carried
+          /// through `sign` rather than dropped.
+          Extra: (string * System.Text.Json.Nodes.JsonNode) list }
 
-    let none = { Digest = None; Signature = None }
+    let none = { Digest = None; Signature = None; Provenance = None; Extra = [] }
+
+    [<Literal>]
+    let ProvenanceMember = "provenance"
+
+    /// The reference a provenance record uses for the artifact it describes:
+    /// the digest of the canonical body, so a record cannot describe one
+    /// artifact while sitting in another's wrapper unnoticed.
+    let subjectOf (digest: string) = "strata:artifact/sha256:" + digest
 
     let private toHex (bytes: byte array) =
         bytes |> Array.fold (fun (sb: StringBuilder) b -> sb.Append(b.ToString "x2")) (StringBuilder()) |> string
@@ -113,19 +131,32 @@ module Attestation =
     /// The body is embedded rather than concatenated so the file stays a single
     /// JSON document that any tool can read.
     let renderFile (wrapper: Wrapper) (resolved: ResolvedDesiredState) =
-        let members =
-            [ match wrapper.Digest with
-              | Some d -> "integrity", JObject [ "algorithm", JString DigestAlgorithm; "digest", JString d ]
-              | None -> ()
+        // Rendered member by member rather than as one `Json` value because the
+        // provenance record and unknown members are carried as the JSON they
+        // were read as, which `Wire.Json` cannot hold. Without them this is
+        // byte-for-byte the rendering `Json.render (JObject members)` gave.
+        let memberText (name: string) (valueText: string) = Json.render (JString name) + ":" + valueText
 
-              match wrapper.Signature with
-              | Some (algorithm, value) ->
-                  "signature", JObject [ "algorithm", JString algorithm; "value", JString value ]
-              | None -> ()
+        [ match wrapper.Digest with
+          | Some d ->
+              memberText "integrity" (Json.render (JObject [ "algorithm", JString DigestAlgorithm; "digest", JString d ]))
+          | None -> ()
 
-              "artifact", Artifact.render resolved ]
+          match wrapper.Signature with
+          | Some (algorithm, value) ->
+              memberText "signature" (Json.render (JObject [ "algorithm", JString algorithm; "value", JString value ]))
+          | None -> ()
 
-        Json.render (JObject members)
+          match wrapper.Provenance with
+          | Some reading -> memberText ProvenanceMember (ProvenanceJson.toText (ProvenanceJson.raw reading))
+          | None -> ()
+
+          for name, node in wrapper.Extra do
+              memberText name (ProvenanceJson.toText node)
+
+          memberText "artifact" (Artifact.toText resolved) ]
+        |> String.concat ","
+        |> fun body -> "{" + body + "}"
 
     /// Read an artifact file, returning what it claims about itself alongside it.
     ///
@@ -151,21 +182,61 @@ module Attestation =
                         | _ -> None
                     | _ -> None
 
-                let wrapper =
+                let known = set [ "integrity"; "signature"; ProvenanceMember; "artifact" ]
+
+                let extra =
+                    root.EnumerateObject()
+                    |> Seq.filter (fun p -> not (known.Contains p.Name))
+                    |> Seq.map (fun p -> p.Name, System.Text.Json.Nodes.JsonNode.Parse(p.Value.GetRawText()))
+                    |> Seq.toList
+
+                // Malformed provenance is REFUSED, not dropped: a record that
+                // cannot be read cannot be carried forward honestly, and
+                // silently removing it would erase who produced the artifact.
+                let provenance =
+                    match root.TryGetProperty ProvenanceMember with
+                    | false, _ -> Ok None
+                    | true, element ->
+                        match ProvenanceJson.validate (System.Text.Json.Nodes.JsonNode.Parse(element.GetRawText())) with
+                        | Ok reading -> Ok(Some reading)
+                        | Microsoft.FSharp.Core.Error problems ->
+                            Microsoft.FSharp.Core.Error(
+                                "this artifact's provenance record is malformed ("
+                                + ProvenanceJson.describeProblems problems
+                                + "). It was not written by this build of Strata as it stands; restore it rather than deleting it.")
+
+                let wrapper provenance =
                     { Digest = read "integrity" "digest"
                       Signature =
                         match read "signature" "algorithm", read "signature" "value" with
                         | Some algorithm, Some value -> Some(algorithm, value)
-                        | _ -> None }
+                        | _ -> None
+                      Provenance = provenance
+                      Extra = extra }
 
-                match Artifact.ofText (body.GetRawText()) with
-                | Microsoft.FSharp.Core.Error message -> Microsoft.FSharp.Core.Error message
-                | Ok resolved ->
+                match provenance, Artifact.ofText (body.GetRawText()) with
+                | Microsoft.FSharp.Core.Error message, _
+                | _, Microsoft.FSharp.Core.Error message -> Microsoft.FSharp.Core.Error message
+                | Ok provenance, Ok resolved ->
+                    let wrapper = wrapper provenance
+                    let actual = digestOf resolved
+
+                    let describesAnother =
+                        match provenance with
+                        | Some (ProvenanceJson.Reading.Current (record, _))
+                        | Some (ProvenanceJson.Reading.Unversioned (record, _)) ->
+                            record.Subject |> Option.exists (fun subject -> subject <> subjectOf actual)
+                        | _ -> false
+
                     match wrapper.Digest with
-                    | Some claimed when claimed <> digestOf resolved ->
+                    | Some claimed when claimed <> actual ->
                         Microsoft.FSharp.Core.Error
                             "this artifact does not match its own integrity digest. It was changed after it was \
                              compiled. Recompile it rather than deploying it."
+                    | _ when describesAnother ->
+                        Microsoft.FSharp.Core.Error
+                            "this artifact's provenance record describes a different artifact (its subject is not \
+                             this artifact's digest). Provenance is never moved between artifacts."
                     | _ -> Ok(resolved, wrapper)
         with ex ->
             Microsoft.FSharp.Core.Error(sprintf "the artifact could not be read (%s)" ex.Message)

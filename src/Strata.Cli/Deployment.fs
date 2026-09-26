@@ -31,6 +31,7 @@ open Strata.Host.Postgres
 open Strata.Host.PgParser
 
 /// What the caller asked for, separated from where desired state came from.
+[<NoComparison>]
 type Options =
     { /// Propose removals. Absence is never authority to delete (NG-006), so
       /// this is opt-in and stays so.
@@ -55,7 +56,47 @@ type Options =
       /// the gate has no opinion about. A monitoring host wants the second: a
       /// requires-approval verdict on a server that MATCHES is not an incident,
       /// and a clean-gated difference on one that does not is.
-      DriftOnly: bool }
+      DriftOnly: bool
+
+      /// Who is passing `--approve`, resolved from declarations and the
+      /// whitelisted environment. Self-reported (DF-STRATA-2026-E4B7).
+      Approver: Result<Attribution.Context, string>
+      /// Refuse an approval whose actor is not a declared human. A policy the
+      /// operator opts into over a self-reported identity, not authorization.
+      RequireHumanApproval: bool
+      /// What the approval is about, for its provenance record: the artifact
+      /// for `deploy`, the project for `apply`.
+      ApprovalSubject: string option
+      /// The artifact's own provenance, which an approval extends.
+      SubjectProvenance: ProvenanceJson.Reading option }
+
+/// The approval, as its own machine-readable line. Printed with `--json` so a
+/// pipeline can keep who approved WITH what was approved; the plan document
+/// above it is unchanged.
+let private approvalJson
+    (context: Attribution.Context)
+    (at: string)
+    (findings: string list)
+    (record: ProvenanceJson.Reading option)
+    =
+    let node = System.Text.Json.Nodes.JsonObject()
+    node.["selfReported"] <- System.Text.Json.Nodes.JsonValue.Create true
+    node.["actor"] <- ProvenanceJson.actorNode context.Actor
+    node.["execution"] <- System.Text.Json.Nodes.JsonValue.Create context.Execution
+    node.["mechanism"] <- System.Text.Json.Nodes.JsonValue.Create context.Mechanism
+    node.["at"] <- System.Text.Json.Nodes.JsonValue.Create at
+    let accepted = System.Text.Json.Nodes.JsonArray()
+    findings |> List.iter (fun f -> accepted.Add(System.Text.Json.Nodes.JsonValue.Create f))
+    node.["findings"] <- accepted
+
+    node.["provenance"] <-
+        match record with
+        | Some reading -> (ProvenanceJson.raw reading).DeepClone()
+        | None -> null
+
+    let wrapper = System.Text.Json.Nodes.JsonObject()
+    wrapper.["approval"] <- node
+    ProvenanceJson.toText wrapper
 
 /// Run the whole deployment path against `connectionString`.
 ///
@@ -281,6 +322,18 @@ let run
 
     let approved = options.Approve
 
+    // Who is approving, and what the operator's policy says about it. Checked
+    // only when an approval is actually being USED — `--approve` on a plan the
+    // gate allowed approves nothing.
+    let approval =
+        if approved && gate.Verdict = DeploymentGate.RequiresApproval then
+            Some(
+                options.Approver
+                |> Result.map (fun context -> context, Attribution.checkApproval options.RequireHumanApproval context)
+            )
+        else
+            None
+
     // `--approve` answers requires-approval, which is precisely the
     // question the gate asks a human. It never answers a BLOCK:
     // that verdict means Strata found the breakage, not that it
@@ -292,6 +345,26 @@ let run
         | DeploymentGate.RequiresApproval -> approved
         | DeploymentGate.Block -> false
 
+    match approval with
+    | Some (Microsoft.FSharp.Core.Error message) ->
+        eprintfn ""
+        eprintfn "REFUSED: the approving identity could not be resolved: %s" message
+        eprintfn "         Nothing was executed. An approval nobody can attribute is not recorded."
+        2
+    | Some (Ok (_, Attribution.Refused message)) ->
+        eprintfn ""
+        eprintfn "REFUSED: %s" message
+        eprintfn "         Identity here is self-reported: this stops an agent that says what it is, not one"
+        eprintfn "         that lies. Custody of the deployment credentials is the control that does that."
+        2
+    | _ ->
+
+    match approval with
+    | Some (Ok (_, Attribution.AcceptedWithWarning message)) ->
+        eprintfn ""
+        eprintfn "WARNING: %s" message
+    | _ -> ()
+
     if not gateSatisfied then
         eprintfn ""
         eprintfn "REFUSED: the gate did not allow this plan (%s)." (DeploymentGate.Verdict.tag gate.Verdict)
@@ -299,7 +372,7 @@ let run
         match gate.Verdict with
         | DeploymentGate.RequiresApproval ->
             eprintfn "         Nothing was executed. Address the findings above, or pass --approve"
-            eprintfn "         to record that a human accepted them."
+            eprintfn "         to accept them; who passed it is recorded with the approval."
         | DeploymentGate.Block ->
             // Saying this explicitly matters: someone who just
             // learned about --approve will reach for it here, and
@@ -346,13 +419,47 @@ let run
         // An approval nobody can see afterwards is not a decision
         // anyone can review. Each finding the human accepted is
         // restated here, in the run's own output, before it runs.
-        if approved && gate.Verdict = DeploymentGate.RequiresApproval then
-            printfn ""
-            printfn "APPROVED by --approve:"
+        match approval with
+        | Some (Ok (context, _)) ->
+            let findings =
+                gate.Findings
+                |> List.filter (fun f -> f.Verdict = DeploymentGate.RequiresApproval)
+                |> List.map (fun f -> f.Detected)
 
-            for f in gate.Findings do
-                if f.Verdict = DeploymentGate.RequiresApproval then
-                    printfn "  %s" f.Detected
+            printfn ""
+            printfn "APPROVED by --approve, by %s:" (Attributing.describe context)
+
+            for f in findings do
+                printfn "  %s" f
+
+            let at = Attributing.now ()
+
+            let reason =
+                sprintf "accepted %d requires-approval finding(s) at deployment" (List.length findings)
+
+            let record =
+                match options.ApprovalSubject with
+                | None -> Microsoft.FSharp.Core.Ok(None, None)
+                | Some subject ->
+                    Attributing.extend
+                        options.SubjectProvenance
+                        subject
+                        (Attribution.contribution context Strata.Semantic.Provenance.Operation.Approved at (Some reason) [])
+
+            let record =
+                match record with
+                | Ok (reading, note) ->
+                    note |> Option.iter (eprintfn "note: %s")
+                    reading
+                | Microsoft.FSharp.Core.Error message ->
+                    // The approval still happened and its actor is still
+                    // reported; only the record could not be extended.
+                    eprintfn "warning: the approval could not be added to the artifact's provenance (%s)." message
+                    None
+
+            if options.Json then
+                printfn "%s" (approvalJson context at findings record)
+        | _ -> ()
 
         let statements = diff.Statements |> List.choose (fun s -> s.Sql)
         let result = Execution.apply connectionString statements

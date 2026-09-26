@@ -35,11 +35,21 @@ notebook section -> requirement -> ROS record -> work item -> implementation -> 
 | PR-022 desired vs actual diff | §17, C-012 | `EX-STRATA-2026-E5FB` | *not yet created* | P4 |
 | PR-023 drift detection | §27, C-013 | — | *not yet created* | P4 |
 | PR-024 deployment plan/execute/verify | §18/28, C-014/018/019 | — | *not yet created* | P5+ |
+| PR-026 compile/sign provenance in the wrapper | *(not in notebook)* WI-0089; Praxis RQ-ROS-2026-A001/A004/A013/A014 | `DF-STRATA-2026-E4B7` | WI-0104 | X |
+| PR-027 approving actor recorded; opt-in human-approval policy | *(not in notebook)* WI-0089; Praxis RQ-ROS-2026-A010 | `DF-STRATA-2026-E4B7` | WI-0104 | X |
 
 Work items are deliberately **not** created for S4 and beyond: `Q-007` and
 `Q-021` block the policy profile, and `Q-003`, `Q-004`, `Q-010`, `Q-020`,
 `Q-008`, `Q-030` block diff and deployment. Creating them now would encode
 guesses as work.
+
+## Provenance: requirement to implementation to verification
+
+| Requirement | Implementation | Verification |
+|---|---|---|
+| PR-026 | `src/Strata.Semantic/Provenance.fs` (types, rules); `src/Strata.Application/Attribution.fs` (identity, run key); `src/Strata.Cli/Attributing.fs`, `Compile.fs`, `Program.fs` (`sign`) | `tests/Strata.Tests/ProvenanceTests.fs` (identity resolution); `CliTests.fs` `compile records the compiling agent beside an unchanged body, and sign extends it` |
+| PR-027 | `Attribution.checkApproval`; `src/Strata.Cli/Deployment.fs` (approval line, warning, refusal) | `ProvenanceTests.fs` `approval by an agent or an unknown actor is reported, and refused when a human is required`; `CliTests.fs` `an agent's approval is recorded as an agent, …`, `an approval with nothing declared is recorded as unknown, …` |
+| NFR-013 | `src/Strata.Host.Files/ProvenanceJson.fs` (codec, successor check); `Attestation.fs` (wrapper read/write, subject check) | `ProvenanceTests.fs` (vendored Praxis conformance fixtures: digests, cases, successors, e2e, round trip); `ArtifactTests.fs` provenance section (body/digest/signature unchanged, verbatim round trip, legacy, malformed, other-artifact, unsupported major) |
 
 ## Engineering rules to enforcement
 

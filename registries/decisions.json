@@ -273,6 +273,52 @@
   },
   {
     "confidence": "high",
+    "created": "2026-09-26",
+    "decision_type": "product-architecture",
+    "evidence": [],
+    "id": "DF-STRATA-2026-E4B7",
+    "path": "research/decisions/DF-STRATA-2026-E4B7--provenance-lives-in-the-wrapper.md",
+    "provenance": {
+      "contributions": {
+        "EXE-20260926T205822698Z-e7fdd3b2": {
+          "actor": {
+            "id": "anthropic/claude-code",
+            "kind": "agent",
+            "model": "unknown",
+            "provider": "anthropic",
+            "runtime": "claude-code"
+          },
+          "at": "2026-09-26T21:14:35.000Z",
+          "operations": [
+            "created"
+          ],
+          "reason": "Praxis provenance interchange adoption (WI-0104)"
+        }
+      }
+    },
+    "related_documents": [
+      "DF-STRATA-2026-2F6B",
+      "DF-STRATA-2026-9A41",
+      "DF-STRATA-2026-D3F8",
+      "docs/strata/REQUIREMENTS-ANALYSIS.md"
+    ],
+    "status": "accepted",
+    "superseded_by": [],
+    "supersedes": [],
+    "tags": [
+      "strata",
+      "artifact",
+      "provenance",
+      "attestation",
+      "approval",
+      "praxis",
+      "echelon"
+    ],
+    "title": "Who compiled, signed or approved an artifact is recorded in its wrapper, never in the signed body",
+    "updated": "2026-09-26"
+  },
+  {
+    "confidence": "high",
     "created": "2026-09-11",
     "created_by_agent": "claude",
     "decision_type": "architecture",

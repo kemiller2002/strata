@@ -107,3 +107,4 @@
 | WI-0101 | A materialized view's definition is never compared | ready |  | medium |
 | WI-0102 | No usage documentation for Strata or for agents driving it | complete |  | medium |
 | WI-0103 | The rules the documentation was written under are not written down | complete |  | medium |
+| WI-0104 | Preserve agent/human/automation provenance on compiled artifacts and deploy approvals (Praxis interchange record) | complete |  | medium |

@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 100,
+  "nextSeq": 105,
   "items": [
     {
       "id": "WI-0001",
@@ -1745,6 +1745,20 @@
       "createdBy": "agent:chatgpt",
       "source": "agent-discovery",
       "sourceReference": "public-repository-upgrade-2026-09-21"
+    },
+    {
+      "id": "WI-0104",
+      "title": "Preserve agent/human/automation provenance on compiled artifacts and deploy approvals (Praxis interchange record)",
+      "description": null,
+      "tags": [],
+      "priority": "medium",
+      "status": "complete",
+      "attachments": [],
+      "createdAt": "2026-09-26T20:58:15.957Z",
+      "updatedAt": "2026-09-26T21:17:01.000Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
     }
   ]
 }
