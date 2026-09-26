@@ -26,6 +26,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="EchelonFoundry.Aegis.Core" Version="1.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="../Strata.Semantic/Strata.Semantic.fsproj" />
     <ProjectReference Include="../Strata.Analysis/Strata.Analysis.fsproj" />
     <ProjectReference Include="../Strata.Application/Strata.Application.fsproj" />
