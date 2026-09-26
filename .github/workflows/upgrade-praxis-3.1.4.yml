@@ -1,0 +1,37 @@
+name: Upgrade Praxis to 3.1.4
+
+on:
+  push:
+    paths:
+      - ".github/workflows/upgrade-praxis-3.1.4.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  upgrade:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - name: Upgrade repository operating system
+        run: npx --yes --package=@echelon-foundry/repository-operating-system@3.1.4 ros upgrade
+      - name: Verify upgraded installation
+        run: npx --yes --package=@echelon-foundry/repository-operating-system@3.1.4 ros verify
+      - name: Commit lifecycle changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "No lifecycle changes required."
+            exit 0
+          fi
+          git config user.name "echelon-foundry-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "chore: upgrade Praxis lifecycle to 3.1.4"
+          git push
