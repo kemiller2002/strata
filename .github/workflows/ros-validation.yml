@@ -15,7 +15,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  debounce:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Wait for commit batch
+        run: sleep 600
+
   validate:
+    needs: debounce
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
