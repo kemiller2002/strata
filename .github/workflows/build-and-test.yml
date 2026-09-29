@@ -54,6 +54,9 @@ jobs:
           - 5432:5432
 
     steps:
+      - name: Wait for commit batch
+        run: sleep 600
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-dotnet@v4
