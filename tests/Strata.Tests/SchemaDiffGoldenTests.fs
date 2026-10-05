@@ -724,3 +724,95 @@ let ``TruncateTable, which no differ produces, has pinned SQL and phase`` () =
 
     Assert.Equal(Some "TRUNCATE TABLE \"sales\".\"orders\"", SchemaDiff.PostgresDdl.statement sources change)
     Assert.Equal(SchemaDiff.Phase.Truncations, SchemaDiff.Ordering.phase change)
+
+// ---- removal conformance (STRATA-QUAL-002) -----------------------------------
+
+/// Every `Change` case that REMOVES something the database has.
+///
+/// `DropSafety` is the single removal authority: each of these may be proposed
+/// only when desired state loaded completely and `--allow-drops` is on. A
+/// domain constraint was the one exception until STRATA-QUAL-002, and nothing
+/// noticed, because nothing asked. These tests ask.
+let removalCases =
+    set
+        [ "DropColumn"
+          "DropTable"
+          "RevokePrivileges"
+          "DropSequence"
+          "DropEnumType"
+          "DropDomainType"
+          "DropDomainConstraint"
+          "DropIndex"
+          "DropTrigger"
+          "DropConstraint" ]
+
+/// Cases whose names read like a removal but are not one, each with the reason.
+/// Adding a case here is a claim that it may be proposed without `--allow-drops`.
+let notRemovals =
+    Map.ofList
+        [ "DropDomainDefault",
+          "an attribute of a declared domain converging on the file; nothing the database holds is lost"
+          "DropDomainNotNull",
+          "loosens a declared domain to match the file; nothing the database holds is lost" ]
+
+[<Fact>]
+let ``every Change case that reads like a removal is classified`` () =
+    let looksLikeRemoval (name: string) =
+        name.StartsWith "Drop" || name.StartsWith "Revoke" || name.StartsWith "Truncate"
+
+    let unclassified =
+        FSharpType.GetUnionCases(typeof<Change>)
+        |> Array.map (fun c -> c.Name)
+        |> Array.filter looksLikeRemoval
+        |> Array.filter (fun n ->
+            not (Set.contains n removalCases)
+            && not (Map.containsKey n notRemovals)
+            && not (Map.containsKey n unreachableFromRun))
+
+    Assert.True(
+        Array.isEmpty unclassified,
+        sprintf "classify as a removal or a non-removal: %s" (String.Join(", ", unclassified)))
+
+let private removalsIn (inputs: Inputs) =
+    (SchemaDiff.Plan.run inputs).Changes
+    |> List.map caseName
+    |> List.filter (fun n -> Set.contains n removalCases)
+
+[<Fact>]
+let ``the golden corpus proposes every removal case when drops are allowed`` () =
+    // Without this the two tests below could pass vacuously.
+    let reached =
+        fixtures
+        |> List.collect (fun (_, f) -> removalsIn { f () with AllowDrops = true })
+        |> Set.ofList
+
+    let missing = removalCases - reached
+    Assert.True(Set.isEmpty missing, sprintf "no fixture proposes: %s" (String.Join(", ", missing)))
+
+[<Fact>]
+let ``no removal is proposed without --allow-drops`` () =
+    let offenders =
+        fixtures
+        |> List.collect (fun (name, f) ->
+            removalsIn { f () with AllowDrops = false } |> List.map (fun c -> sprintf "%s: %s" name c))
+
+    Assert.True(List.isEmpty offenders, String.Join("\n", offenders))
+
+[<Fact>]
+let ``no removal is proposed when desired state did not load completely`` () =
+    let incomplete (inputs: Inputs) =
+        { inputs with
+            AllowDrops = true
+            Desired =
+              { inputs.Desired with
+                  Completeness =
+                    Completeness.ofList (
+                        ("relations", Partial "a file did not parse")
+                        :: (inputs.Desired.Completeness.Categories |> List.filter (fun (c, _) -> c <> "relations"))
+                    ) } }
+
+    let offenders =
+        fixtures
+        |> List.collect (fun (name, f) -> removalsIn (incomplete (f ())) |> List.map (fun c -> sprintf "%s: %s" name c))
+
+    Assert.True(List.isEmpty offenders, String.Join("\n", offenders))
