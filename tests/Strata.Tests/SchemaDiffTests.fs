@@ -53,12 +53,12 @@ let private managed = [ "sales" ]
 /// deliberately not an empty list: these tests build snapshots directly and
 /// declare objects in no schema, so nothing is proposed either way.
 ///
-/// `SchemaDiff.run` also takes the verbatim text that declared each object, so
+/// `SchemaDiff.Plan.run` also takes the verbatim text that declared each object, so
 /// a CREATE can execute the author's own DDL rather than a reconstruction.
 /// These tests build snapshots directly and have no files, so they pass none
 /// and exercise the reconstruction path deliberately.
 let private run allowDrops managedSchemas desired actual =
-    Strata.Application.SchemaDiff.run
+    Strata.Application.SchemaDiff.Plan.run
         { Strata.Application.SchemaDiff.Inputs.between desired actual with
             AllowDrops = allowDrops
             ManagedSchemas = managedSchemas
@@ -642,7 +642,7 @@ let private viewDefined name definition =
           Scope = Managed }
 
 let private runWithViews normalised desired actual =
-    Strata.Application.SchemaDiff.run
+    Strata.Application.SchemaDiff.Plan.run
         { Strata.Application.SchemaDiff.Inputs.between desired actual with
             AllowDrops = true
             ManagedSchemas = managed
@@ -793,7 +793,7 @@ let private tableWithDefault name column deployedDefault =
           Scope = Managed }
 
 let private runWithTables normalisedTables desired actual =
-    Strata.Application.SchemaDiff.run
+    Strata.Application.SchemaDiff.Plan.run
         { Strata.Application.SchemaDiff.Inputs.between desired actual with
             AllowDrops = true
             ManagedSchemas = managed
@@ -886,7 +886,7 @@ let ``a table that could not be normalised keeps its disclosure`` () =
 // ---- renames --------------------------------------------------------------
 
 let private runWithRenames renames desired actual =
-    Strata.Application.SchemaDiff.run
+    Strata.Application.SchemaDiff.Plan.run
         { Strata.Application.SchemaDiff.Inputs.between desired actual with
             AllowDrops = true
             ManagedSchemas = managed
@@ -1504,7 +1504,7 @@ let private resolved declaredRows deployedRows : ResolvedData =
       Deployed = deployedRows }
 
 let private runWithData data failures desired actual =
-    Strata.Application.SchemaDiff.run
+    Strata.Application.SchemaDiff.Plan.run
         { Strata.Application.SchemaDiff.Inputs.between desired actual with
             AllowDrops = true
             ManagedSchemas = managed
@@ -1642,7 +1642,7 @@ let ``an update never assigns the key it matches on`` () =
 // the one directory tree, so a project cannot manage a schema it declared
 // nothing in (`DF-STRATA-2026-C3A2`).
 let private runWithSchemas existing declaredIn desired actual =
-    Strata.Application.SchemaDiff.run
+    Strata.Application.SchemaDiff.Plan.run
         { Strata.Application.SchemaDiff.Inputs.between desired actual with
             AllowDrops = true
             ManagedSchemas = declaredIn
@@ -1810,7 +1810,7 @@ let private grant object' grantee privileges : Grant =
       Grantable = [] }
 
 let private runWithGrants allowDrops declared actual =
-    Strata.Application.SchemaDiff.run
+    Strata.Application.SchemaDiff.Plan.run
         { Strata.Application.SchemaDiff.Inputs.between
               (complete [ tbl Managed "sales" "orders" orders ])
               (complete [ tbl Observed "sales" "orders" orders ]) with
@@ -2057,7 +2057,7 @@ let private policy name command permissive roles using check : Policy =
       WithCheck = check }
 
 let private runWithRls state =
-    Strata.Application.SchemaDiff.run
+    Strata.Application.SchemaDiff.Plan.run
         { Strata.Application.SchemaDiff.Inputs.between
               (complete [ tbl Managed "sales" "orders" orders ])
               (complete [ tbl Observed "sales" "orders" orders ]) with
@@ -2154,7 +2154,7 @@ let private ext name schema version relocatable : Extension =
       IsRelocatable = relocatable }
 
 let private runWithExtensions declared installed =
-    Strata.Application.SchemaDiff.run
+    Strata.Application.SchemaDiff.Plan.run
         { Strata.Application.SchemaDiff.Inputs.between (complete []) (complete []) with
             AllowDrops = true
             ManagedSchemas = managed
@@ -2220,7 +2220,7 @@ let ``an installed extension the project does not declare is never dropped`` () 
 [<Fact>]
 let ``an extension is installed before the tables that may use its types`` () =
     let result =
-        Strata.Application.SchemaDiff.run
+        Strata.Application.SchemaDiff.Plan.run
             { Strata.Application.SchemaDiff.Inputs.between
                   (complete [ tbl Managed "sales" "orders" orders ])
                   (complete []) with
@@ -2261,7 +2261,7 @@ let private declaredPolicy name command permissive roles using check =
       WithCheck = check }
 
 let private runWithPolicies declared settings deployed =
-    Strata.Application.SchemaDiff.run
+    Strata.Application.SchemaDiff.Plan.run
         { Strata.Application.SchemaDiff.Inputs.between
               (complete [ tbl Managed "sales" "orders" orders ])
               (complete [ tbl Observed "sales" "orders" orders ]) with
@@ -2390,7 +2390,7 @@ let ``row-level security is switched on after the reference rows are written`` (
     // them — "new row violates row-level security policy" — and take the whole
     // transaction with them. Verified against a live server.
     let result =
-        Strata.Application.SchemaDiff.run
+        Strata.Application.SchemaDiff.Plan.run
             { Strata.Application.SchemaDiff.Inputs.between
                   (complete [ accountType ])
                   (complete [ accountType ]) with
@@ -2419,7 +2419,7 @@ let ``unreadable privileges propose nothing and say so`` () =
 [<Fact>]
 let ``grants run after the objects they name exist`` () =
     let result =
-        Strata.Application.SchemaDiff.run
+        Strata.Application.SchemaDiff.Plan.run
             { Strata.Application.SchemaDiff.Inputs.between
                   (complete [ tbl Managed "sales" "orders" orders ])
                   (complete []) with
@@ -2553,7 +2553,7 @@ let private enumOf name values : SchemaObject =
     EnumObject { Name = qn "sales" name; Values = values; Scope = Managed }
 
 let private enumDiff declared deployed =
-    Strata.Application.SchemaDiff.run
+    Strata.Application.SchemaDiff.Plan.run
         { Strata.Application.SchemaDiff.Inputs.between (complete declared) (complete deployed) with
             AllowDrops = true
             ManagedSchemas = managed
@@ -2666,7 +2666,7 @@ let private normalisedOf name baseType notNull dflt (constraints: (string * bool
       Constraints = constraints }
 
 let private domainDiff normalised declared deployed =
-    Strata.Application.SchemaDiff.run
+    Strata.Application.SchemaDiff.Plan.run
         { Strata.Application.SchemaDiff.Inputs.between (complete declared) (complete deployed) with
             AllowDrops = true
             ManagedSchemas = managed
@@ -2850,7 +2850,7 @@ let ``a domain the project no longer declares is dropped only with --allow-drops
     Assert.Contains(withDrops.Changes, fun c -> c = DropDomainType(qn "sales" "email"))
 
     let withoutDrops =
-        Strata.Application.SchemaDiff.run
+        Strata.Application.SchemaDiff.Plan.run
             { Strata.Application.SchemaDiff.Inputs.between (complete []) (complete deployed) with
                 ManagedSchemas = managed
                 ExistingSchemas = Some managed }

@@ -208,7 +208,7 @@ let run
         | None -> ()
 
     let diff =
-        SchemaDiff.run
+        SchemaDiff.Plan.run
             { SchemaDiff.Inputs.between desired actual with
                 AllowDrops = allowDrops
                 ManagedSchemas = managedSchemas
@@ -232,9 +232,9 @@ let run
     let gate = DeploymentGate.run graph scope diff.Changes
 
     if options.Json then
-        printfn "%s" (SchemaDiff.toJson diff gate)
+        printfn "%s" (SchemaDiff.Render.toJson diff gate)
     else
-        printfn "%s" (SchemaDiff.toText diff gate)
+        printfn "%s" (SchemaDiff.Render.toText diff gate)
 
     // An empty change list means two different things depending on
     // where it came from, and the gate cannot tell them apart.

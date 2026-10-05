@@ -1,0 +1,65 @@
+## statements (8)
+[01] rename-column (RenameColumn)
+     | ALTER TABLE "sales"."bills" RENAME COLUMN "amt" TO "amount"
+[02] rename-table (RenameTable)
+     | ALTER TABLE "sales"."bills" RENAME TO "invoices"
+[03] add-column (AddColumn)
+     | ALTER TABLE "sales"."orders" ADD COLUMN "note" text
+[04] add-column (AddColumn)
+     | ALTER TABLE "sales"."orders" ADD COLUMN "Shipped At" timestamptz
+[05] add-column (AddColumn)
+     (no SQL: Strata refuses to write this statement)
+[06] alter-column-type (AlterColumnType)
+     | ALTER TABLE "sales"."orders" ALTER COLUMN "total" TYPE numeric
+[07] drop-column (DropColumn)
+     | ALTER TABLE "sales"."orders" DROP COLUMN "obsolete"
+[08] unclassified (UnclassifiedChange)
+     (no SQL: Strata refuses to write this statement)
+
+## text
+PLAN: 8 change(s), 0 suppressed  —  gate verdict BLOCK
+
+  rename-column      sales.bills.amt -> amount
+  rename-table       sales.bills -> sales.invoices
+  add-column         sales.orders.note
+  add-column         sales.orders.Shipped At
+  add-column         sales.orders.stamped
+  alter-column-type  sales.orders.total -> numeric
+  drop-column        sales.orders.obsolete
+  unclassified: sales.orders.flag nullability differs: desired false, actual true
+
+  [BLOCK] renames sales.bills.amt to amount, which 0 source(s) still reference by the old name
+         why:  No dependency found, but the analysed scope does NOT support concluding that none exists. This is not clearance.
+         next: Widen the analysed scope (index the SQL corpus, inspect the live database) and re-run, or approve explicitly.
+
+  [BLOCK] renames sales.bills to sales.invoices, which 0 source(s) still reference by the old name
+         why:  No dependency found, but the analysed scope does NOT support concluding that none exists. This is not clearance.
+         next: Widen the analysed scope (index the SQL corpus, inspect the live database) and re-run, or approve explicitly.
+
+  [ALLOW] adds column sales.orders.note
+         why:  Additive. No existing reader can depend on a column that does not yet exist.
+         next: Proceed.
+
+  [ALLOW] adds column sales.orders.Shipped At
+         why:  Additive. No existing reader can depend on a column that does not yet exist.
+         next: Proceed.
+
+  [ALLOW] adds column sales.orders.stamped
+         why:  Additive. No existing reader can depend on a column that does not yet exist.
+         next: Proceed.
+
+  [REQUIRES-APPROVAL] changes the type of sales.orders.total
+         why:  No dependency found, but the analysed scope does NOT support concluding that none exists. This is not clearance.
+         next: Widen the analysed scope (index the SQL corpus, inspect the live database) and re-run, or approve explicitly.
+
+  [REQUIRES-APPROVAL] drops column sales.orders.obsolete
+         why:  No dependency found, but the analysed scope does NOT support concluding that none exists. This is not clearance.
+         next: Widen the analysed scope (index the SQL corpus, inspect the live database) and re-run, or approve explicitly.
+
+  [REQUIRES-APPROVAL] proposes a change Strata does not model: sales.orders.flag nullability differs: desired false, actual true
+         why:  Strata cannot assess this statement's consequences. That is not the same as it being safe.
+         next: Review this statement manually and approve explicitly.
+
+
+## json
+{"verdict":"block","exitCode":1,"desiredStateComplete":true,"changeCount":8,"changes":["rename-column      sales.bills.amt -> amount","rename-table       sales.bills -> sales.invoices","add-column         sales.orders.note","add-column         sales.orders.Shipped At","add-column         sales.orders.stamped","alter-column-type  sales.orders.total -> numeric","drop-column        sales.orders.obsolete","unclassified: sales.orders.flag nullability differs: desired false, actual true"],"findings":[{"verdict":"block","change":"rename-column      sales.bills.amt -> amount","detected":"renames sales.bills.amt to amount, which 0 source(s) still reference by the old name","rationale":"No dependency found, but the analysed scope does NOT support concluding that none exists. This is not clearance.","affectedSources":[],"nextSafeMove":"Widen the analysed scope (index the SQL corpus, inspect the live database) and re-run, or approve explicitly."},{"verdict":"block","change":"rename-table       sales.bills -> sales.invoices","detected":"renames sales.bills to sales.invoices, which 0 source(s) still reference by the old name","rationale":"No dependency found, but the analysed scope does NOT support concluding that none exists. This is not clearance.","affectedSources":[],"nextSafeMove":"Widen the analysed scope (index the SQL corpus, inspect the live database) and re-run, or approve explicitly."},{"verdict":"allow","change":"add-column         sales.orders.note","detected":"adds column sales.orders.note","rationale":"Additive. No existing reader can depend on a column that does not yet exist.","affectedSources":[],"nextSafeMove":"Proceed."},{"verdict":"allow","change":"add-column         sales.orders.Shipped At","detected":"adds column sales.orders.Shipped At","rationale":"Additive. No existing reader can depend on a column that does not yet exist.","affectedSources":[],"nextSafeMove":"Proceed."},{"verdict":"allow","change":"add-column         sales.orders.stamped","detected":"adds column sales.orders.stamped","rationale":"Additive. No existing reader can depend on a column that does not yet exist.","affectedSources":[],"nextSafeMove":"Proceed."},{"verdict":"requires-approval","change":"alter-column-type  sales.orders.total -> numeric","detected":"changes the type of sales.orders.total","rationale":"No dependency found, but the analysed scope does NOT support concluding that none exists. This is not clearance.","affectedSources":[],"nextSafeMove":"Widen the analysed scope (index the SQL corpus, inspect the live database) and re-run, or approve explicitly."},{"verdict":"requires-approval","change":"drop-column        sales.orders.obsolete","detected":"drops column sales.orders.obsolete","rationale":"No dependency found, but the analysed scope does NOT support concluding that none exists. This is not clearance.","affectedSources":[],"nextSafeMove":"Widen the analysed scope (index the SQL corpus, inspect the live database) and re-run, or approve explicitly."},{"verdict":"requires-approval","change":"unclassified: sales.orders.flag nullability differs: desired false, actual true","detected":"proposes a change Strata does not model: sales.orders.flag nullability differs: desired false, actual true","rationale":"Strata cannot assess this statement's consequences. That is not the same as it being safe.","affectedSources":[],"nextSafeMove":"Review this statement manually and approve explicitly."}],"suppressed":[],"scope":{"liveDatabaseInspected":false,"schemaCompleteness":{"categories":[],"fullyComplete":true},"corpus":{"sourceCount":0,"sourceRoots":[],"indexedSources":[],"indexedSourcesTruncated":false,"parseFailures":0,"extractionGaps":0},"dialectCompatibility":{"state":"no-parsing-performed","parserMajor":null,"serverMajor":null},"parseImpliesTargetAccepts":false,"runtimeQueriesIndexed":false,"externalConsumersIndexed":false,"ormMetadataIndexed":false,"supportsAbsenceClaim":false}}

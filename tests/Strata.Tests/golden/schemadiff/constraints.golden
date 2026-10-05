@@ -1,0 +1,155 @@
+## statements (20)
+[01] drop-constraint (DropConstraint)
+     | ALTER TABLE "sales"."orders" DROP CONSTRAINT "orders_legacy_key"
+[02] drop-constraint (DropConstraint)
+     | ALTER TABLE "sales"."orders" DROP CONSTRAINT "orders_status_key"
+[03] drop-constraint (DropConstraint)
+     | ALTER TABLE "sales"."orders" DROP CONSTRAINT "orders_old_fk"
+[04] drop-constraint (DropConstraint)
+     | ALTER TABLE "sales"."orders" DROP CONSTRAINT "stale_check"
+[05] add-constraint (AddConstraint)
+     | ALTER TABLE "sales"."orders" ADD CONSTRAINT "orders_pkey" PRIMARY KEY ("id")
+[06] add-constraint (AddConstraint)
+     | ALTER TABLE "sales"."orders" ADD CONSTRAINT "orders_code_key" UNIQUE ("code")
+[07] add-constraint (AddConstraint)
+     | ALTER TABLE "sales"."orders" ADD UNIQUE ("customer_id", "code")
+[08] add-constraint (AddConstraint)
+     | ALTER TABLE "sales"."orders" ADD CONSTRAINT "orders_status_key" UNIQUE ("status", "code")
+[09] add-constraint (AddConstraint)
+     | ALTER TABLE "sales"."orders" ADD CONSTRAINT "orders_customer_fk" FOREIGN KEY ("customer_id") REFERENCES "sales"."customers" ("id")
+[10] add-constraint (AddConstraint)
+     | ALTER TABLE "sales"."orders" ADD FOREIGN KEY ("code") REFERENCES "sales"."codes" ("code")
+[11] add-constraint (AddConstraint)
+     | ALTER TABLE "sales"."orders" ADD CONSTRAINT "qty_positive" CHECK ((qty > 0))
+[12] create-index (CreateIndex)
+     | CREATE INDEX "orders_status_idx" ON "sales"."orders" ("status")
+[13] drop-index (DropIndex)
+     | DROP INDEX "sales"."orders_stale_idx"
+[14] create-trigger (CreateTrigger)
+     (no SQL: Strata refuses to write this statement)
+[15] drop-trigger (DropTrigger)
+     | DROP TRIGGER "orders_stale" ON "sales"."orders"
+[16] replace-trigger (ReplaceTrigger)
+     | DROP TRIGGER "orders_audit" ON "sales"."orders";
+     | CREATE TRIGGER orders_audit AFTER UPDATE ON sales.orders FOR EACH ROW EXECUTE FUNCTION touch();
+[17] unclassified (UnclassifiedChange)
+     (no SQL: Strata refuses to write this statement)
+[18] unclassified (UnclassifiedChange)
+     (no SQL: Strata refuses to write this statement)
+[19] unclassified (UnclassifiedChange)
+     (no SQL: Strata refuses to write this statement)
+[20] unclassified (UnclassifiedChange)
+     (no SQL: Strata refuses to write this statement)
+
+## text
+PLAN: 20 change(s), 1 suppressed  —  gate verdict REQUIRES-APPROVAL
+
+  drop-constraint    sales.orders unique orders_legacy_key
+  drop-constraint    sales.orders unique orders_status_key
+  drop-constraint    sales.orders foreign-key orders_old_fk
+  drop-constraint    sales.orders check stale_check
+  add-constraint     sales.orders primary-key orders_pkey
+  add-constraint     sales.orders unique orders_code_key
+  add-constraint     sales.orders unique (unnamed in the declaring file)
+  add-constraint     sales.orders unique orders_status_key
+  add-constraint     sales.orders foreign-key orders_customer_fk
+  add-constraint     sales.orders foreign-key (unnamed in the declaring file)
+  add-constraint     sales.orders check qty_positive
+  create-index       orders_status_idx on sales.orders
+  drop-index         orders_stale_idx on sales.orders
+  create-trigger     orders_new on sales.orders
+  drop-trigger       orders_stale on sales.orders
+  replace-trigger    orders_audit on sales.orders
+  unclassified: sales.orders.status: default is 'new'::text in desired state and 'old'::text in the database
+  unclassified: sales.orders.qty: default present in desired state and absent in the database
+  unclassified: sales.orders: check constraint 'status_known' is CHECK ((status = ANY (ARRAY['new'::text, 'old'::text]))) in desired state and CHECK ((status = 'x'::text)) in the database
+  unclassified: sales.orders: index 'orders_code_idx' covers (code) in desired state and (code,id) in the database
+
+NOT PROPOSED — differences Strata saw and will not act on:
+
+  sales.orders                 [not-compared]
+      1 check constraint(s) exist on both sides; their expressions were NOT compared, so they may differ
+
+  [REQUIRES-APPROVAL] drops the unique constraint orders_legacy_key from sales.orders
+         why:  No query breaks and none errors. The guarantee goes: the database stops refusing the data this constraint excluded, and nothing reports the first row that slips through.
+         next: Confirm nothing relies on this constraint holding — including code that omits a check because the database made it — then approve explicitly.
+
+  [REQUIRES-APPROVAL] drops the unique constraint orders_status_key from sales.orders
+         why:  No query breaks and none errors. The guarantee goes: the database stops refusing the data this constraint excluded, and nothing reports the first row that slips through.
+         next: Confirm nothing relies on this constraint holding — including code that omits a check because the database made it — then approve explicitly.
+
+  [REQUIRES-APPROVAL] drops the foreign-key constraint orders_old_fk from sales.orders
+         why:  No query breaks and none errors. The guarantee goes: the database stops refusing the data this constraint excluded, and nothing reports the first row that slips through.
+         next: Confirm nothing relies on this constraint holding — including code that omits a check because the database made it — then approve explicitly.
+
+  [REQUIRES-APPROVAL] drops the check constraint stale_check from sales.orders
+         why:  No query breaks and none errors. The guarantee goes: the database stops refusing the data this constraint excluded, and nothing reports the first row that slips through.
+         next: Confirm nothing relies on this constraint holding — including code that omits a check because the database made it — then approve explicitly.
+
+  [REQUIRES-APPROVAL] adds constraint orders_pkey to sales.orders
+         why:  Breaks no reader, but may fail against existing rows. Strata does not inspect data and cannot confirm the table already satisfies it.
+         next: Verify no existing row violates the constraint (e.g. run the equivalent SELECT against sales.orders), then approve.
+
+  [REQUIRES-APPROVAL] adds constraint orders_code_key to sales.orders
+         why:  Breaks no reader, but may fail against existing rows. Strata does not inspect data and cannot confirm the table already satisfies it.
+         next: Verify no existing row violates the constraint (e.g. run the equivalent SELECT against sales.orders), then approve.
+
+  [REQUIRES-APPROVAL] adds an unnamed constraint to sales.orders
+         why:  Breaks no reader, but may fail against existing rows. Strata does not inspect data and cannot confirm the table already satisfies it.
+         next: Verify no existing row violates the constraint (e.g. run the equivalent SELECT against sales.orders), then approve.
+
+  [REQUIRES-APPROVAL] adds constraint orders_status_key to sales.orders
+         why:  Breaks no reader, but may fail against existing rows. Strata does not inspect data and cannot confirm the table already satisfies it.
+         next: Verify no existing row violates the constraint (e.g. run the equivalent SELECT against sales.orders), then approve.
+
+  [REQUIRES-APPROVAL] adds constraint orders_customer_fk to sales.orders
+         why:  Breaks no reader, but may fail against existing rows. Strata does not inspect data and cannot confirm the table already satisfies it.
+         next: Verify no existing row violates the constraint (e.g. run the equivalent SELECT against sales.orders), then approve.
+
+  [REQUIRES-APPROVAL] adds an unnamed constraint to sales.orders
+         why:  Breaks no reader, but may fail against existing rows. Strata does not inspect data and cannot confirm the table already satisfies it.
+         next: Verify no existing row violates the constraint (e.g. run the equivalent SELECT against sales.orders), then approve.
+
+  [REQUIRES-APPROVAL] adds constraint qty_positive to sales.orders
+         why:  Breaks no reader, but may fail against existing rows. Strata does not inspect data and cannot confirm the table already satisfies it.
+         next: Verify no existing row violates the constraint (e.g. run the equivalent SELECT against sales.orders), then approve.
+
+  [ALLOW] creates index orders_status_idx on sales.orders
+         why:  Additive. No query can depend on an index that does not exist; building it takes a lock.
+         next: Proceed.
+
+  [REQUIRES-APPROVAL] drops index orders_stale_idx on sales.orders
+         why:  No query breaks, and none reports anything — they get slower. Strata cannot tell which rely on it.
+         next: Confirm no query depends on this index for its plan, then approve explicitly.
+
+  [REQUIRES-APPROVAL] creates trigger orders_new on sales.orders, which 0 source(s) write to
+         why:  No dependency found, but the analysed scope does NOT support concluding that none exists. This is not clearance.
+         next: Widen the analysed scope (index the SQL corpus, inspect the live database) and re-run, or approve explicitly.
+
+  [REQUIRES-APPROVAL] drops trigger orders_stale on sales.orders, which 0 source(s) write to
+         why:  No dependency found, but the analysed scope does NOT support concluding that none exists. This is not clearance.
+         next: Widen the analysed scope (index the SQL corpus, inspect the live database) and re-run, or approve explicitly.
+
+  [REQUIRES-APPROVAL] redefines trigger orders_audit on sales.orders, which 0 source(s) write to
+         why:  No dependency found, but the analysed scope does NOT support concluding that none exists. This is not clearance.
+         next: Widen the analysed scope (index the SQL corpus, inspect the live database) and re-run, or approve explicitly.
+
+  [REQUIRES-APPROVAL] proposes a change Strata does not model: sales.orders.status: default is 'new'::text in desired state and 'old'::text in the database
+         why:  Strata cannot assess this statement's consequences. That is not the same as it being safe.
+         next: Review this statement manually and approve explicitly.
+
+  [REQUIRES-APPROVAL] proposes a change Strata does not model: sales.orders.qty: default present in desired state and absent in the database
+         why:  Strata cannot assess this statement's consequences. That is not the same as it being safe.
+         next: Review this statement manually and approve explicitly.
+
+  [REQUIRES-APPROVAL] proposes a change Strata does not model: sales.orders: check constraint 'status_known' is CHECK ((status = ANY (ARRAY['new'::text, 'old'::text]))) in desired state and CHECK ((status = 'x'::text)) in the database
+         why:  Strata cannot assess this statement's consequences. That is not the same as it being safe.
+         next: Review this statement manually and approve explicitly.
+
+  [REQUIRES-APPROVAL] proposes a change Strata does not model: sales.orders: index 'orders_code_idx' covers (code) in desired state and (code,id) in the database
+         why:  Strata cannot assess this statement's consequences. That is not the same as it being safe.
+         next: Review this statement manually and approve explicitly.
+
+
+## json
+{"verdict":"requires-approval","exitCode":2,"desiredStateComplete":true,"changeCount":20,"changes":["drop-constraint    sales.orders unique orders_legacy_key","drop-constraint    sales.orders unique orders_status_key","drop-constraint    sales.orders foreign-key orders_old_fk","drop-constraint    sales.orders check stale_check","add-constraint     sales.orders primary-key orders_pkey","add-constraint     sales.orders unique orders_code_key","add-constraint     sales.orders unique (unnamed in the declaring file)","add-constraint     sales.orders unique orders_status_key","add-constraint     sales.orders foreign-key orders_customer_fk","add-constraint     sales.orders foreign-key (unnamed in the declaring file)","add-constraint     sales.orders check qty_positive","create-index       orders_status_idx on sales.orders","drop-index         orders_stale_idx on sales.orders","create-trigger     orders_new on sales.orders","drop-trigger       orders_stale on sales.orders","replace-trigger    orders_audit on sales.orders","unclassified: sales.orders.status: default is 'new'::text in desired state and 'old'::text in the database","unclassified: sales.orders.qty: default present in desired state and absent in the database","unclassified: sales.orders: check constraint 'status_known' is CHECK ((status = ANY (ARRAY['new'::text, 'old'::text]))) in desired state and CHECK ((status = 'x'::text)) in the database","unclassified: sales.orders: index 'orders_code_idx' covers (code) in desired state and (code,id) in the database"],"findings":[{"verdict":"requires-approval","change":"drop-constraint    sales.orders unique orders_legacy_key","detected":"drops the unique constraint orders_legacy_key from sales.orders","rationale":"No query breaks and none errors. The guarantee goes: the database stops refusing the data this constraint excluded, and nothing reports the first row that slips through.","affectedSources":[],"nextSafeMove":"Confirm nothing relies on this constraint holding — including code that omits a check because the database made it — then approve explicitly."},{"verdict":"requires-approval","change":"drop-constraint    sales.orders unique orders_status_key","detected":"drops the unique constraint orders_status_key from sales.orders","rationale":"No query breaks and none errors. The guarantee goes: the database stops refusing the data this constraint excluded, and nothing reports the first row that slips through.","affectedSources":[],"nextSafeMove":"Confirm nothing relies on this constraint holding — including code that omits a check because the database made it — then approve explicitly."},{"verdict":"requires-approval","change":"drop-constraint    sales.orders foreign-key orders_old_fk","detected":"drops the foreign-key constraint orders_old_fk from sales.orders","rationale":"No query breaks and none errors. The guarantee goes: the database stops refusing the data this constraint excluded, and nothing reports the first row that slips through.","affectedSources":[],"nextSafeMove":"Confirm nothing relies on this constraint holding — including code that omits a check because the database made it — then approve explicitly."},{"verdict":"requires-approval","change":"drop-constraint    sales.orders check stale_check","detected":"drops the check constraint stale_check from sales.orders","rationale":"No query breaks and none errors. The guarantee goes: the database stops refusing the data this constraint excluded, and nothing reports the first row that slips through.","affectedSources":[],"nextSafeMove":"Confirm nothing relies on this constraint holding — including code that omits a check because the database made it — then approve explicitly."},{"verdict":"requires-approval","change":"add-constraint     sales.orders primary-key orders_pkey","detected":"adds constraint orders_pkey to sales.orders","rationale":"Breaks no reader, but may fail against existing rows. Strata does not inspect data and cannot confirm the table already satisfies it.","affectedSources":[],"nextSafeMove":"Verify no existing row violates the constraint (e.g. run the equivalent SELECT against sales.orders), then approve."},{"verdict":"requires-approval","change":"add-constraint     sales.orders unique orders_code_key","detected":"adds constraint orders_code_key to sales.orders","rationale":"Breaks no reader, but may fail against existing rows. Strata does not inspect data and cannot confirm the table already satisfies it.","affectedSources":[],"nextSafeMove":"Verify no existing row violates the constraint (e.g. run the equivalent SELECT against sales.orders), then approve."},{"verdict":"requires-approval","change":"add-constraint     sales.orders unique (unnamed in the declaring file)","detected":"adds an unnamed constraint to sales.orders","rationale":"Breaks no reader, but may fail against existing rows. Strata does not inspect data and cannot confirm the table already satisfies it.","affectedSources":[],"nextSafeMove":"Verify no existing row violates the constraint (e.g. run the equivalent SELECT against sales.orders), then approve."},{"verdict":"requires-approval","change":"add-constraint     sales.orders unique orders_status_key","detected":"adds constraint orders_status_key to sales.orders","rationale":"Breaks no reader, but may fail against existing rows. Strata does not inspect data and cannot confirm the table already satisfies it.","affectedSources":[],"nextSafeMove":"Verify no existing row violates the constraint (e.g. run the equivalent SELECT against sales.orders), then approve."},{"verdict":"requires-approval","change":"add-constraint     sales.orders foreign-key orders_customer_fk","detected":"adds constraint orders_customer_fk to sales.orders","rationale":"Breaks no reader, but may fail against existing rows. Strata does not inspect data and cannot confirm the table already satisfies it.","affectedSources":[],"nextSafeMove":"Verify no existing row violates the constraint (e.g. run the equivalent SELECT against sales.orders), then approve."},{"verdict":"requires-approval","change":"add-constraint     sales.orders foreign-key (unnamed in the declaring file)","detected":"adds an unnamed constraint to sales.orders","rationale":"Breaks no reader, but may fail against existing rows. Strata does not inspect data and cannot confirm the table already satisfies it.","affectedSources":[],"nextSafeMove":"Verify no existing row violates the constraint (e.g. run the equivalent SELECT against sales.orders), then approve."},{"verdict":"requires-approval","change":"add-constraint     sales.orders check qty_positive","detected":"adds constraint qty_positive to sales.orders","rationale":"Breaks no reader, but may fail against existing rows. Strata does not inspect data and cannot confirm the table already satisfies it.","affectedSources":[],"nextSafeMove":"Verify no existing row violates the constraint (e.g. run the equivalent SELECT against sales.orders), then approve."},{"verdict":"allow","change":"create-index       orders_status_idx on sales.orders","detected":"creates index orders_status_idx on sales.orders","rationale":"Additive. No query can depend on an index that does not exist; building it takes a lock.","affectedSources":[],"nextSafeMove":"Proceed."},{"verdict":"requires-approval","change":"drop-index         orders_stale_idx on sales.orders","detected":"drops index orders_stale_idx on sales.orders","rationale":"No query breaks, and none reports anything — they get slower. Strata cannot tell which rely on it.","affectedSources":[],"nextSafeMove":"Confirm no query depends on this index for its plan, then approve explicitly."},{"verdict":"requires-approval","change":"create-trigger     orders_new on sales.orders","detected":"creates trigger orders_new on sales.orders, which 0 source(s) write to","rationale":"No dependency found, but the analysed scope does NOT support concluding that none exists. This is not clearance.","affectedSources":[],"nextSafeMove":"Widen the analysed scope (index the SQL corpus, inspect the live database) and re-run, or approve explicitly."},{"verdict":"requires-approval","change":"drop-trigger       orders_stale on sales.orders","detected":"drops trigger orders_stale on sales.orders, which 0 source(s) write to","rationale":"No dependency found, but the analysed scope does NOT support concluding that none exists. This is not clearance.","affectedSources":[],"nextSafeMove":"Widen the analysed scope (index the SQL corpus, inspect the live database) and re-run, or approve explicitly."},{"verdict":"requires-approval","change":"replace-trigger    orders_audit on sales.orders","detected":"redefines trigger orders_audit on sales.orders, which 0 source(s) write to","rationale":"No dependency found, but the analysed scope does NOT support concluding that none exists. This is not clearance.","affectedSources":[],"nextSafeMove":"Widen the analysed scope (index the SQL corpus, inspect the live database) and re-run, or approve explicitly."},{"verdict":"requires-approval","change":"unclassified: sales.orders.status: default is 'new'::text in desired state and 'old'::text in the database","detected":"proposes a change Strata does not model: sales.orders.status: default is 'new'::text in desired state and 'old'::text in the database","rationale":"Strata cannot assess this statement's consequences. That is not the same as it being safe.","affectedSources":[],"nextSafeMove":"Review this statement manually and approve explicitly."},{"verdict":"requires-approval","change":"unclassified: sales.orders.qty: default present in desired state and absent in the database","detected":"proposes a change Strata does not model: sales.orders.qty: default present in desired state and absent in the database","rationale":"Strata cannot assess this statement's consequences. That is not the same as it being safe.","affectedSources":[],"nextSafeMove":"Review this statement manually and approve explicitly."},{"verdict":"requires-approval","change":"unclassified: sales.orders: check constraint 'status_known' is CHECK ((status = ANY (ARRAY['new'::text, 'old'::text]))) in desired state and CHECK ((status = 'x'::text)) in the database","detected":"proposes a change Strata does not model: sales.orders: check constraint 'status_known' is CHECK ((status = ANY (ARRAY['new'::text, 'old'::text]))) in desired state and CHECK ((status = 'x'::text)) in the database","rationale":"Strata cannot assess this statement's consequences. That is not the same as it being safe.","affectedSources":[],"nextSafeMove":"Review this statement manually and approve explicitly."},{"verdict":"requires-approval","change":"unclassified: sales.orders: index 'orders_code_idx' covers (code) in desired state and (code,id) in the database","detected":"proposes a change Strata does not model: sales.orders: index 'orders_code_idx' covers (code) in desired state and (code,id) in the database","rationale":"Strata cannot assess this statement's consequences. That is not the same as it being safe.","affectedSources":[],"nextSafeMove":"Review this statement manually and approve explicitly."}],"suppressed":[{"object":"sales.orders","reason":"not-compared","detail":"1 check constraint(s) exist on both sides; their expressions were NOT compared, so they may differ"}],"scope":{"liveDatabaseInspected":false,"schemaCompleteness":{"categories":[],"fullyComplete":true},"corpus":{"sourceCount":0,"sourceRoots":[],"indexedSources":[],"indexedSourcesTruncated":false,"parseFailures":0,"extractionGaps":0},"dialectCompatibility":{"state":"no-parsing-performed","parserMajor":null,"serverMajor":null},"parseImpliesTargetAccepts":false,"runtimeQueriesIndexed":false,"externalConsumersIndexed":false,"ormMetadataIndexed":false,"supportsAbsenceClaim":false}}

@@ -30,6 +30,11 @@
     <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
     <!-- Deterministic output is NFR-001; deterministic builds support NFR-002. -->
     <Deterministic>true</Deterministic>
+    <!-- FSharp.Core is pinned explicitly below. Without this, the SDK also adds
+         its own implicit FSharp.Core (8.0.403 on SDK 8.0.4xx), producing a
+         duplicate PackageReference (NU1504, an error under warnings-as-errors)
+         whose outcome depends on which SDK band the host has installed. -->
+    <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
   </PropertyGroup>
 
   <ItemGroup Condition="'$(MSBuildProjectExtension)' == '.fsproj'">

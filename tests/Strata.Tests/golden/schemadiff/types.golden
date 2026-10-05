@@ -1,0 +1,153 @@
+## statements (19)
+[01] create-sequence (CreateSequence)
+     | CREATE SEQUENCE "sales"."order_seq" AS bigint INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 CACHE 1 NO CYCLE START WITH 1
+[02] alter-sequence (AlterSequence)
+     | ALTER SEQUENCE "sales"."invoice_seq" AS bigint INCREMENT BY 10 MINVALUE 1 MAXVALUE 9223372036854775807 CACHE 1 NO CYCLE
+[03] create-enum-type (CreateEnumType)
+     | CREATE TYPE "sales"."colour" AS ENUM ('red', 'it''s')
+[04] add-enum-value (AddEnumValue)
+     | ALTER TYPE "sales"."status" ADD VALUE 'draft' BEFORE 'new'
+[05] add-enum-value (AddEnumValue)
+     | ALTER TYPE "sales"."status" ADD VALUE 'shipped' AFTER 'paid'
+[06] add-enum-value (AddEnumValue)
+     | ALTER TYPE "sales"."single" ADD VALUE 'only'
+[07] create-domain-type (CreateDomainType)
+     | CREATE DOMAIN sales.email AS text NOT NULL DEFAULT 'x' CHECK (VALUE ~ '@') CONSTRAINT email_at CHECK (VALUE <> '');
+[08] create-domain-type (CreateDomainType)
+     | CREATE DOMAIN sales.work_email AS sales.email;
+[09] drop-domain-not-null (DropDomainNotNull)
+     | ALTER DOMAIN "sales"."code" DROP NOT NULL
+[10] set-domain-default (SetDomainDefault)
+     | ALTER DOMAIN "sales"."code" SET DEFAULT 'd'::text
+[11] drop-domain-constraint (DropDomainConstraint)
+     | ALTER DOMAIN "sales"."code" DROP CONSTRAINT "code_stale"
+[12] drop-domain-constraint (DropDomainConstraint)
+     | ALTER DOMAIN "sales"."code" DROP CONSTRAINT "code_len"
+[13] add-domain-constraint (AddDomainConstraint)
+     | ALTER DOMAIN "sales"."code" ADD CONSTRAINT "code_len" CHECK ((length(VALUE) > 2))
+[14] validate-domain-constraint (ValidateDomainConstraint)
+     | ALTER DOMAIN "sales"."code" VALIDATE CONSTRAINT "code_validated"
+[15] set-domain-not-null (SetDomainNotNull)
+     | ALTER DOMAIN "sales"."renamed_default" SET NOT NULL
+[16] drop-domain-default (DropDomainDefault)
+     | ALTER DOMAIN "sales"."renamed_default" DROP DEFAULT
+[17] drop-sequence (DropSequence)
+     | DROP SEQUENCE "sales"."stale_seq"
+[18] drop-enum-type (DropEnumType)
+     | DROP TYPE "sales"."legacy"
+[19] drop-domain-type (DropDomainType)
+     | DROP DOMAIN "sales"."legacy_domain"
+
+## text
+PLAN: 19 change(s), 4 suppressed  —  gate verdict BLOCK
+
+  create-sequence    sales.order_seq
+  alter-sequence     sales.invoice_seq
+  create-enum-type   sales.colour
+  add-enum-value     sales.status 'draft' (first)
+  add-enum-value     sales.status 'shipped' after 'paid'
+  add-enum-value     sales.single 'only' (first)
+  create-domain-type sales.email
+  create-domain-type sales.work_email
+  drop-domain-not-null sales.code
+  set-domain-default sales.code 'd'::text (was 'c'::text)
+  drop-domain-constraint sales.code code_stale
+  drop-domain-constraint sales.code code_len
+  add-domain-constraint sales.code code_len CHECK ((length(VALUE) > 2))
+  validate-domain-constraint sales.code code_validated
+  set-domain-not-null sales.renamed_default
+  drop-domain-default sales.renamed_default
+  drop-sequence      sales.stale_seq
+  drop-enum-type     sales.legacy
+  drop-domain-type   sales.legacy_domain
+
+NOT PROPOSED — differences Strata saw and will not act on:
+
+  sales.ext_seq                [extension-owned]
+      an extension owns this sequence
+  sales.priority               [not-compared]
+      the project orders this type's values differently from the database (project: low, high; database: high, low). PostgreSQL cannot reorder an enum's values, so nothing here can converge without recreating the type and everything declared with it.
+  sales.unrendered             [not-compared]
+      this domain's declaration could not be rendered by the server, so its base type, default and check constraints were not compared. A CREATE DOMAIN carries no predicate text through the parser; only the server can say what it means.
+  sales.rebased                [not-compared]
+      the project declares this domain over character varying(10) and the database has it over text; the project declares collation C and the database has the base type's. PostgreSQL has no ALTER DOMAIN ... TYPE and cannot change a domain's collation either, so this cannot converge without recreating the domain and every column declared with it. Nothing else about this domain was compared: its default and its check predicates are rendered through the base type, so while the base types differ the two sides can never agree on them.
+
+  [ALLOW] creates sequence sales.order_seq
+         why:  Additive. Nothing can already draw from a sequence that does not exist.
+         next: Proceed.
+
+  [REQUIRES-APPROVAL] changes the increment, bounds, cache or cycle of sales.invoice_seq
+         why:  The numbers it hands out change and nothing errors. Strata cannot list what draws from it: a sequence is named inside a column default, which the catalog reports as text rather than as a dependency.
+         next: Confirm nothing depends on the current increment or bounds, then approve explicitly.
+
+  [ALLOW] creates enum type sales.colour
+         why:  Additive. Nothing can already be declared with a type that does not exist.
+         next: Proceed.
+
+  [REQUIRES-APPROVAL] adds value 'draft' to enum type sales.status
+         why:  Additive to the type, and two things follow that Strata cannot check. A value added inside a transaction cannot be USED in that same transaction, so a plan that also writes a row with it fails as a unit. And every exhaustive CASE over this type in application code is now missing an arm, which no schema check can see.
+         next: Confirm nothing in this plan writes the new value, and that the code reading this type handles it.
+
+  [REQUIRES-APPROVAL] adds value 'shipped' to enum type sales.status
+         why:  Additive to the type, and two things follow that Strata cannot check. A value added inside a transaction cannot be USED in that same transaction, so a plan that also writes a row with it fails as a unit. And every exhaustive CASE over this type in application code is now missing an arm, which no schema check can see.
+         next: Confirm nothing in this plan writes the new value, and that the code reading this type handles it.
+
+  [REQUIRES-APPROVAL] adds value 'only' to enum type sales.single
+         why:  Additive to the type, and two things follow that Strata cannot check. A value added inside a transaction cannot be USED in that same transaction, so a plan that also writes a row with it fails as a unit. And every exhaustive CASE over this type in application code is now missing an arm, which no schema check can see.
+         next: Confirm nothing in this plan writes the new value, and that the code reading this type handles it.
+
+  [ALLOW] creates domain sales.email
+         why:  Additive. Nothing can already be declared with a type that does not exist.
+         next: Proceed.
+
+  [ALLOW] creates domain sales.work_email
+         why:  Additive. Nothing can already be declared with a type that does not exist.
+         next: Proceed.
+
+  [REQUIRES-APPROVAL] lets sales.code admit NULL again
+         why:  Nothing breaks and nothing errors. What is lost is the promise that NULL cannot arrive in any column of this type — which code reading those columns may already rely on.
+         next: Confirm the readers of columns of this type handle NULL, then approve explicitly.
+
+  [REQUIRES-APPROVAL] sets the default of sales.code to 'd'::text, replacing 'c'::text
+         why:  Every insert that omits a column of this type stores a different value from now on, and nothing errors. Strata cannot list those columns: a column's type is rendered text in the catalog, not a dependency it models.
+         next: Confirm the writes that rely on the current default, then approve explicitly.
+
+  [REQUIRES-APPROVAL] removes constraint code_stale from sales.code
+         why:  Nothing breaks and nothing errors. What is lost is the promise that the excluded values cannot arrive in any column of this type.
+         next: Confirm nothing relies on this constraint holding, then approve explicitly.
+
+  [REQUIRES-APPROVAL] removes constraint code_len from sales.code
+         why:  Nothing breaks and nothing errors. What is lost is the promise that the excluded values cannot arrive in any column of this type.
+         next: Confirm nothing relies on this constraint holding, then approve explicitly.
+
+  [ALLOW] adds constraint code_len to sales.code: CHECK ((length(VALUE) > 2))
+         why:  Tightening, and loud: PostgreSQL scans every column declared with this domain and the statement fails if a stored value would violate it. A plan is one transaction, so a failure costs the run rather than the data.
+         next: Proceed.
+
+  [ALLOW] validates constraint code_validated on sales.code
+         why:  Checks the values this constraint was added NOT VALID and allowed to skip. It changes no data and removes nothing; it either passes or fails loudly, which is the point of running it.
+         next: Proceed.
+
+  [ALLOW] makes sales.renamed_default reject NULL
+         why:  Tightening, and loud: PostgreSQL scans every column declared with this domain and the statement fails if one holds a NULL. A plan is one transaction, so a failure costs the run rather than the data.
+         next: Proceed.
+
+  [REQUIRES-APPROVAL] removes the default from sales.renamed_default
+         why:  Every insert that omitted a column of this type used to get a value and now gets NULL — or fails, where the column is NOT NULL. Strata cannot list those columns.
+         next: Confirm no write relies on this default, then approve explicitly.
+
+  [REQUIRES-APPROVAL] drops sequence sales.stale_seq
+         why:  A column default naming it keeps its text, so every insert relying on that default starts failing. Strata cannot list which defaults name it, for the same reason it cannot list a sequence's readers.
+         next: Confirm no column default draws from it, then approve explicitly.
+
+  [BLOCK] drops enum type sales.legacy
+         why:  Dropping a type drops every column declared with it, and the data in those columns goes with them. PostgreSQL will refuse while a dependency exists, so this either fails or destroys something.
+         next: If the type really is unused, drop the columns that use it first, in their own reviewed change.
+
+  [BLOCK] drops domain sales.legacy_domain
+         why:  Dropping a domain drops every column declared with it, and the data in those columns goes with them. PostgreSQL will refuse while a dependency exists, so this either fails or destroys something.
+         next: If the domain really is unused, drop the columns that use it first, in their own reviewed change.
+
+
+## json
+{"verdict":"block","exitCode":1,"desiredStateComplete":true,"changeCount":19,"changes":["create-sequence    sales.order_seq","alter-sequence     sales.invoice_seq","create-enum-type   sales.colour","add-enum-value     sales.status 'draft' (first)","add-enum-value     sales.status 'shipped' after 'paid'","add-enum-value     sales.single 'only' (first)","create-domain-type sales.email","create-domain-type sales.work_email","drop-domain-not-null sales.code","set-domain-default sales.code 'd'::text (was 'c'::text)","drop-domain-constraint sales.code code_stale","drop-domain-constraint sales.code code_len","add-domain-constraint sales.code code_len CHECK ((length(VALUE) > 2))","validate-domain-constraint sales.code code_validated","set-domain-not-null sales.renamed_default","drop-domain-default sales.renamed_default","drop-sequence      sales.stale_seq","drop-enum-type     sales.legacy","drop-domain-type   sales.legacy_domain"],"findings":[{"verdict":"allow","change":"create-sequence    sales.order_seq","detected":"creates sequence sales.order_seq","rationale":"Additive. Nothing can already draw from a sequence that does not exist.","affectedSources":[],"nextSafeMove":"Proceed."},{"verdict":"requires-approval","change":"alter-sequence     sales.invoice_seq","detected":"changes the increment, bounds, cache or cycle of sales.invoice_seq","rationale":"The numbers it hands out change and nothing errors. Strata cannot list what draws from it: a sequence is named inside a column default, which the catalog reports as text rather than as a dependency.","affectedSources":[],"nextSafeMove":"Confirm nothing depends on the current increment or bounds, then approve explicitly."},{"verdict":"allow","change":"create-enum-type   sales.colour","detected":"creates enum type sales.colour","rationale":"Additive. Nothing can already be declared with a type that does not exist.","affectedSources":[],"nextSafeMove":"Proceed."},{"verdict":"requires-approval","change":"add-enum-value     sales.status 'draft' (first)","detected":"adds value 'draft' to enum type sales.status","rationale":"Additive to the type, and two things follow that Strata cannot check. A value added inside a transaction cannot be USED in that same transaction, so a plan that also writes a row with it fails as a unit. And every exhaustive CASE over this type in application code is now missing an arm, which no schema check can see.","affectedSources":[],"nextSafeMove":"Confirm nothing in this plan writes the new value, and that the code reading this type handles it."},{"verdict":"requires-approval","change":"add-enum-value     sales.status 'shipped' after 'paid'","detected":"adds value 'shipped' to enum type sales.status","rationale":"Additive to the type, and two things follow that Strata cannot check. A value added inside a transaction cannot be USED in that same transaction, so a plan that also writes a row with it fails as a unit. And every exhaustive CASE over this type in application code is now missing an arm, which no schema check can see.","affectedSources":[],"nextSafeMove":"Confirm nothing in this plan writes the new value, and that the code reading this type handles it."},{"verdict":"requires-approval","change":"add-enum-value     sales.single 'only' (first)","detected":"adds value 'only' to enum type sales.single","rationale":"Additive to the type, and two things follow that Strata cannot check. A value added inside a transaction cannot be USED in that same transaction, so a plan that also writes a row with it fails as a unit. And every exhaustive CASE over this type in application code is now missing an arm, which no schema check can see.","affectedSources":[],"nextSafeMove":"Confirm nothing in this plan writes the new value, and that the code reading this type handles it."},{"verdict":"allow","change":"create-domain-type sales.email","detected":"creates domain sales.email","rationale":"Additive. Nothing can already be declared with a type that does not exist.","affectedSources":[],"nextSafeMove":"Proceed."},{"verdict":"allow","change":"create-domain-type sales.work_email","detected":"creates domain sales.work_email","rationale":"Additive. Nothing can already be declared with a type that does not exist.","affectedSources":[],"nextSafeMove":"Proceed."},{"verdict":"requires-approval","change":"drop-domain-not-null sales.code","detected":"lets sales.code admit NULL again","rationale":"Nothing breaks and nothing errors. What is lost is the promise that NULL cannot arrive in any column of this type — which code reading those columns may already rely on.","affectedSources":[],"nextSafeMove":"Confirm the readers of columns of this type handle NULL, then approve explicitly."},{"verdict":"requires-approval","change":"set-domain-default sales.code 'd'::text (was 'c'::text)","detected":"sets the default of sales.code to 'd'::text, replacing 'c'::text","rationale":"Every insert that omits a column of this type stores a different value from now on, and nothing errors. Strata cannot list those columns: a column's type is rendered text in the catalog, not a dependency it models.","affectedSources":[],"nextSafeMove":"Confirm the writes that rely on the current default, then approve explicitly."},{"verdict":"requires-approval","change":"drop-domain-constraint sales.code code_stale","detected":"removes constraint code_stale from sales.code","rationale":"Nothing breaks and nothing errors. What is lost is the promise that the excluded values cannot arrive in any column of this type.","affectedSources":[],"nextSafeMove":"Confirm nothing relies on this constraint holding, then approve explicitly."},{"verdict":"requires-approval","change":"drop-domain-constraint sales.code code_len","detected":"removes constraint code_len from sales.code","rationale":"Nothing breaks and nothing errors. What is lost is the promise that the excluded values cannot arrive in any column of this type.","affectedSources":[],"nextSafeMove":"Confirm nothing relies on this constraint holding, then approve explicitly."},{"verdict":"allow","change":"add-domain-constraint sales.code code_len CHECK ((length(VALUE) > 2))","detected":"adds constraint code_len to sales.code: CHECK ((length(VALUE) > 2))","rationale":"Tightening, and loud: PostgreSQL scans every column declared with this domain and the statement fails if a stored value would violate it. A plan is one transaction, so a failure costs the run rather than the data.","affectedSources":[],"nextSafeMove":"Proceed."},{"verdict":"allow","change":"validate-domain-constraint sales.code code_validated","detected":"validates constraint code_validated on sales.code","rationale":"Checks the values this constraint was added NOT VALID and allowed to skip. It changes no data and removes nothing; it either passes or fails loudly, which is the point of running it.","affectedSources":[],"nextSafeMove":"Proceed."},{"verdict":"allow","change":"set-domain-not-null sales.renamed_default","detected":"makes sales.renamed_default reject NULL","rationale":"Tightening, and loud: PostgreSQL scans every column declared with this domain and the statement fails if one holds a NULL. A plan is one transaction, so a failure costs the run rather than the data.","affectedSources":[],"nextSafeMove":"Proceed."},{"verdict":"requires-approval","change":"drop-domain-default sales.renamed_default","detected":"removes the default from sales.renamed_default","rationale":"Every insert that omitted a column of this type used to get a value and now gets NULL — or fails, where the column is NOT NULL. Strata cannot list those columns.","affectedSources":[],"nextSafeMove":"Confirm no write relies on this default, then approve explicitly."},{"verdict":"requires-approval","change":"drop-sequence      sales.stale_seq","detected":"drops sequence sales.stale_seq","rationale":"A column default naming it keeps its text, so every insert relying on that default starts failing. Strata cannot list which defaults name it, for the same reason it cannot list a sequence's readers.","affectedSources":[],"nextSafeMove":"Confirm no column default draws from it, then approve explicitly."},{"verdict":"block","change":"drop-enum-type     sales.legacy","detected":"drops enum type sales.legacy","rationale":"Dropping a type drops every column declared with it, and the data in those columns goes with them. PostgreSQL will refuse while a dependency exists, so this either fails or destroys something.","affectedSources":[],"nextSafeMove":"If the type really is unused, drop the columns that use it first, in their own reviewed change."},{"verdict":"block","change":"drop-domain-type   sales.legacy_domain","detected":"drops domain sales.legacy_domain","rationale":"Dropping a domain drops every column declared with it, and the data in those columns goes with them. PostgreSQL will refuse while a dependency exists, so this either fails or destroys something.","affectedSources":[],"nextSafeMove":"If the domain really is unused, drop the columns that use it first, in their own reviewed change."}],"suppressed":[{"object":"sales.ext_seq","reason":"extension-owned","detail":"an extension owns this sequence"},{"object":"sales.priority","reason":"not-compared","detail":"the project orders this type's values differently from the database (project: low, high; database: high, low). PostgreSQL cannot reorder an enum's values, so nothing here can converge without recreating the type and everything declared with it."},{"object":"sales.unrendered","reason":"not-compared","detail":"this domain's declaration could not be rendered by the server, so its base type, default and check constraints were not compared. A CREATE DOMAIN carries no predicate text through the parser; only the server can say what it means."},{"object":"sales.rebased","reason":"not-compared","detail":"the project declares this domain over character varying(10) and the database has it over text; the project declares collation C and the database has the base type's. PostgreSQL has no ALTER DOMAIN ... TYPE and cannot change a domain's collation either, so this cannot converge without recreating the domain and every column declared with it. Nothing else about this domain was compared: its default and its check predicates are rendered through the base type, so while the base types differ the two sides can never agree on them."}],"scope":{"liveDatabaseInspected":false,"schemaCompleteness":{"categories":[],"fullyComplete":true},"corpus":{"sourceCount":0,"sourceRoots":[],"indexedSources":[],"indexedSourcesTruncated":false,"parseFailures":0,"extractionGaps":0},"dialectCompatibility":{"state":"no-parsing-performed","parserMajor":null,"serverMajor":null},"parseImpliesTargetAccepts":false,"runtimeQueriesIndexed":false,"externalConsumersIndexed":false,"ormMetadataIndexed":false,"supportsAbsenceClaim":false}}

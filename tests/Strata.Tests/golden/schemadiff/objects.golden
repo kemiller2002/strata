@@ -1,0 +1,76 @@
+## statements (8)
+[01] create-view (CreateView)
+     | CREATE VIEW sales.new_view AS SELECT 1 AS x;
+[02] create-view (CreateView)
+     (no SQL: Strata refuses to write this statement)
+[03] create-routine (CreateRoutine)
+     | CREATE FUNCTION sales.new_fn(integer) RETURNS integer LANGUAGE sql AS $$select 1$$;
+[04] replace-view (ReplaceView)
+     | CREATE OR REPLACE view sales.changed_view AS SELECT 10 AS x;
+[05] replace-routine (ReplaceRoutine)
+     | CREATE OR REPLACE FUNCTION sales.changed_fn(integer) RETURNS integer LANGUAGE sql AS $$select 2$$;
+[06] replace-routine (ReplaceRoutine)
+     | CREATE OR REPLACE PROCEDURE sales.changed_proc() LANGUAGE plpgsql AS $$begin end$$;
+[07] unclassified (UnclassifiedChange)
+     (no SQL: Strata refuses to write this statement)
+[08] unclassified (UnclassifiedChange)
+     (no SQL: Strata refuses to write this statement)
+
+## text
+PLAN: 8 change(s), 4 suppressed  —  gate verdict REQUIRES-APPROVAL
+
+  create-view        sales.new_view
+  create-view        sales.undeclared_text
+  create-routine     sales.new_fn
+  replace-view       sales.changed_view
+  replace-routine    sales.changed_fn
+  replace-routine    sales.changed_proc
+  unclassified: view sales.stale_view exists in the database and not in desired state
+  unclassified: function sales.stale_fn exists in the database and not in desired state
+
+NOT PROPOSED — differences Strata saw and will not act on:
+
+  sales.ext_view               [extension-owned]
+      view is owned by an extension
+  sales.unrendered_view        [not-compared]
+      view exists on both sides; its definition was NOT compared, so the bodies may differ
+  sales.summary                [not-compared]
+      materialized view exists on both sides; its definition was NOT compared, so the bodies may differ
+  sales.atomic_fn              [not-compared]
+      function exists on both sides; its definition was NOT compared, so the bodies may differ
+
+  [ALLOW] creates view sales.new_view
+         why:  Additive. Creates a new object.
+         next: Proceed.
+
+  [ALLOW] creates view sales.undeclared_text
+         why:  Additive. Creates a new object.
+         next: Proceed.
+
+  [ALLOW] creates routine sales.new_fn
+         why:  Additive. Creates a new object. Its body is not validated here.
+         next: Proceed.
+
+  [REQUIRES-APPROVAL] redefines view sales.changed_view, which 0 source(s) depend on
+         why:  No dependency found, but the analysed scope does NOT support concluding that none exists. This is not clearance.
+         next: Widen the analysed scope (index the SQL corpus, inspect the live database) and re-run, or approve explicitly.
+
+  [REQUIRES-APPROVAL] redefines routine sales.changed_fn, which 0 source(s) depend on
+         why:  No dependency found, but the analysed scope does NOT support concluding that none exists. This is not clearance.
+         next: Widen the analysed scope (index the SQL corpus, inspect the live database) and re-run, or approve explicitly.
+
+  [REQUIRES-APPROVAL] redefines routine sales.changed_proc, which 0 source(s) depend on
+         why:  No dependency found, but the analysed scope does NOT support concluding that none exists. This is not clearance.
+         next: Widen the analysed scope (index the SQL corpus, inspect the live database) and re-run, or approve explicitly.
+
+  [REQUIRES-APPROVAL] proposes a change Strata does not model: view sales.stale_view exists in the database and not in desired state
+         why:  Strata cannot assess this statement's consequences. That is not the same as it being safe.
+         next: Review this statement manually and approve explicitly.
+
+  [REQUIRES-APPROVAL] proposes a change Strata does not model: function sales.stale_fn exists in the database and not in desired state
+         why:  Strata cannot assess this statement's consequences. That is not the same as it being safe.
+         next: Review this statement manually and approve explicitly.
+
+
+## json
+{"verdict":"requires-approval","exitCode":2,"desiredStateComplete":true,"changeCount":8,"changes":["create-view        sales.new_view","create-view        sales.undeclared_text","create-routine     sales.new_fn","replace-view       sales.changed_view","replace-routine    sales.changed_fn","replace-routine    sales.changed_proc","unclassified: view sales.stale_view exists in the database and not in desired state","unclassified: function sales.stale_fn exists in the database and not in desired state"],"findings":[{"verdict":"allow","change":"create-view        sales.new_view","detected":"creates view sales.new_view","rationale":"Additive. Creates a new object.","affectedSources":[],"nextSafeMove":"Proceed."},{"verdict":"allow","change":"create-view        sales.undeclared_text","detected":"creates view sales.undeclared_text","rationale":"Additive. Creates a new object.","affectedSources":[],"nextSafeMove":"Proceed."},{"verdict":"allow","change":"create-routine     sales.new_fn","detected":"creates routine sales.new_fn","rationale":"Additive. Creates a new object. Its body is not validated here.","affectedSources":[],"nextSafeMove":"Proceed."},{"verdict":"requires-approval","change":"replace-view       sales.changed_view","detected":"redefines view sales.changed_view, which 0 source(s) depend on","rationale":"No dependency found, but the analysed scope does NOT support concluding that none exists. This is not clearance.","affectedSources":[],"nextSafeMove":"Widen the analysed scope (index the SQL corpus, inspect the live database) and re-run, or approve explicitly."},{"verdict":"requires-approval","change":"replace-routine    sales.changed_fn","detected":"redefines routine sales.changed_fn, which 0 source(s) depend on","rationale":"No dependency found, but the analysed scope does NOT support concluding that none exists. This is not clearance.","affectedSources":[],"nextSafeMove":"Widen the analysed scope (index the SQL corpus, inspect the live database) and re-run, or approve explicitly."},{"verdict":"requires-approval","change":"replace-routine    sales.changed_proc","detected":"redefines routine sales.changed_proc, which 0 source(s) depend on","rationale":"No dependency found, but the analysed scope does NOT support concluding that none exists. This is not clearance.","affectedSources":[],"nextSafeMove":"Widen the analysed scope (index the SQL corpus, inspect the live database) and re-run, or approve explicitly."},{"verdict":"requires-approval","change":"unclassified: view sales.stale_view exists in the database and not in desired state","detected":"proposes a change Strata does not model: view sales.stale_view exists in the database and not in desired state","rationale":"Strata cannot assess this statement's consequences. That is not the same as it being safe.","affectedSources":[],"nextSafeMove":"Review this statement manually and approve explicitly."},{"verdict":"requires-approval","change":"unclassified: function sales.stale_fn exists in the database and not in desired state","detected":"proposes a change Strata does not model: function sales.stale_fn exists in the database and not in desired state","rationale":"Strata cannot assess this statement's consequences. That is not the same as it being safe.","affectedSources":[],"nextSafeMove":"Review this statement manually and approve explicitly."}],"suppressed":[{"object":"sales.ext_view","reason":"extension-owned","detail":"view is owned by an extension"},{"object":"sales.unrendered_view","reason":"not-compared","detail":"view exists on both sides; its definition was NOT compared, so the bodies may differ"},{"object":"sales.summary","reason":"not-compared","detail":"materialized view exists on both sides; its definition was NOT compared, so the bodies may differ"},{"object":"sales.atomic_fn","reason":"not-compared","detail":"function exists on both sides; its definition was NOT compared, so the bodies may differ"}],"scope":{"liveDatabaseInspected":false,"schemaCompleteness":{"categories":[],"fullyComplete":true},"corpus":{"sourceCount":0,"sourceRoots":[],"indexedSources":[],"indexedSourcesTruncated":false,"parseFailures":0,"extractionGaps":0},"dialectCompatibility":{"state":"no-parsing-performed","parserMajor":null,"serverMajor":null},"parseImpliesTargetAccepts":false,"runtimeQueriesIndexed":false,"externalConsumersIndexed":false,"ormMetadataIndexed":false,"supportsAbsenceClaim":false}}

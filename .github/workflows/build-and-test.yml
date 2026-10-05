@@ -73,6 +73,13 @@ jobs:
       - name: Check every resolved field reaches the diff
         run: ./scripts/check-resolved-state-wiring.sh
 
+      # The per-module SchemaDiff size and layering rules run with the tests
+      # (SchemaDiffArchitectureTests). That the budgets only ever FALL needs the
+      # base branch to compare against, so it is checked here, on pull requests.
+      - name: Check SchemaDiff size budgets only ratchet down
+        if: github.event_name == 'pull_request'
+        run: ./scripts/check-schemadiff-budget-ratchet.sh
+
       - name: Check the docs still match the CLI
         run: ./scripts/check-docs-match-cli.sh
 

@@ -1,0 +1,126 @@
+## statements (13)
+[01] create-schema (CreateSchema)
+     | CREATE SCHEMA "sales"
+[02] create-table (CreateTable)
+     | CREATE TABLE "sales"."customers" (
+     |     "id" integer NOT NULL,
+     |     "email" text,
+     |     CONSTRAINT "customers_pkey" PRIMARY KEY ("id"),
+     |     UNIQUE ("email")
+     | )
+[03] create-table (CreateTable)
+     (no SQL: Strata refuses to write this statement)
+[04] create-table (CreateTable)
+     (no SQL: Strata refuses to write this statement)
+[05] create-table (CreateTable)
+     | CREATE TABLE sales.declared (x integer CHECK (x > 0));
+[06] create-table (CreateTable)
+     | CREATE TABLE "sales"."Mixed""Case" (
+     |     "Weird Name" text
+     | )
+[07] create-table (CreateTable)
+     | CREATE TABLE "sales"."orders" (
+     |     "id" integer NOT NULL,
+     |     "customer_id" integer NOT NULL,
+     |     PRIMARY KEY ("id"),
+     |     CONSTRAINT "orders_customer_fk" FOREIGN KEY ("customer_id") REFERENCES "sales"."customers" ("id")
+     | )
+[08] create-table (CreateTable)
+     | CREATE TABLE "sales"."order_audit" (
+     |     "order_id" integer NOT NULL,
+     |     FOREIGN KEY ("order_id") REFERENCES "sales"."orders" ("id")
+     | )
+[09] create-index (CreateIndex)
+     | CREATE INDEX "customers_email_lower" ON "sales"."customers" ("email")
+[10] create-index (CreateIndex)
+     (no SQL: Strata refuses to write this statement)
+[11] create-trigger (CreateTrigger)
+     | CREATE TRIGGER customers_touch BEFORE UPDATE ON sales.customers FOR EACH ROW EXECUTE FUNCTION touch();
+[12] create-trigger (CreateTrigger)
+     (no SQL: Strata refuses to write this statement)
+[13] drop-table (DropTable)
+     | DROP TABLE "sales"."legacy"
+
+## text
+PLAN: 13 change(s), 4 suppressed  —  gate verdict REQUIRES-APPROVAL
+
+  create-schema      sales
+  create-table       sales.customers
+  create-table       sales.checked
+  create-table       sales.defaulted
+  create-table       sales.declared
+  create-table       sales."Mixed"Case"
+  create-table       sales.orders
+  create-table       sales.order_audit
+  create-index       customers_email_lower on sales.customers
+  create-index       customers_active on sales.customers
+  create-trigger     customers_touch on sales.customers
+  create-trigger     customers_audit on sales.customers
+  drop-table         sales.legacy
+
+NOT PROPOSED — differences Strata saw and will not act on:
+
+  sales.cycle_a                [not-modelled]
+      this table's foreign keys form a cycle with sales.cycle_b, and no order of plain CREATE TABLE statements satisfies one. Create them by hand, or declare one side's foreign key as a separate ALTER TABLE.
+  sales.cycle_b                [not-modelled]
+      this table's foreign keys form a cycle with sales.cycle_a, and no order of plain CREATE TABLE statements satisfies one. Create them by hand, or declare one side's foreign key as a separate ALTER TABLE.
+  other.unmanaged              [outside-managed-schemas]
+      present in the database and absent from desired state, but its schema is not managed by this project
+  sales.ext_owned              [extension-owned]
+      owned by an extension; absence from desired state does not make it removable
+
+  [ALLOW] creates schema sales
+         why:  Additive. An empty namespace; nothing can already depend on it.
+         next: Proceed.
+
+  [ALLOW] creates sales.customers
+         why:  Additive. Creates a new object.
+         next: Proceed.
+
+  [ALLOW] creates sales.checked
+         why:  Additive. Creates a new object.
+         next: Proceed.
+
+  [ALLOW] creates sales.defaulted
+         why:  Additive. Creates a new object.
+         next: Proceed.
+
+  [ALLOW] creates sales.declared
+         why:  Additive. Creates a new object.
+         next: Proceed.
+
+  [ALLOW] creates sales."Mixed"Case"
+         why:  Additive. Creates a new object.
+         next: Proceed.
+
+  [ALLOW] creates sales.orders
+         why:  Additive. Creates a new object.
+         next: Proceed.
+
+  [ALLOW] creates sales.order_audit
+         why:  Additive. Creates a new object.
+         next: Proceed.
+
+  [ALLOW] creates index customers_email_lower on sales.customers
+         why:  Additive. No query can depend on an index that does not exist; building it takes a lock.
+         next: Proceed.
+
+  [ALLOW] creates index customers_active on sales.customers
+         why:  Additive. No query can depend on an index that does not exist; building it takes a lock.
+         next: Proceed.
+
+  [REQUIRES-APPROVAL] creates trigger customers_touch on sales.customers, which 0 source(s) write to
+         why:  No dependency found, but the analysed scope does NOT support concluding that none exists. This is not clearance.
+         next: Widen the analysed scope (index the SQL corpus, inspect the live database) and re-run, or approve explicitly.
+
+  [REQUIRES-APPROVAL] creates trigger customers_audit on sales.customers, which 0 source(s) write to
+         why:  No dependency found, but the analysed scope does NOT support concluding that none exists. This is not clearance.
+         next: Widen the analysed scope (index the SQL corpus, inspect the live database) and re-run, or approve explicitly.
+
+  [REQUIRES-APPROVAL] drops table sales.legacy
+         why:  No dependency found, but the analysed scope does NOT support concluding that none exists. This is not clearance.
+         next: Widen the analysed scope (index the SQL corpus, inspect the live database) and re-run, or approve explicitly.
+
+
+## json
+{"verdict":"requires-approval","exitCode":2,"desiredStateComplete":true,"changeCount":13,"changes":["create-schema      sales","create-table       sales.customers","create-table       sales.checked","create-table       sales.defaulted","create-table       sales.declared","create-table       sales.\"Mixed\"Case\"","create-table       sales.orders","create-table       sales.order_audit","create-index       customers_email_lower on sales.customers","create-index       customers_active on sales.customers","create-trigger     customers_touch on sales.customers","create-trigger     customers_audit on sales.customers","drop-table         sales.legacy"],"findings":[{"verdict":"allow","change":"create-schema      sales","detected":"creates schema sales","rationale":"Additive. An empty namespace; nothing can already depend on it.","affectedSources":[],"nextSafeMove":"Proceed."},{"verdict":"allow","change":"create-table       sales.customers","detected":"creates sales.customers","rationale":"Additive. Creates a new object.","affectedSources":[],"nextSafeMove":"Proceed."},{"verdict":"allow","change":"create-table       sales.checked","detected":"creates sales.checked","rationale":"Additive. Creates a new object.","affectedSources":[],"nextSafeMove":"Proceed."},{"verdict":"allow","change":"create-table       sales.defaulted","detected":"creates sales.defaulted","rationale":"Additive. Creates a new object.","affectedSources":[],"nextSafeMove":"Proceed."},{"verdict":"allow","change":"create-table       sales.declared","detected":"creates sales.declared","rationale":"Additive. Creates a new object.","affectedSources":[],"nextSafeMove":"Proceed."},{"verdict":"allow","change":"create-table       sales.\"Mixed\"Case\"","detected":"creates sales.\"Mixed\"Case\"","rationale":"Additive. Creates a new object.","affectedSources":[],"nextSafeMove":"Proceed."},{"verdict":"allow","change":"create-table       sales.orders","detected":"creates sales.orders","rationale":"Additive. Creates a new object.","affectedSources":[],"nextSafeMove":"Proceed."},{"verdict":"allow","change":"create-table       sales.order_audit","detected":"creates sales.order_audit","rationale":"Additive. Creates a new object.","affectedSources":[],"nextSafeMove":"Proceed."},{"verdict":"allow","change":"create-index       customers_email_lower on sales.customers","detected":"creates index customers_email_lower on sales.customers","rationale":"Additive. No query can depend on an index that does not exist; building it takes a lock.","affectedSources":[],"nextSafeMove":"Proceed."},{"verdict":"allow","change":"create-index       customers_active on sales.customers","detected":"creates index customers_active on sales.customers","rationale":"Additive. No query can depend on an index that does not exist; building it takes a lock.","affectedSources":[],"nextSafeMove":"Proceed."},{"verdict":"requires-approval","change":"create-trigger     customers_touch on sales.customers","detected":"creates trigger customers_touch on sales.customers, which 0 source(s) write to","rationale":"No dependency found, but the analysed scope does NOT support concluding that none exists. This is not clearance.","affectedSources":[],"nextSafeMove":"Widen the analysed scope (index the SQL corpus, inspect the live database) and re-run, or approve explicitly."},{"verdict":"requires-approval","change":"create-trigger     customers_audit on sales.customers","detected":"creates trigger customers_audit on sales.customers, which 0 source(s) write to","rationale":"No dependency found, but the analysed scope does NOT support concluding that none exists. This is not clearance.","affectedSources":[],"nextSafeMove":"Widen the analysed scope (index the SQL corpus, inspect the live database) and re-run, or approve explicitly."},{"verdict":"requires-approval","change":"drop-table         sales.legacy","detected":"drops table sales.legacy","rationale":"No dependency found, but the analysed scope does NOT support concluding that none exists. This is not clearance.","affectedSources":[],"nextSafeMove":"Widen the analysed scope (index the SQL corpus, inspect the live database) and re-run, or approve explicitly."}],"suppressed":[{"object":"sales.cycle_a","reason":"not-modelled","detail":"this table's foreign keys form a cycle with sales.cycle_b, and no order of plain CREATE TABLE statements satisfies one. Create them by hand, or declare one side's foreign key as a separate ALTER TABLE."},{"object":"sales.cycle_b","reason":"not-modelled","detail":"this table's foreign keys form a cycle with sales.cycle_a, and no order of plain CREATE TABLE statements satisfies one. Create them by hand, or declare one side's foreign key as a separate ALTER TABLE."},{"object":"other.unmanaged","reason":"outside-managed-schemas","detail":"present in the database and absent from desired state, but its schema is not managed by this project"},{"object":"sales.ext_owned","reason":"extension-owned","detail":"owned by an extension; absence from desired state does not make it removable"}],"scope":{"liveDatabaseInspected":false,"schemaCompleteness":{"categories":[],"fullyComplete":true},"corpus":{"sourceCount":0,"sourceRoots":[],"indexedSources":[],"indexedSourcesTruncated":false,"parseFailures":0,"extractionGaps":0},"dialectCompatibility":{"state":"no-parsing-performed","parserMajor":null,"serverMajor":null},"parseImpliesTargetAccepts":false,"runtimeQueriesIndexed":false,"externalConsumersIndexed":false,"ormMetadataIndexed":false,"supportsAbsenceClaim":false}}
