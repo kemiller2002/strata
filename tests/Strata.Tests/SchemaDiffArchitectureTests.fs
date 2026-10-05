@@ -193,6 +193,39 @@ let ``exhaustive matches over Change live only in SQL, ordering and rendering`` 
 
     Assert.Equal<Set<string>>(allowed, holders)
 
+/// Every removal goes through `DropSafety` (STRATA-QUAL-002).
+///
+/// Outside the SQL, ordering and rendering modules — which name every case to
+/// spell, rank or describe it — a removal case may appear only as the CHANGE a
+/// `DropSafety.removal` or `DropSafety.objectRemoval` call decides: on its own
+/// line, parenthesised, with that call opening a few lines above. Crude, like
+/// every rule here, and the behaviour is pinned separately in
+/// `SchemaDiffGoldenTests` (no removal without `--allow-drops`). This rule
+/// names the line a reviewer should look at when someone constructs a drop
+/// directly.
+[<Fact>]
+let ``a removal Change is constructed only as the argument of a DropSafety decision`` () =
+    let describers = set [ "PostgresDdl.fs"; "Ordering.fs"; "Render.fs"; "PostgresSql.fs" ]
+    let removal = String.Join("|", Strata.Tests.SchemaDiffGoldenTests.removalCases)
+    let mention = Regex(sprintf @"\b(%s)\b" removal)
+    let asArgument = Regex(sprintf @"^\s*\((%s)\b" removal)
+    let decision = Regex(@"\bDropSafety\.(removal|objectRemoval)\b")
+
+    let violations =
+        [ for file in moduleFiles () do
+              if not (Set.contains file describers) then
+                  let lines = (code file).Split('\n')
+
+                  for i in 0 .. lines.Length - 1 do
+                      if mention.IsMatch lines.[i] then
+                          let opened =
+                              lines.[max 0 (i - 25) .. i - 1] |> Array.exists (fun l -> decision.IsMatch l)
+
+                          if file = "DropSafety.fs" || not (asArgument.IsMatch lines.[i]) || not opened then
+                              yield sprintf "%s: %s" file (lines.[i].Trim()) ]
+
+    Assert.True(List.isEmpty violations, "removal constructed outside DropSafety:\n" + String.Join("\n", violations))
+
 // ---- size budget -------------------------------------------------------------
 
 type private Exception' =

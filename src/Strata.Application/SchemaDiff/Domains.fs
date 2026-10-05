@@ -146,25 +146,45 @@ module Domains =
                         | None -> added @ [ c ], pool)
                     ([], deployedOnes |> List.filter (fun a -> not (List.contains a claimed)))
 
+            // Each named declaration yields (drops, everything else), so the
+            // drops can run first: a redefined constraint keeps its name, and
+            // the add would collide with the one still holding it.
             let namedChanges =
                 named
-                |> List.collect (fun (n, c) ->
+                |> List.map (fun (n, c) ->
                     match
                         deployedOnes
                         |> List.tryFind (fun a -> a.Name |> Option.exists (fun m -> Identifier.folded m = n))
                     with
-                    | None -> [ Ok(AddDomainConstraint(name, c.Name, c.Definition)) ]
+                    | None -> [], [ Ok(AddDomainConstraint(name, c.Name, c.Definition)) ]
                     | Some a when a.Definition <> c.Definition ->
-                        // The name is taken, so the add would fail on it: the
-                        // drop has to run first, and `compare` returns
-                        // drops ahead of adds for exactly this.
-                        [ Ok(DropDomainConstraint(name, a.Name)); Ok(AddDomainConstraint(name, c.Name, c.Definition)) ]
+                        // PostgreSQL cannot alter a domain constraint's
+                        // predicate, so this is a drop and a re-add — and the
+                        // drop is a REMOVAL, gated like every other one. A
+                        // redefinition Strata may not drop is one it cannot
+                        // make: the add alone would fail on the taken name.
+                        let needs requirement =
+                            sprintf
+                                "domain constraint '%s' has a different predicate in desired state. Changing it means dropping and re-adding it, so it needs %s."
+                                n
+                                requirement
+
+                        match
+                            DropSafety.removal
+                                policy
+                                name
+                                [ DesiredStateLoaded(needs "a desired state that loaded completely")
+                                  DropsEnabled(needs "--allow-drops") ]
+                                (DropDomainConstraint(name, a.Name))
+                        with
+                        | Ok drop -> [ Ok drop ], [ Ok(AddDomainConstraint(name, c.Name, c.Definition)) ]
+                        | Error refused -> [ Error refused ], []
                     | Some a when not a.IsValidated ->
                         // Same predicate, but the values already stored were
                         // never checked against it. A file that declares the
                         // constraint plainly is asking for them to be.
-                        [ Ok(ValidateDomainConstraint(name, a.Name |> Option.defaultValue (Identifier.unquoted n))) ]
-                    | Some _ -> [])
+                        [], [ Ok(ValidateDomainConstraint(name, a.Name |> Option.defaultValue (Identifier.unquoted n))) ]
+                    | Some _ -> [], [])
 
             let unnamed =
                 unnamedAdded |> List.map (fun c -> Ok(AddDomainConstraint(name, None, c.Definition)))
@@ -172,25 +192,23 @@ module Domains =
             let removed =
                 leftover
                 |> List.map (fun a ->
-                    // Gated on completeness alone, NOT on `--allow-drops`. That
-                    // is the behaviour this had before the decomposition and it
-                    // is preserved exactly; whether it is intended is an open
-                    // question recorded against STRATA-QUAL-001 (strata#14).
+                    let shown = a.Name |> Option.map (fun n -> n.Display) |> Option.defaultValue "a constraint"
+
+                    // Gated like every other removal (STRATA-QUAL-002): a
+                    // complete desired state is evidence the constraint is
+                    // unwanted, and `--allow-drops` is the permission to act.
                     DropSafety.removal
                         policy
                         name
                         [ DesiredStateLoaded(
                               sprintf
                                   "%s is on this domain and not in the project, but desired state did not load completely"
-                                  (a.Name |> Option.map (fun n -> n.Display) |> Option.defaultValue "a constraint")
-                          ) ]
+                                  shown
+                          )
+                          DropsEnabled(sprintf "domain constraint '%s' would be dropped; pass --allow-drops" shown) ]
                         (DropDomainConstraint(name, a.Name)))
 
-            // Drops first: a redefined constraint keeps its name, and the add
-            // would collide with the one still holding it.
-            (removed @ (namedChanges |> List.filter (function Ok (DropDomainConstraint _) -> true | _ -> false)))
-            @ (namedChanges |> List.filter (function Ok (DropDomainConstraint _) -> false | _ -> true))
-            @ unnamed
+            removed @ (namedChanges |> List.collect fst) @ (namedChanges |> List.collect snd) @ unnamed
 
         let altered =
             declared

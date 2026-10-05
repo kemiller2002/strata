@@ -2673,6 +2673,74 @@ let private domainDiff normalised declared deployed =
             ExistingSchemas = Some managed
             NormalisedDomains = normalised }
 
+/// The same diff with `--allow-drops` off, as a run without the flag has it.
+let private domainDiffWithoutDrops normalised declared deployed =
+    Strata.Application.SchemaDiff.Plan.run
+        { Strata.Application.SchemaDiff.Inputs.between (complete declared) (complete deployed) with
+            AllowDrops = false
+            ManagedSchemas = managed
+            ExistingSchemas = Some managed
+            NormalisedDomains = normalised }
+
+/// STRATA-QUAL-002 (strata#14). PR #15 preserved and flagged a defect: an
+/// undeclared constraint on a DECLARED domain was proposed for DROP whenever
+/// desired state was complete, even with `--allow-drops` off. Every other
+/// removal needs the flag. The characterization test that pinned the old
+/// behaviour failed once the drop went through `DropSafety`; these replace it.
+[<Fact>]
+let ``an undeclared domain constraint is dropped only with --allow-drops`` () =
+    let normalised = [ normalisedOf "email" "text" false None [] ]
+    let declared = [ domainOf "email" "text" false None [] ]
+    let deployed = [ domainOf "email" "text" false None [ domainCheck (Some "stale") "CHECK (true)" true ] ]
+    let drop = DropDomainConstraint(qn "sales" "email", Some(Identifier.unquoted "stale"))
+
+    let withDrops = domainDiff normalised declared deployed
+    Assert.Contains(withDrops.Changes, fun c -> c = drop)
+    Assert.Empty withDrops.Suppressed
+
+    let withoutDrops = domainDiffWithoutDrops normalised declared deployed
+    Assert.DoesNotContain(withoutDrops.Changes, fun c -> c = drop)
+
+    // Suppressed and SAID so, the same way every other refused removal is:
+    // an unreported suppression is indistinguishable from no difference.
+    let suppression = Assert.Single withoutDrops.Suppressed
+    Assert.Equal(qn "sales" "email", suppression.Object)
+    Assert.Equal(DropsNotEnabled, suppression.Reason)
+    Assert.Contains("stale", suppression.Detail)
+    Assert.Contains("--allow-drops", suppression.Detail)
+
+[<Fact>]
+let ``an undeclared domain constraint is not dropped when desired state is incomplete`` () =
+    let result =
+        Strata.Application.SchemaDiff.Plan.run
+            { Strata.Application.SchemaDiff.Inputs.between
+                  (partial' [ domainOf "email" "text" false None [] ])
+                  (complete [ domainOf "email" "text" false None [ domainCheck (Some "stale") "CHECK (true)" true ] ]) with
+                AllowDrops = true
+                ManagedSchemas = managed
+                ExistingSchemas = Some managed
+                NormalisedDomains = [ normalisedOf "email" "text" false None [] ] }
+
+    Assert.DoesNotContain(result.Changes, fun c -> match c with DropDomainConstraint _ -> true | _ -> false)
+    Assert.Contains(result.Suppressed, fun s -> s.Reason = DesiredStateIncomplete && s.Detail.Contains "stale")
+
+[<Fact>]
+let ``a redefined domain constraint needs --allow-drops for both halves`` () =
+    // The redefinition's drop is a removal too. Proposing the re-add alone
+    // would fail on the name the deployed constraint still holds, so without
+    // the flag neither half is proposed and the difference is reported.
+    let normalised = [ normalisedOf "email" "text" false None [ "CHECK ((VALUE <> ''::text))", true ] ]
+    let declared = [ domainOf "email" "text" false None [ domainCheck (Some "shape") "" true ] ]
+    let deployed = [ domainOf "email" "text" false None [ domainCheck (Some "shape") "CHECK ((VALUE ~ '@'::text))" true ] ]
+
+    let result = domainDiffWithoutDrops normalised declared deployed
+
+    Assert.Empty result.Changes
+    let suppression = Assert.Single result.Suppressed
+    Assert.Equal(DropsNotEnabled, suppression.Reason)
+    Assert.Contains("shape", suppression.Detail)
+    Assert.Contains("--allow-drops", suppression.Detail)
+
 [<Fact>]
 let ``a domain the database does not have is created`` () =
     let result =
