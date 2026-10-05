@@ -2673,6 +2673,32 @@ let private domainDiff normalised declared deployed =
             ExistingSchemas = Some managed
             NormalisedDomains = normalised }
 
+/// The same diff with `--allow-drops` off, as a run without the flag has it.
+let private domainDiffWithoutDrops normalised declared deployed =
+    Strata.Application.SchemaDiff.Plan.run
+        { Strata.Application.SchemaDiff.Inputs.between (complete declared) (complete deployed) with
+            AllowDrops = false
+            ManagedSchemas = managed
+            ExistingSchemas = Some managed
+            NormalisedDomains = normalised }
+
+/// CHARACTERIZATION (STRATA-QUAL-002, strata#14): pins the behaviour PR #15
+/// preserved and flagged. An undeclared constraint on a DECLARED domain is
+/// proposed for DROP whenever desired state is complete, with `--allow-drops`
+/// OFF. Every other removal needs the flag. This test is expected to FAIL once
+/// the domain-constraint drop is routed through `DropSafety` like the rest.
+[<Fact>]
+let ``CHARACTERIZATION an undeclared domain constraint is dropped without --allow-drops`` () =
+    let result =
+        domainDiffWithoutDrops
+            [ normalisedOf "email" "text" false None [] ]
+            [ domainOf "email" "text" false None [] ]
+            [ domainOf "email" "text" false None [ domainCheck (Some "stale") "CHECK (true)" true ] ]
+
+    Assert.Contains(
+        result.Changes,
+        fun c -> c = DropDomainConstraint(qn "sales" "email", Some(Identifier.unquoted "stale")))
+
 [<Fact>]
 let ``a domain the database does not have is created`` () =
     let result =
