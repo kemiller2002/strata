@@ -47,7 +47,7 @@ def fields(path, start):
     return found
 
 resolved = fields("src/Strata.Application/ResolvedDesiredState.fs", "type ResolvedDesiredState =")
-inputs = fields("src/Strata.Application/SchemaDiff.fs", "    type Inputs =")
+inputs = fields("src/Strata.Application/SchemaDiff/Model.fs", "type Inputs =")
 
 shared = [f for f in resolved if f in inputs]
 

@@ -314,7 +314,7 @@ let ``Strata reads the declaration the way the server does`` (name: string) =
             | Microsoft.FSharp.Core.Error message -> Some(Microsoft.FSharp.Core.Error message)
 
         let result =
-            SchemaDiff.run
+            SchemaDiff.Plan.run
                 { SchemaDiff.Inputs.between desired (inScratch actual) with
                     DeclaredExtensions = declared.Extensions
                     ActualExtensions = actualExtensions
@@ -336,7 +336,7 @@ let ``Strata reads the declaration the way the server does`` (name: string) =
                     NormalisedDomains = resolved.NormalisedDomains }
 
         // Rendered so a failure names what diverged rather than just counting.
-        // `SchemaDiff.describe` is private, and it stays that way: widening
+        // `SchemaDiff.Render.describe` is private, and it stays that way: widening
         // production API for a test's error message is not a trade worth making.
         let rendered =
             result.Changes

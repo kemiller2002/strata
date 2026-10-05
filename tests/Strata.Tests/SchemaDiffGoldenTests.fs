@@ -12,7 +12,7 @@ open Strata.Analysis.ProposedChange
 open Strata.Application
 open Strata.Application.SchemaDiff
 
-/// Golden characterization of `SchemaDiff.run` and its renderers (STRATA-QUAL-001).
+/// Golden characterization of `SchemaDiff.Plan.run` and its renderers (STRATA-QUAL-001).
 ///
 /// `SchemaDiffTests` proves WHICH changes and suppressions a diff produces,
 /// which is what guards the safety semantics. It barely looks at HOW a plan
@@ -22,7 +22,7 @@ open Strata.Application.SchemaDiff
 ///
 /// These fixtures pin all four, byte for byte, for a corpus that reaches every
 /// `Change` case `run` can produce. They are the safety net for decomposing
-/// `SchemaDiff.fs`, and they stay afterwards as its regression gate.
+/// what was `SchemaDiff.fs`, and they stay as its regression gate.
 ///
 /// ## Updating a golden
 ///
@@ -632,7 +632,7 @@ let private caseName (change: Change) =
 /// order with the exact SQL it would run (or the refusal), then the human and
 /// machine renderings exactly as the CLI prints them.
 let private render (inputs: Inputs) =
-    let result = SchemaDiff.run inputs
+    let result = SchemaDiff.Plan.run inputs
     let gate = DeploymentGate.run Strata.Analysis.Graph.SemanticGraph.empty Scope.nothingAnalyzed result.Changes
 
     let statements =
@@ -651,10 +651,10 @@ let private render (inputs: Inputs) =
           yield! statements
           ""
           "## text"
-          SchemaDiff.toText result gate
+          SchemaDiff.Render.toText result gate
           ""
           "## json"
-          SchemaDiff.toJson result gate
+          SchemaDiff.Render.toJson result gate
           "" ]
 
 let private goldenDirectory =
@@ -692,7 +692,7 @@ let ``the same input renders byte-identically twice`` (name: string) =
 
 /// `Change` cases no fixture can reach through `run`, each with the reason.
 ///
-/// Adding a case here is a claim that `SchemaDiff.run` cannot produce it; the
+/// Adding a case here is a claim that `SchemaDiff.Plan.run` cannot produce it; the
 /// test below fails the other way if a fixture ever does.
 let private unreachableFromRun =
     Map.ofList
@@ -706,7 +706,7 @@ let ``the golden corpus reaches every Change case run can produce`` () =
 
     let reached =
         fixtures
-        |> List.collect (fun (_, f) -> (SchemaDiff.run (f ())).Changes |> List.map caseName)
+        |> List.collect (fun (_, f) -> (SchemaDiff.Plan.run (f ())).Changes |> List.map caseName)
         |> Set.ofList
 
     let missing = all - reached - (unreachableFromRun |> Map.keys |> Set.ofSeq)
@@ -714,3 +714,13 @@ let ``the golden corpus reaches every Change case run can produce`` () =
 
     Assert.True(Set.isEmpty missing, sprintf "no golden fixture reaches: %s" (String.Join(", ", missing)))
     Assert.True(Set.isEmpty wronglyExcluded, sprintf "listed unreachable but reached: %s" (String.Join(", ", wronglyExcluded)))
+
+/// The one case no fixture can reach still has its SQL and phase pinned,
+/// through the modules that own them.
+[<Fact>]
+let ``TruncateTable, which no differ produces, has pinned SQL and phase`` () =
+    let sources = SchemaDiff.PostgresDdl.sources (baseInputs (complete []) (complete []))
+    let change = TruncateTable(qn "sales" "orders")
+
+    Assert.Equal(Some "TRUNCATE TABLE \"sales\".\"orders\"", SchemaDiff.PostgresDdl.statement sources change)
+    Assert.Equal(SchemaDiff.Phase.Truncations, SchemaDiff.Ordering.phase change)

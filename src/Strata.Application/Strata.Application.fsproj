@@ -23,7 +23,33 @@
     <Compile Include="DeploymentGate.fs" />
     <Compile Include="Validation.fs" />
     <Compile Include="DesiredState.fs" />
-    <Compile Include="SchemaDiff.fs" />
+    <!--
+      The schema diff, one responsibility per file (STRATA-QUAL-001). Compile
+      order IS the dependency direction and is checked by
+      SchemaDiffArchitectureTests: model, then the drop-safety policy, then the
+      per-family differs, then ordering and PostgreSQL SQL (siblings), then
+      orchestration, then rendering.
+    -->
+    <Compile Include="SchemaDiff/Resolved.fs" />
+    <Compile Include="SchemaDiff/Model.fs" />
+    <Compile Include="SchemaDiff/DropSafety.fs" />
+    <Compile Include="SchemaDiff/Schemas.fs" />
+    <Compile Include="SchemaDiff/Extensions.fs" />
+    <Compile Include="SchemaDiff/RowSecurity.fs" />
+    <Compile Include="SchemaDiff/Grants.fs" />
+    <Compile Include="SchemaDiff/Sequences.fs" />
+    <Compile Include="SchemaDiff/Enums.fs" />
+    <Compile Include="SchemaDiff/Domains.fs" />
+    <Compile Include="SchemaDiff/Tables.fs" />
+    <Compile Include="SchemaDiff/TableIndexes.fs" />
+    <Compile Include="SchemaDiff/TableConstraints.fs" />
+    <Compile Include="SchemaDiff/Objects.fs" />
+    <Compile Include="SchemaDiff/ReferenceRows.fs" />
+    <Compile Include="SchemaDiff/Ordering.fs" />
+    <Compile Include="SchemaDiff/PostgresSql.fs" />
+    <Compile Include="SchemaDiff/PostgresDdl.fs" />
+    <Compile Include="SchemaDiff/Plan.fs" />
+    <Compile Include="SchemaDiff/Render.fs" />
     <Compile Include="Invariants.fs" />
     <Compile Include="ResolvedDesiredState.fs" />
   </ItemGroup>
