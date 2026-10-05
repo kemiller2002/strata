@@ -23,6 +23,7 @@
     <Compile Include="DesiredStateTests.fs" />
     <Compile Include="SchemaDiffTests.fs" />
     <Compile Include="SchemaDiffGoldenTests.fs" />
+    <Compile Include="SchemaDiffArchitectureTests.fs" />
     <Compile Include="RenameTests.fs" />
     <Compile Include="CatalogIntrospectionTests.fs" />
     <Compile Include="ShadowNormalisationTests.fs" />

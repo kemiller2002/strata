@@ -1,0 +1,28 @@
+{
+  "purpose": "Line budgets for src/Strata.Application/SchemaDiff/*.fs (STRATA-QUAL-001, strata#14). SchemaDiff.fs grew to 3694 lines in two days because nothing pushed back. Enforced by SchemaDiffArchitectureTests (every module budgeted; lines <= budget; budget - lines <= slack; budget <= ceiling unless an unexpired exception covers it) and by scripts/check-schemadiff-budget-ratchet.sh (on a pull request, no budget, ceiling or slack may rise above the base branch's value unless an unexpired exception names that module). To grow a module past its budget, prefer splitting it; otherwise add an exception with an owner, a reason and an expiry date, and expect review to ask why.",
+  "ceiling": 550,
+  "slack": 40,
+  "modules": {
+    "Domains.fs": 280,
+    "DropSafety.fs": 170,
+    "Enums.fs": 120,
+    "Extensions.fs": 110,
+    "Grants.fs": 190,
+    "Model.fs": 270,
+    "Objects.fs": 210,
+    "Ordering.fs": 210,
+    "Plan.fs": 120,
+    "PostgresDdl.fs": 530,
+    "PostgresSql.fs": 150,
+    "ReferenceRows.fs": 140,
+    "Render.fs": 240,
+    "Resolved.fs": 90,
+    "RowSecurity.fs": 330,
+    "Schemas.fs": 70,
+    "Sequences.fs": 90,
+    "TableConstraints.fs": 470,
+    "TableIndexes.fs": 240,
+    "Tables.fs": 330
+  },
+  "exceptions": []
+}
