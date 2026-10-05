@@ -1,0 +1,94 @@
+## statements (9)
+[01] create-extension (CreateExtension)
+     | CREATE EXTENSION "citext"
+[02] update-extension (UpdateExtension)
+     | ALTER EXTENSION "pgcrypto" UPDATE TO '1.3'
+[03] set-extension-schema (SetExtensionSchema)
+     | ALTER EXTENSION "hstore" SET SCHEMA "sales"
+[04] replace-policy (ReplacePolicy)
+     | DROP POLICY "tenant_write" ON "sales"."orders";
+     | CREATE POLICY tenant_write ON sales.orders FOR INSERT TO app_user WITH CHECK (tenant = 'x');
+[05] create-policy (CreatePolicy)
+     | CREATE POLICY new_policy ON sales.invoices FOR SELECT TO app_user USING (true);
+[06] enable-row-level-security (EnableRowLevelSecurity)
+     | ALTER TABLE "sales"."orders" ENABLE ROW LEVEL SECURITY
+[07] force-row-level-security (ForceRowLevelSecurity)
+     | ALTER TABLE "sales"."orders" FORCE ROW LEVEL SECURITY
+[08] disable-row-level-security (DisableRowLevelSecurity)
+     | ALTER TABLE "sales"."invoices" DISABLE ROW LEVEL SECURITY
+[09] no-force-row-level-security (NoForceRowLevelSecurity)
+     | ALTER TABLE "sales"."invoices" NO FORCE ROW LEVEL SECURITY
+
+## text
+PLAN: 9 change(s), 9 suppressed  —  gate verdict REQUIRES-APPROVAL
+
+  create-extension   citext
+  update-extension   pgcrypto -> 1.3
+  set-ext-schema     hstore -> sales
+  replace-policy     tenant_write on sales.orders
+  create-policy      new_policy on sales.invoices
+  enable-rls         sales.orders
+  force-rls          sales.orders
+  disable-rls        sales.invoices
+  no-force-rls       sales.invoices
+
+NOT PROPOSED — differences Strata saw and will not act on:
+
+  sales.orders                 [not-compared]
+      policy owner_only matches on command, roles and permissiveness, but its USING/WITH CHECK expressions could not be rendered by the server, so they were NOT compared
+  plpgsql                      [not-modelled]
+      the project declares extension plpgsql in schema sales and it is installed in pg_catalog, but the extension is not relocatable, so nothing can move it
+  sales.forced_only            [not-modelled]
+      row-level security is FORCED here but not enabled, which has no effect.
+  sales.ledger                 [not-modelled]
+      row-level security is enabled and not forced, so the table's owner bypasses every policy. The project declares nothing about this table's row-level security, so the 1 policy here was NOT compared and nothing changes them: ledger_read (restrictive select for auditor, app_user)
+  sales.loose                  [not-modelled]
+      row-level security is DISABLED here, so the 1 policy on this table restricts NOTHING and every role sees every row: loose_read (select for app_user)
+  sales.orders                 [not-modelled]
+      row-level security is DISABLED here, so the 4 policies on this table restrict NOTHING and every role sees every row: tenant_read (select for APP_USER); tenant_write (update for app_user); owner_only (all commands for app_user); undeclared (delete for admin)
+  sales.vault                  [not-modelled]
+      row-level security is ENABLED here and there are no policies, so every row is hidden from every role except the table's owner. The project declares no policy for this table, so nothing here will change that.
+  sales.orders                 [not-modelled]
+      this table carries 1 policy/policies the project does not declare, and a policy is never dropped because removing one exposes rows silently: undeclared
+  postgis                      [not-modelled]
+      extension postgis is installed and the project does not declare it; an extension is never dropped because DROP EXTENSION takes every object it owns (version 3.4)
+
+  [REQUIRES-APPROVAL] installs extension citext
+         why:  Additive — nothing that works today stops working. But an extension brings its own types, functions and operators, and it is a lot of them: citext alone installs 88 catalog objects. None of them is managed by this project, and dropping the extension later would take all of them at once.
+         next: Confirm this extension is meant to be part of the database, then approve.
+
+  [REQUIRES-APPROVAL] updates extension pgcrypto to 1.3
+         why:  An extension's upgrade script can alter or drop the extension's own objects. Strata cannot read that script, so it cannot say what this changes — only that something in the database changes that this project does not describe.
+         next: Read the extension's upgrade notes for this version, then approve.
+
+  [REQUIRES-APPROVAL] moves extension hstore to schema sales
+         why:  Every unqualified reference to one of the extension's functions or types stops resolving unless the new schema is on the search path. Strata cannot find those references: they are in application SQL and in other objects' bodies.
+         next: Confirm the new schema is on the search path everywhere this extension is used, then approve.
+
+  [REQUIRES-APPROVAL] replaces policy tenant_write on sales.orders
+         why:  The old policy is dropped and the new one created. If the new one admits fewer rows, queries start returning less and nothing errors; if more, rows the old one hid become visible.
+         next: Compare what the two admit, then approve.
+
+  [REQUIRES-APPROVAL] creates policy new_policy on sales.invoices
+         why:  What a policy does depends on state outside itself. On a table where row-level security is off it changes nothing; once it is on, a restrictive policy can hide rows from every role. Strata cannot tell which rows it admits — that is the expression's business, at query time.
+         next: Confirm which rows this admits, and for which roles, then approve.
+
+  [REQUIRES-APPROVAL] enables row-level security on sales.orders
+         why:  Every query against this table starts being filtered. With no policy admitting them, rows are hidden from every role except the owner — the table reads as empty and nothing errors. Strata cannot say which queries depend on seeing every row.
+         next: Confirm a policy admits the rows each role needs, then approve.
+
+  [REQUIRES-APPROVAL] forces row-level security on sales.orders
+         why:  Policies start applying to the table's OWNER as well — usually the role that runs migrations and batch jobs. Those stop seeing rows the policies do not admit, and a write that violates a policy is rejected outright.
+         next: Confirm the owner's own queries and writes satisfy the policies, then approve.
+
+  [REQUIRES-APPROVAL] disables row-level security on sales.invoices
+         why:  Every row this table's policies were hiding becomes visible to every role that can read the table. Nothing errors, and nothing in the database records that it used to be hidden.
+         next: Confirm the rows here are meant to be readable by every role with access, then approve.
+
+  [REQUIRES-APPROVAL] stops forcing row-level security on sales.invoices
+         why:  The table's owner starts bypassing every policy on it, so anything running as the owner sees every row again.
+         next: Confirm the owner is meant to bypass these policies, then approve.
+
+
+## json
+{"verdict":"requires-approval","exitCode":2,"desiredStateComplete":true,"changeCount":9,"changes":["create-extension   citext","update-extension   pgcrypto -> 1.3","set-ext-schema     hstore -> sales","replace-policy     tenant_write on sales.orders","create-policy      new_policy on sales.invoices","enable-rls         sales.orders","force-rls          sales.orders","disable-rls        sales.invoices","no-force-rls       sales.invoices"],"findings":[{"verdict":"requires-approval","change":"create-extension   citext","detected":"installs extension citext","rationale":"Additive — nothing that works today stops working. But an extension brings its own types, functions and operators, and it is a lot of them: citext alone installs 88 catalog objects. None of them is managed by this project, and dropping the extension later would take all of them at once.","affectedSources":[],"nextSafeMove":"Confirm this extension is meant to be part of the database, then approve."},{"verdict":"requires-approval","change":"update-extension   pgcrypto -> 1.3","detected":"updates extension pgcrypto to 1.3","rationale":"An extension's upgrade script can alter or drop the extension's own objects. Strata cannot read that script, so it cannot say what this changes — only that something in the database changes that this project does not describe.","affectedSources":[],"nextSafeMove":"Read the extension's upgrade notes for this version, then approve."},{"verdict":"requires-approval","change":"set-ext-schema     hstore -> sales","detected":"moves extension hstore to schema sales","rationale":"Every unqualified reference to one of the extension's functions or types stops resolving unless the new schema is on the search path. Strata cannot find those references: they are in application SQL and in other objects' bodies.","affectedSources":[],"nextSafeMove":"Confirm the new schema is on the search path everywhere this extension is used, then approve."},{"verdict":"requires-approval","change":"replace-policy     tenant_write on sales.orders","detected":"replaces policy tenant_write on sales.orders","rationale":"The old policy is dropped and the new one created. If the new one admits fewer rows, queries start returning less and nothing errors; if more, rows the old one hid become visible.","affectedSources":[],"nextSafeMove":"Compare what the two admit, then approve."},{"verdict":"requires-approval","change":"create-policy      new_policy on sales.invoices","detected":"creates policy new_policy on sales.invoices","rationale":"What a policy does depends on state outside itself. On a table where row-level security is off it changes nothing; once it is on, a restrictive policy can hide rows from every role. Strata cannot tell which rows it admits — that is the expression's business, at query time.","affectedSources":[],"nextSafeMove":"Confirm which rows this admits, and for which roles, then approve."},{"verdict":"requires-approval","change":"enable-rls         sales.orders","detected":"enables row-level security on sales.orders","rationale":"Every query against this table starts being filtered. With no policy admitting them, rows are hidden from every role except the owner — the table reads as empty and nothing errors. Strata cannot say which queries depend on seeing every row.","affectedSources":[],"nextSafeMove":"Confirm a policy admits the rows each role needs, then approve."},{"verdict":"requires-approval","change":"force-rls          sales.orders","detected":"forces row-level security on sales.orders","rationale":"Policies start applying to the table's OWNER as well — usually the role that runs migrations and batch jobs. Those stop seeing rows the policies do not admit, and a write that violates a policy is rejected outright.","affectedSources":[],"nextSafeMove":"Confirm the owner's own queries and writes satisfy the policies, then approve."},{"verdict":"requires-approval","change":"disable-rls        sales.invoices","detected":"disables row-level security on sales.invoices","rationale":"Every row this table's policies were hiding becomes visible to every role that can read the table. Nothing errors, and nothing in the database records that it used to be hidden.","affectedSources":[],"nextSafeMove":"Confirm the rows here are meant to be readable by every role with access, then approve."},{"verdict":"requires-approval","change":"no-force-rls       sales.invoices","detected":"stops forcing row-level security on sales.invoices","rationale":"The table's owner starts bypassing every policy on it, so anything running as the owner sees every row again.","affectedSources":[],"nextSafeMove":"Confirm the owner is meant to bypass these policies, then approve."}],"suppressed":[{"object":"sales.orders","reason":"not-compared","detail":"policy owner_only matches on command, roles and permissiveness, but its USING/WITH CHECK expressions could not be rendered by the server, so they were NOT compared"},{"object":"plpgsql","reason":"not-modelled","detail":"the project declares extension plpgsql in schema sales and it is installed in pg_catalog, but the extension is not relocatable, so nothing can move it"},{"object":"sales.forced_only","reason":"not-modelled","detail":"row-level security is FORCED here but not enabled, which has no effect."},{"object":"sales.ledger","reason":"not-modelled","detail":"row-level security is enabled and not forced, so the table's owner bypasses every policy. The project declares nothing about this table's row-level security, so the 1 policy here was NOT compared and nothing changes them: ledger_read (restrictive select for auditor, app_user)"},{"object":"sales.loose","reason":"not-modelled","detail":"row-level security is DISABLED here, so the 1 policy on this table restricts NOTHING and every role sees every row: loose_read (select for app_user)"},{"object":"sales.orders","reason":"not-modelled","detail":"row-level security is DISABLED here, so the 4 policies on this table restrict NOTHING and every role sees every row: tenant_read (select for APP_USER); tenant_write (update for app_user); owner_only (all commands for app_user); undeclared (delete for admin)"},{"object":"sales.vault","reason":"not-modelled","detail":"row-level security is ENABLED here and there are no policies, so every row is hidden from every role except the table's owner. The project declares no policy for this table, so nothing here will change that."},{"object":"sales.orders","reason":"not-modelled","detail":"this table carries 1 policy/policies the project does not declare, and a policy is never dropped because removing one exposes rows silently: undeclared"},{"object":"postgis","reason":"not-modelled","detail":"extension postgis is installed and the project does not declare it; an extension is never dropped because DROP EXTENSION takes every object it owns (version 3.4)"}],"scope":{"liveDatabaseInspected":false,"schemaCompleteness":{"categories":[],"fullyComplete":true},"corpus":{"sourceCount":0,"sourceRoots":[],"indexedSources":[],"indexedSourcesTruncated":false,"parseFailures":0,"extractionGaps":0},"dialectCompatibility":{"state":"no-parsing-performed","parserMajor":null,"serverMajor":null},"parseImpliesTargetAccepts":false,"runtimeQueriesIndexed":false,"externalConsumersIndexed":false,"ormMetadataIndexed":false,"supportsAbsenceClaim":false}}

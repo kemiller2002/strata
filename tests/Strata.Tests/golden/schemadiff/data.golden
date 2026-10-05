@@ -1,0 +1,62 @@
+## statements (6)
+[01] add-enum-value (AddEnumValue)
+     | ALTER TYPE "sales"."status" ADD VALUE 'paid' AFTER 'new'
+[02] insert-row (InsertRow)
+     | INSERT INTO "sales"."statuses" ("code", "Label") VALUES ('new', 'New')
+[03] update-row (UpdateRow)
+     | UPDATE "sales"."statuses" SET "Label" = 'Paid!' WHERE "code" = 'paid'
+[04] insert-row (InsertRow)
+     | INSERT INTO "sales"."statuses" ("code", "Label") VALUES ('o''k', 'OK')
+[05] update-row (UpdateRow)
+     (no SQL: Strata refuses to write this statement)
+[06] insert-row (InsertRow)
+     | INSERT INTO "sales"."flags" ("flag") VALUES ('off')
+
+## text
+PLAN: 6 change(s), 4 suppressed  —  gate verdict REQUIRES-APPROVAL
+
+  add-enum-value     sales.status 'paid' after 'new'
+  insert-row         sales.statuses new
+  update-row         sales.statuses paid
+  insert-row         sales.statuses o'k
+  update-row         sales.flags on
+  insert-row         sales.flags off
+
+NOT PROPOSED — differences Strata saw and will not act on:
+
+  sales.statuses               [not-modelled]
+      2 row(s) in this table are not declared by the project: draft, void. They are NOT proposed for deletion — user data may reference them.
+  sales.orders_by_status       [not-compared]
+      declared rows were NOT compared: invalid input value for enum sales.status: "paid"
+  sales.broken                 [not-compared]
+      declared rows were NOT compared: permission denied
+  sales.orders_by_status       [not-compared]
+      this plan adds 'paid' to sales.status AND declares rows using it. PostgreSQL will not let a value added inside a transaction be used in that same transaction, so the two cannot happen together: this run adds the value, and the rows land on the next one. Nothing is lost and no manual step is needed — re-run after this applies.
+
+  [REQUIRES-APPROVAL] adds value 'paid' to enum type sales.status
+         why:  Additive to the type, and two things follow that Strata cannot check. A value added inside a transaction cannot be USED in that same transaction, so a plan that also writes a row with it fails as a unit. And every exhaustive CASE over this type in application code is now missing an arm, which no schema check can see.
+         next: Confirm nothing in this plan writes the new value, and that the code reading this type handles it.
+
+  [ALLOW] inserts row new into sales.statuses
+         why:  Additive. No row can already reference a lookup row that does not exist.
+         next: Proceed.
+
+  [REQUIRES-APPROVAL] changes row paid of sales.statuses, which 0 source(s) read
+         why:  No dependency found, but the analysed scope does NOT support concluding that none exists. This is not clearance.
+         next: Widen the analysed scope (index the SQL corpus, inspect the live database) and re-run, or approve explicitly.
+
+  [ALLOW] inserts row o'k into sales.statuses
+         why:  Additive. No row can already reference a lookup row that does not exist.
+         next: Proceed.
+
+  [REQUIRES-APPROVAL] changes row on of sales.flags, which 0 source(s) read
+         why:  No dependency found, but the analysed scope does NOT support concluding that none exists. This is not clearance.
+         next: Widen the analysed scope (index the SQL corpus, inspect the live database) and re-run, or approve explicitly.
+
+  [ALLOW] inserts row off into sales.flags
+         why:  Additive. No row can already reference a lookup row that does not exist.
+         next: Proceed.
+
+
+## json
+{"verdict":"requires-approval","exitCode":2,"desiredStateComplete":true,"changeCount":6,"changes":["add-enum-value     sales.status 'paid' after 'new'","insert-row         sales.statuses new","update-row         sales.statuses paid","insert-row         sales.statuses o'k","update-row         sales.flags on","insert-row         sales.flags off"],"findings":[{"verdict":"requires-approval","change":"add-enum-value     sales.status 'paid' after 'new'","detected":"adds value 'paid' to enum type sales.status","rationale":"Additive to the type, and two things follow that Strata cannot check. A value added inside a transaction cannot be USED in that same transaction, so a plan that also writes a row with it fails as a unit. And every exhaustive CASE over this type in application code is now missing an arm, which no schema check can see.","affectedSources":[],"nextSafeMove":"Confirm nothing in this plan writes the new value, and that the code reading this type handles it."},{"verdict":"allow","change":"insert-row         sales.statuses new","detected":"inserts row new into sales.statuses","rationale":"Additive. No row can already reference a lookup row that does not exist.","affectedSources":[],"nextSafeMove":"Proceed."},{"verdict":"requires-approval","change":"update-row         sales.statuses paid","detected":"changes row paid of sales.statuses, which 0 source(s) read","rationale":"No dependency found, but the analysed scope does NOT support concluding that none exists. This is not clearance.","affectedSources":[],"nextSafeMove":"Widen the analysed scope (index the SQL corpus, inspect the live database) and re-run, or approve explicitly."},{"verdict":"allow","change":"insert-row         sales.statuses o'k","detected":"inserts row o'k into sales.statuses","rationale":"Additive. No row can already reference a lookup row that does not exist.","affectedSources":[],"nextSafeMove":"Proceed."},{"verdict":"requires-approval","change":"update-row         sales.flags on","detected":"changes row on of sales.flags, which 0 source(s) read","rationale":"No dependency found, but the analysed scope does NOT support concluding that none exists. This is not clearance.","affectedSources":[],"nextSafeMove":"Widen the analysed scope (index the SQL corpus, inspect the live database) and re-run, or approve explicitly."},{"verdict":"allow","change":"insert-row         sales.flags off","detected":"inserts row off into sales.flags","rationale":"Additive. No row can already reference a lookup row that does not exist.","affectedSources":[],"nextSafeMove":"Proceed."}],"suppressed":[{"object":"sales.statuses","reason":"not-modelled","detail":"2 row(s) in this table are not declared by the project: draft, void. They are NOT proposed for deletion — user data may reference them."},{"object":"sales.orders_by_status","reason":"not-compared","detail":"declared rows were NOT compared: invalid input value for enum sales.status: \"paid\""},{"object":"sales.broken","reason":"not-compared","detail":"declared rows were NOT compared: permission denied"},{"object":"sales.orders_by_status","reason":"not-compared","detail":"this plan adds 'paid' to sales.status AND declares rows using it. PostgreSQL will not let a value added inside a transaction be used in that same transaction, so the two cannot happen together: this run adds the value, and the rows land on the next one. Nothing is lost and no manual step is needed — re-run after this applies."}],"scope":{"liveDatabaseInspected":false,"schemaCompleteness":{"categories":[],"fullyComplete":true},"corpus":{"sourceCount":0,"sourceRoots":[],"indexedSources":[],"indexedSourcesTruncated":false,"parseFailures":0,"extractionGaps":0},"dialectCompatibility":{"state":"no-parsing-performed","parserMajor":null,"serverMajor":null},"parseImpliesTargetAccepts":false,"runtimeQueriesIndexed":false,"externalConsumersIndexed":false,"ormMetadataIndexed":false,"supportsAbsenceClaim":false}}

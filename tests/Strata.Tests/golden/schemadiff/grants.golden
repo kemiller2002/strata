@@ -1,0 +1,60 @@
+## statements (6)
+[01] revoke (RevokePrivileges)
+     | REVOKE DELETE ON "sales"."orders" FROM "app_user"
+[02] revoke (RevokePrivileges)
+     | REVOKE SELECT ON "sales"."orders" FROM "reporting"
+[03] grant (GrantPrivileges)
+     | GRANT INSERT ON "sales"."orders" TO "app_user"
+[04] grant (GrantPrivileges)
+     | GRANT USAGE ON SCHEMA "sales" TO "app_user"
+[05] grant (GrantPrivileges)
+     | GRANT EXECUTE ON ROUTINE "sales"."total"(integer, character varying) TO PUBLIC
+[06] grant (GrantPrivileges)
+     | GRANT SELECT ("email"), UPDATE ("email") ON "sales"."orders" TO "Reporting"
+
+## text
+PLAN: 6 change(s), 3 suppressed  —  gate verdict REQUIRES-APPROVAL
+
+  revoke             DELETE on sales.orders from app_user
+  revoke             SELECT on sales.orders from reporting
+  grant              INSERT on sales.orders to app_user
+  grant              USAGE on schema sales to app_user
+  grant              EXECUTE on routine sales.total(integer, character varying) to PUBLIC
+  grant              SELECT,UPDATE on sales.orders(email) to Reporting
+
+NOT PROPOSED — differences Strata saw and will not act on:
+
+  sales.orders                 [not-modelled]
+      replication holds privileges here and the project declares none for them, so they were NOT compared and nothing is revoked: replication=SELECT
+  other.things                 [not-modelled]
+      app_user holds privileges here and the project declares none for them, so they were NOT compared and nothing is revoked: app_user=SELECT
+  sales.orders                 [not-modelled]
+      app_user holds SELECT WITH GRANT OPTION and can pass it on to others; Strata does not model the grant option, so this was NOT compared and nothing removes it
+
+  [REQUIRES-APPROVAL] revokes DELETE on sales.orders from app_user
+         why:  Whatever runs as this grantee starts failing on its next statement, with no warning before it does. Strata cannot say what that is: the corpus records SQL, not the role that runs it.
+         next: Confirm nothing runs as this grantee against this object, then approve explicitly.
+
+  [REQUIRES-APPROVAL] revokes SELECT on sales.orders from reporting
+         why:  Whatever runs as this grantee starts failing on its next statement, with no warning before it does. Strata cannot say what that is: the corpus records SQL, not the role that runs it.
+         next: Confirm nothing runs as this grantee against this object, then approve explicitly.
+
+  [ALLOW] grants INSERT on sales.orders to app_user
+         why:  Additive. Widens who can reach the object; breaks nothing that works today.
+         next: Proceed.
+
+  [ALLOW] grants USAGE on schema sales to app_user
+         why:  Additive. Widens who can reach the object; breaks nothing that works today.
+         next: Proceed.
+
+  [REQUIRES-APPROVAL] grants EXECUTE on routine sales.total(integer, character varying) to PUBLIC
+         why:  PUBLIC is not a role, it is every role — including ones created after this runs. Nothing breaks; the data simply becomes reachable by anyone who can connect.
+         next: Confirm the data is meant to be readable by any role, then approve.
+
+  [ALLOW] grants SELECT, UPDATE on sales.orders(email) to Reporting
+         why:  Additive. Widens who can reach the object; breaks nothing that works today.
+         next: Proceed.
+
+
+## json
+{"verdict":"requires-approval","exitCode":2,"desiredStateComplete":true,"changeCount":6,"changes":["revoke             DELETE on sales.orders from app_user","revoke             SELECT on sales.orders from reporting","grant              INSERT on sales.orders to app_user","grant              USAGE on schema sales to app_user","grant              EXECUTE on routine sales.total(integer, character varying) to PUBLIC","grant              SELECT,UPDATE on sales.orders(email) to Reporting"],"findings":[{"verdict":"requires-approval","change":"revoke             DELETE on sales.orders from app_user","detected":"revokes DELETE on sales.orders from app_user","rationale":"Whatever runs as this grantee starts failing on its next statement, with no warning before it does. Strata cannot say what that is: the corpus records SQL, not the role that runs it.","affectedSources":[],"nextSafeMove":"Confirm nothing runs as this grantee against this object, then approve explicitly."},{"verdict":"requires-approval","change":"revoke             SELECT on sales.orders from reporting","detected":"revokes SELECT on sales.orders from reporting","rationale":"Whatever runs as this grantee starts failing on its next statement, with no warning before it does. Strata cannot say what that is: the corpus records SQL, not the role that runs it.","affectedSources":[],"nextSafeMove":"Confirm nothing runs as this grantee against this object, then approve explicitly."},{"verdict":"allow","change":"grant              INSERT on sales.orders to app_user","detected":"grants INSERT on sales.orders to app_user","rationale":"Additive. Widens who can reach the object; breaks nothing that works today.","affectedSources":[],"nextSafeMove":"Proceed."},{"verdict":"allow","change":"grant              USAGE on schema sales to app_user","detected":"grants USAGE on schema sales to app_user","rationale":"Additive. Widens who can reach the object; breaks nothing that works today.","affectedSources":[],"nextSafeMove":"Proceed."},{"verdict":"requires-approval","change":"grant              EXECUTE on routine sales.total(integer, character varying) to PUBLIC","detected":"grants EXECUTE on routine sales.total(integer, character varying) to PUBLIC","rationale":"PUBLIC is not a role, it is every role — including ones created after this runs. Nothing breaks; the data simply becomes reachable by anyone who can connect.","affectedSources":[],"nextSafeMove":"Confirm the data is meant to be readable by any role, then approve."},{"verdict":"allow","change":"grant              SELECT,UPDATE on sales.orders(email) to Reporting","detected":"grants SELECT, UPDATE on sales.orders(email) to Reporting","rationale":"Additive. Widens who can reach the object; breaks nothing that works today.","affectedSources":[],"nextSafeMove":"Proceed."}],"suppressed":[{"object":"sales.orders","reason":"not-modelled","detail":"replication holds privileges here and the project declares none for them, so they were NOT compared and nothing is revoked: replication=SELECT"},{"object":"other.things","reason":"not-modelled","detail":"app_user holds privileges here and the project declares none for them, so they were NOT compared and nothing is revoked: app_user=SELECT"},{"object":"sales.orders","reason":"not-modelled","detail":"app_user holds SELECT WITH GRANT OPTION and can pass it on to others; Strata does not model the grant option, so this was NOT compared and nothing removes it"}],"scope":{"liveDatabaseInspected":false,"schemaCompleteness":{"categories":[],"fullyComplete":true},"corpus":{"sourceCount":0,"sourceRoots":[],"indexedSources":[],"indexedSourcesTruncated":false,"parseFailures":0,"extractionGaps":0},"dialectCompatibility":{"state":"no-parsing-performed","parserMajor":null,"serverMajor":null},"parseImpliesTargetAccepts":false,"runtimeQueriesIndexed":false,"externalConsumersIndexed":false,"ormMetadataIndexed":false,"supportsAbsenceClaim":false}}
