@@ -1,4 +1,4 @@
-# Installed and maintained by Limen (@echelon-foundry/typescript-wasm-kernel).
+# Installed and maintained by Limen (@echelon-foundry/limen).
 # Edit freely — once changed, `limen upgrade` will stop rewriting it and will
 # tell you what the current tool-owned version would have been.
 name: Limen verify
@@ -16,9 +16,15 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Verify the Limen boundary
-        run: npx --yes @echelon-foundry/typescript-wasm-kernel verify --strict
+
+      - name: Read the Limen version this repository records
+        id: limen
+        run: echo "version=$(node -p "require('./.echelon/limen.json').installedVersion")" >> "$GITHUB_OUTPUT"
+
+      - name: Verify the Limen boundary with that version
+        run: npx --yes "@echelon-foundry/limen@${{ steps.limen.outputs.version }}" verify --strict

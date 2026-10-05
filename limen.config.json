@@ -1,1 +1,8 @@
-{"configurationVersion":1,"boundary":{"engine":[],"kernel":[]}}
+{
+  "configurationVersion": 1,
+  "boundary": {
+    "notApplicable": {
+      "rationale": "Strata is a command-line schema-management tool for PostgreSQL (F#/.NET). It has no browser application and no WASM engine, so there is no browser/application boundary for Limen to check."
+    }
+  }
+}
