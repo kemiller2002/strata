@@ -1,0 +1,41 @@
+{
+  "schemaVersion": "1.0",
+  "contextVersion": "1.0.1",
+  "sourceRepository": "https://github.com/kemiller2002/Visual-Engineering",
+  "sourceCommit": "b648cdef291d39c443ccb10215529ad69afe8b32",
+  "generatedAt": "2026-10-06T15:52:16.005Z",
+  "researchCatalogVersion": "1.1",
+  "researchDocuments": 112,
+  "profile": "ui-foundations",
+  "classification": "public",
+  "artifacts": [
+    {
+      "file": "AGENT-INSTRUCTIONS.md",
+      "sha256": "3736636964f88644de0a5c9c255dfd88d4275f254ee179166203579e823d4d2e"
+    },
+    {
+      "file": "UI-FOUNDATIONS.md",
+      "sha256": "7dee7189eedd9448f9fc7816bdc22fa41e32bd1ac465c880df0754faa30a8b73"
+    },
+    {
+      "file": "UI-DECISION-CHECKLIST.md",
+      "sha256": "47bcb1191362e43ebbd8064bde87015186dbe47c1a72bfbadfd2e0a3a611b629"
+    },
+    {
+      "file": "UI-ANTI-PATTERNS.md",
+      "sha256": "6066b2faca907eb0afde78b9840020186901d782880fbad23bb41599e88bafc1"
+    },
+    {
+      "file": "APPLICATION-POLISH.md",
+      "sha256": "94da532ba5f54617e269525a2b7188b9bf2ba531f96fa9e8c88023a08a38cf51"
+    },
+    {
+      "file": "RESEARCH-INDEX.md",
+      "sha256": "1e1f7f9ebdf7ae99de1b81b18837a6d5ce2497617dc2a7a21e61d5be9badfb22"
+    },
+    {
+      "file": "sources.json",
+      "sha256": "07b5fef9d83664e5c8aa6d00e7d20db146798e8db3b2175f97eb4c863526897c"
+    }
+  ]
+}

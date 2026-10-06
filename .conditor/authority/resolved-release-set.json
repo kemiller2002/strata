@@ -11,42 +11,42 @@
     "version": "0.1.0"
   },
   "catalogSnapshot": {
-    "sha256": "36fedc4986f9d2d705ab16dfe38bf7fc98706fdc567b26e42d173259c782f28d"
+    "sha256": "2a4abb1efb8a20f5b36cae7ed3b5bde0a99e3e182f9bc9349770e9905f109f67"
   },
   "components": [
     {
       "systemId": "praxis",
       "role": "host-tool",
       "required": true,
-      "version": "3.7.1",
+      "version": "3.7.2",
       "repository": "kemiller2002/praxis",
-      "tag": "v3.7.1",
-      "commit": "26a0a5ff32225c75226b696ebdc68e50dc878f11",
+      "tag": "v3.7.2",
+      "commit": "709bd98e533e783aef9fa78880570de5fb751520",
       "releaseStage": "stable",
       "lifecycleState": "active",
       "distributionClass": "self-contained-native-cli",
       "executable": "praxis",
       "releaseManifest": {
         "schema": "echelon.release/v2",
-        "sha256": "c032e3233c17c14b4b7c90896625a5e04b99ff27d5f26fa2230805af918970e8"
+        "sha256": "05b86ca8f09b0a95e82fc94b23778747d0cbae5a26433b16ab83a64a87c4a0f2"
       },
       "distribution": {
         "mechanism": "github-release",
         "package": null,
-        "url": "https://github.com/kemiller2002/praxis/releases/tag/v3.7.1"
+        "url": "https://github.com/kemiller2002/praxis/releases/tag/v3.7.2"
       },
       "artifacts": [
         {
           "name": "praxis-linux-x64.tar.gz",
           "purpose": "executable",
           "platform": "linux-x64",
-          "sha256": "8bb215207c2192bdb9cf932f7ed4ade52647d548e104c19071130cf16d137a45"
+          "sha256": "cb44a7b9d3ddd696bc412b3e82ed0dee88b47751fa4b8ec7b933e1f60809b3e3"
         },
         {
           "name": "native-checksums.txt",
           "purpose": "checksums",
           "platform": null,
-          "sha256": "8730a18c6f688e996777c119f16d22903e9e0d78ea5e79f4048ca9677754303e"
+          "sha256": "745047814eb62c9245c534b7d96dec541a416514a87cc055b078fb231154633e"
         }
       ]
     },
@@ -172,29 +172,29 @@
       "systemId": "visual-engineering",
       "role": "repository-lifecycle",
       "required": true,
-      "version": "1.0.0",
+      "version": "1.0.1",
       "repository": "kemiller2002/visual-engineering",
-      "tag": "visual-engineering-v1.0.0",
-      "commit": "0be73c83d8c257794d53cb9ddc9a6db69f843fbf",
+      "tag": "visual-engineering-v1.0.1",
+      "commit": "b648cdef291d39c443ccb10215529ad69afe8b32",
       "releaseStage": "stable",
       "lifecycleState": "active",
       "distributionClass": "repository-lifecycle",
       "executable": null,
       "releaseManifest": {
         "schema": "echelon.release/v2",
-        "sha256": "36635703cd975c2627ab18fec4c27a8b5129864e223af1fa3644a5d19bb82540"
+        "sha256": "23ab4fdb38d3fc7827519cc3c29df88c950211db1d53d114c53f36a662a0dbda"
       },
       "distribution": {
         "mechanism": "npm",
         "package": "@echelon-foundry/visual-engineering",
-        "url": "https://registry.npmjs.org/@echelon-foundry/visual-engineering/-/visual-engineering-1.0.0.tgz"
+        "url": "https://registry.npmjs.org/@echelon-foundry/visual-engineering/-/visual-engineering-1.0.1.tgz"
       },
       "artifacts": [
         {
-          "name": "echelon-foundry-visual-engineering-1.0.0.tgz",
+          "name": "echelon-foundry-visual-engineering-1.0.1.tgz",
           "purpose": "package",
           "platform": null,
-          "sha256": "2e9f5ac9e88d4d0b1e55cb01ac4483be73a498cf7e24d10e492ebf2c8f7071e0"
+          "sha256": "32347d5c134f724cb35f9c33d882c2ed51f860381f0d5802634da3da74fb3f2f"
         }
       ]
     },

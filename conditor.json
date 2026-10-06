@@ -4,7 +4,7 @@
   "registryAuthority": {
     "kind": "resolved-release-set",
     "path": ".conditor/authority/resolved-release-set.json",
-    "sha256": "3aa4ebbd77d9da04db5a91462584a189ffb882f35e2515bb6c90160b231d62a1"
+    "sha256": "cd8d8d0482c5c4750f4bb31d28bc79e9597d3be4f6264955691e3aebd86cb6d2"
   },
   "components": [
     {
@@ -19,7 +19,7 @@
     },
     {
       "id": "praxis",
-      "version": "3.7.1",
+      "version": "3.7.2",
       "required": true
     }
   ],
