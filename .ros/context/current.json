@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "agent:chatgpt",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-10-05T17:14:00Z",
+  "updatedAt": "2026-10-06T00:47:16Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -2491,6 +2491,51 @@
         "EXE-20261005T171359939Z-d905f022"
       ],
       "completedAt": "2026-10-05T17:14:00Z"
+    },
+    {
+      "id": "FOUNDATIONS-PARITY",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "decision",
+          "path": "research/decisions/DF-STRATA-FND-2026-0001--forma-folio-limen-not-applicable-to-a-command-line-tool.md"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Cli/Boundary.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Host.Postgres/ConnectionString.fs"
+        },
+        {
+          "type": "implementation",
+          "path": ".echelon/foundations.json"
+        },
+        {
+          "type": "implementation",
+          "path": "aegis-boundaries.json"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/BoundaryTests.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/FoundationsConformanceTests.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/CliTests.fs"
+        }
+      ],
+      "updatedAt": "2026-10-06T00:47:16Z",
+      "telemetryExecutionIds": [
+        "EXE-20261006T003504370Z-836dee84"
+      ],
+      "completedAt": "2026-10-06T00:47:16Z"
     }
   ]
 }

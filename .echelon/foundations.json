@@ -9,12 +9,11 @@
     },
     "forma": {
       "required": false,
-      "version": "0.2.0"
+      "version": "0.3.0"
     },
     "folio": {
       "required": false,
-      "version": "0.3.0",
-      "sourceCommit": "273b18f5b23db15cddd173c05af5d1a8484fc4cf"
+      "version": "0.3.0"
     },
     "limen": {
       "required": false,

@@ -410,3 +410,25 @@ let ``keygen reports a path it cannot write rather than aborting`` () =
 
     Assert.Equal(2, outcome.ExitCode)
     Assert.Contains("could not write", outcome.Stderr)
+    // The Aegis boundary's safe line, not the exception: the fault code and the
+    // reference that finds the record (DF-STRATA-FND-2026-0001).
+    Assert.Contains("\"code\":\"STRATA.FILES.FAILURE\"", outcome.Stderr)
+    Assert.Matches(@"error: Strata could not write the key pair\. .*\[AG-[0-9A-Z]{5}\]", outcome.Stderr)
+
+[<RequiresCli>]
+let ``a malformed connection string is refused with exit 2, not a crash, and is never echoed`` () =
+    let outcome = Cli.run [ "inspect"; "app.customer"; "--connection"; "Host=localhost;Nonsense=1;Password=hunter2" ]
+    Assert.Equal(2, outcome.ExitCode)
+    Assert.Contains("not a valid PostgreSQL connection string", outcome.Stderr)
+    Assert.DoesNotContain("hunter2", outcome.Output)
+
+[<RequiresCliAndPostgres>]
+let ``a database failure no adapter translated is an Aegis fault with the query's exit code`` () =
+    // Right server, wrong password: the catalog adapter lets the PostgreSQL
+    // error escape, and the boundary records it rather than printing it.
+    let builder = NpgsqlConnectionStringBuilder(Cli.connectionString.Value)
+    builder.Password <- "not-the-password-" + Guid.NewGuid().ToString("N")
+    let outcome = Cli.run [ "inspect"; "app.customer"; "--connection"; builder.ConnectionString ]
+    Assert.Equal(1, outcome.ExitCode)
+    Assert.Contains("\"code\":\"STRATA.POSTGRES.FAILURE\"", outcome.Stderr)
+    Assert.Matches(@"error: Strata could not answer the query\. PostgreSQL.*\[AG-[0-9A-Z]{5}\]", outcome.Stderr)

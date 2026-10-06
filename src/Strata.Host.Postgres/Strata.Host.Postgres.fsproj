@@ -31,6 +31,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="ConnectionString.fs" />
     <Compile Include="CatalogQueries.fs" />
     <Compile Include="CatalogIntrospection.fs" />
     <Compile Include="Execution.fs" />
