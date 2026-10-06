@@ -18,11 +18,11 @@ Dependencies MUST be pinned to an explicit released version or immutable artifac
 Current baselines:
 
 - `EchelonFoundry.Aegis.Core` **1.0.0**.
-- `@echelon-foundry/design-system` (Forma) **0.3.0**, consumed from the
-  immutable v0.3.0 release tarball until npm is the selected canonical source.
+- `@echelon-foundry/design-system` (Forma) **0.4.1**, consumed from the
+  immutable v0.4.1 release tarball until npm is the selected canonical source.
 - `@echelon-foundry/print-components` (Folio) **0.3.0**, consumed from the
   immutable v0.3.0 release tarball.
-- `@echelon-foundry/limen` (Limen) **0.7.0**.
+- `@echelon-foundry/limen` (Limen) **0.7.1**.
 
 Current applicability (`DF-STRATA-FND-2026-0001`): Strata is a command-line
 tool. Aegis is required and enforced at the CLI boundary
