@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://example.invalid/ros/mission.schema.json",
-  "title": "ROS Mission",
+  "title": "Praxis Mission",
   "allOf": [{"$ref": "artifact-metadata.schema.json"}],
   "type": "object",
   "required": ["id", "title", "status", "created"],

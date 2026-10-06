@@ -2,11 +2,11 @@
 id: GV-REP-001
 title: Research Execution Package Specification
 status: canonical
-version: 2.0.0
+version: 2.0.1
 owners:
   - repository-governance
 created: 2026-07-22
-updated: 2026-07-22
+updated: 2026-09-28
 review_cycle: quarterly
 supersedes: []
 superseded_by: []
@@ -86,7 +86,7 @@ updated: YYYY-MM-DD
 ---
 ```
 
-Confidence follows the ROS model: Low `0.00–0.39`, Medium `0.40–0.69`, High `0.70–0.89`, Very High `0.90–1.00`. Numeric values are optional judgments, not statistical claims unless a method establishes that meaning. Completion is independent of confidence; abandoned work can contain high-confidence findings, and complete work can end with low confidence.
+Confidence follows the Praxis model: Low `0.00–0.39`, Medium `0.40–0.69`, High `0.70–0.89`, Very High `0.90–1.00`. Numeric values are optional judgments, not statistical claims unless a method establishes that meaning. Completion is independent of confidence; abandoned work can contain high-confidence findings, and complete work can end with low confidence.
 
 ## Research State Snapshot
 

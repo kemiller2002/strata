@@ -1,0 +1,37 @@
+#!/usr/bin/env sh
+# Runs this project's pinned Praxis CLI (DF-ROS-2026-A049, DF-ROS-2026-A050).
+# Nothing but a POSIX shell is required: the self-contained native release
+# for the version this project pins is installed side by side under
+# $ECHELON_HOME (default ~/.echelon) on first use, checksum-verified by the
+# installer, without changing which version your global commands run.
+set -eu
+
+project_root="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+home_dir="${ECHELON_HOME:-$HOME/.echelon}"
+
+json_string() {
+  [ -f "$1" ] || return 0
+  tr -d '\r\n' < "$1" | sed -n 's/.*"'"$2"'"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1
+}
+
+version="$(json_string "$project_root/.echelon/ros.json" installedVersion)"
+[ -n "$version" ] || version="$(json_string "$project_root/ros.json" rosVersion)"
+
+case "$version" in
+  [0-9]*.[0-9]*.[0-9]*) ;;
+  *)
+    printf '%s\n' "./praxis: no usable pinned version in .echelon/ros.json (installedVersion) or ros.json (rosVersion)." >&2
+    exit 1
+    ;;
+esac
+
+praxis="$home_dir/tools/praxis/$version/praxis"
+
+if [ ! -x "$praxis" ]; then
+  command -v curl >/dev/null 2>&1 || { printf '%s\n' "./praxis: curl is required to install Praxis $version." >&2; exit 1; }
+  installer="${PRAXIS_INSTALLER_URL:-https://raw.githubusercontent.com/kemiller2002/praxis/main/scripts/install-native.sh}"
+  printf '%s\n' "./praxis: installing Praxis $version into $home_dir" >&2
+  curl -fsSL "$installer" | sh -s -- --version "$version" --install-base "$home_dir" --no-activate >&2
+fi
+
+exec "$praxis" "$@"

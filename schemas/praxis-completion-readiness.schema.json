@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://repository-operating-system.local/schemas/praxis-completion-readiness.schema.json",
+  "title": "praxis.completion-readiness/1",
+  "description": "Completion readiness (PRX-QUAL-023), recorded additively as `completionReadiness` on a `work.completed` event and on the completed work-context item when workProtocol.qualityEvidence applies, and printed (outcome: refused) by a refused `work complete`. Praxis consumes Dokimos and Ordo evidence; it never recomputes their verdicts. Unavailable evidence is never a pass.",
+  "type": "object",
+  "required": ["schema", "workItem", "decision", "policy", "facets", "sources", "blockingReasons"],
+  "properties": {
+    "schema": {"const": "praxis.completion-readiness/1"},
+    "workItem": {"type": "string", "minLength": 1},
+    "decision": {"enum": ["ready", "refused"]},
+    "policy": {
+      "type": "object",
+      "required": ["dokimos", "ordoBoundary", "requiredFacets"],
+      "properties": {
+        "dokimos": {"$ref": "#/$defs/requirement"},
+        "dokimosBaseline": {"type": "string"},
+        "ordoBoundary": {"$ref": "#/$defs/requirement"},
+        "requiredFacets": {"type": "array", "items": {"$ref": "#/$defs/facetCode"}},
+        "workTypes": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    },
+    "facets": {
+      "type": "object",
+      "required": ["implementationComplete", "behaviorVerified", "architectureVerified", "releaseReady"],
+      "properties": {
+        "implementationComplete": {"$ref": "#/$defs/facet"},
+        "behaviorVerified": {"$ref": "#/$defs/facet"},
+        "architectureVerified": {"$ref": "#/$defs/facet"},
+        "releaseReady": {"$ref": "#/$defs/facet"}
+      },
+      "additionalProperties": false
+    },
+    "sources": {
+      "type": "object",
+      "required": ["dokimos", "ordoBoundary"],
+      "properties": {
+        "dokimos": {"$ref": "#/$defs/source"},
+        "ordoBoundary": {"$ref": "#/$defs/source"}
+      },
+      "additionalProperties": false
+    },
+    "blockingReasons": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "requirement": {"enum": ["required", "optional", "off"]},
+    "facetCode": {"enum": ["implementation-complete", "behavior-verified", "architecture-verified", "release-ready"]},
+    "facet": {
+      "type": "object",
+      "required": ["required", "status", "blocking"],
+      "properties": {
+        "required": {"type": "boolean"},
+        "status": {"enum": ["satisfied", "not-satisfied", "unavailable", "not-required"]},
+        "evidence": {"type": "array", "items": {"type": "string"}},
+        "reasons": {"type": "array", "items": {"type": "string"}},
+        "blocking": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "source": {
+      "type": "object",
+      "required": ["evidenceType", "requirement", "judgement"],
+      "description": "Observation (not-supplied, ambiguous, parsed, unsupported, malformed) of one evidence source, the consumed fields of a parsed document, and Praxis's judgement of it. Absent observation: the source is off.",
+      "properties": {
+        "evidenceType": {"enum": ["dokimos-ratchet", "ordo-boundary"]},
+        "requirement": {"$ref": "#/$defs/requirement"},
+        "observation": {"enum": ["not-supplied", "ambiguous", "parsed", "unsupported", "malformed"]},
+        "path": {"type": "string"},
+        "paths": {"type": "array", "items": {"type": "string"}},
+        "reason": {"type": "string"},
+        "judgement": {"enum": ["ignored", "passed", "failed", "unavailable"]},
+        "evidence": {"type": "array", "items": {"type": "string"}},
+        "reasons": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": true
+    }
+  }
+}

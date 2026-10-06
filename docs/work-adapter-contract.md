@@ -2,7 +2,7 @@
 
 ## Boundary and authority
 
-ROS defines this transport-neutral contract but does not own project-management truth. The external system owns work items and their operational state. A repository owns implementation and evidence. ROS owns validation of repository evidence and the legal protocol connecting them. An inconsistency is returned as a conflict; neither side silently overwrites the other.
+Praxis defines this transport-neutral contract but does not own project-management truth. The external system owns work items and their operational state. A repository owns implementation and evidence. Praxis owns validation of repository evidence and the legal protocol connecting them. An inconsistency is returned as a conflict; neither side silently overwrites the other.
 
 ## Operations
 
@@ -10,7 +10,7 @@ Version 1.0 defines three normalized operations:
 
 - `getWorkItem` reads external work-item identity and state.
 - `transitionWorkItem` requests a state transition with an optional expected-state precondition.
-- `publishRepositoryEvent` publishes a validated, versioned repository event or evidence reference.
+- `publishRepositoryEvent` publishes a validated, versioned repository event or evidence reference. Events are published verbatim, so their `actor`, and every `artifact.contributed` provenance record, reach the external system unchanged. An adapter must not strip or rewrite them. The actor is self-reported provenance. An adapter's `principal` is the authenticated identity of the *caller*, which may differ from the actor that did the work, and the two must not be conflated.
 
 `listWorkItems` and product-specific queries remain deferred until a real consumer demonstrates a stable need.
 
@@ -33,7 +33,7 @@ Protocol-version mismatch, unknown repositories, missing authorization, missing 
 The dependency-free file adapter exercises the contract without choosing a project-management vendor:
 
 ```bash
-./ros adapter call \
+./praxis adapter call \
   --store tests/fixtures/work-store.json \
   --request tests/fixtures/transition-request.json
 ```

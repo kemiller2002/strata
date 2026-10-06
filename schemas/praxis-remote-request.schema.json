@@ -1,0 +1,928 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kemiller2002/praxis/schemas/praxis-remote-request.schema.json",
+  "title": "Praxis remote request (praxis.remote 1.x)",
+  "description": "A typed request for one explicit Praxis operation, executed by a trusted executor with the same command implementations as the local CLI. See docs/remote-protocol.md, DF-ROS-2026-A041 and (for work.checkpoint and work.continue, protocol 1.3) DF-ROS-2026-A042. Unknown fields are rejected; x- prefixed fields are tolerated extensions without meaning. Authority never comes from this document.",
+  "type": "object",
+  "required": [
+    "protocol",
+    "protocolVersion",
+    "requestId",
+    "operation"
+  ],
+  "properties": {
+    "protocol": {
+      "const": "praxis.remote"
+    },
+    "protocolVersion": {
+      "type": "string",
+      "pattern": "^1\\.(0|[1-9][0-9]{0,3})$"
+    },
+    "requestId": {
+      "$ref": "#/$defs/requestId"
+    },
+    "operation": {
+      "enum": [
+        "praxis.describe",
+        "status",
+        "validate",
+        "provenance.identity",
+        "work.context",
+        "request.status",
+        "work.start",
+        "work.resume",
+        "work.block",
+        "work.complete",
+        "telemetry.record",
+        "work.reconcile",
+        "step.start",
+        "step.complete",
+        "step.fail",
+        "batch",
+        "work.checkpoint",
+        "work.continue"
+      ]
+    },
+    "repository": {
+      "type": "object",
+      "properties": {
+        "ref": {
+          "type": "string",
+          "pattern": "^refs/heads/[A-Za-z0-9._/-]{1,240}$"
+        },
+        "expectedSha": {
+          "type": "string",
+          "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+        }
+      },
+      "patternProperties": {
+        "^x-": {}
+      },
+      "additionalProperties": false
+    },
+    "actor": {
+      "type": "object",
+      "description": "The actor the requester asserts. Self-reported, never inferred from the executor. Absent values are recorded as unknown.",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "pattern": "^(agent|human|automation|unknown|x-[a-z0-9][a-z0-9-]*)$"
+        },
+        "id": {
+          "$ref": "#/$defs/actorValue"
+        },
+        "provider": {
+          "$ref": "#/$defs/actorValue"
+        },
+        "model": {
+          "$ref": "#/$defs/actorValue"
+        },
+        "runtime": {
+          "$ref": "#/$defs/actorValue"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/actorValue"
+        }
+      },
+      "patternProperties": {
+        "^x-": {}
+      },
+      "additionalProperties": false
+    },
+    "execution": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^EXE-[A-Za-z0-9._-]{1,120}$"
+        }
+      },
+      "patternProperties": {
+        "^x-": {}
+      },
+      "additionalProperties": false
+    },
+    "arguments": {
+      "type": "object"
+    },
+    "requestedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "patternProperties": {
+    "^x-": {}
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "praxis.describe"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "arguments": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "patternProperties": {
+              "^x-": {}
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "status"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "arguments": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "patternProperties": {
+              "^x-": {}
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "validate"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "arguments": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "patternProperties": {
+              "^x-": {}
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "provenance.identity"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "arguments": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "patternProperties": {
+              "^x-": {}
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "work.context"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "arguments": {
+            "type": "object",
+            "properties": {
+              "workItemId": {
+                "$ref": "#/$defs/workItemId"
+              }
+            },
+            "required": [
+              "workItemId"
+            ],
+            "patternProperties": {
+              "^x-": {}
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "request.status"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "arguments": {
+            "type": "object",
+            "properties": {
+              "requestId": {
+                "$ref": "#/$defs/requestId"
+              }
+            },
+            "required": [
+              "requestId"
+            ],
+            "patternProperties": {
+              "^x-": {}
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "work.start"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "arguments": {
+            "type": "object",
+            "properties": {
+              "workItemIds": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 20,
+                "items": {
+                  "$ref": "#/$defs/workItemId"
+                }
+              },
+              "type": {
+                "$ref": "#/$defs/token"
+              },
+              "classifications": {
+                "type": "array",
+                "maxItems": 100,
+                "items": {
+                  "$ref": "#/$defs/token"
+                }
+              }
+            },
+            "required": [
+              "workItemIds"
+            ],
+            "patternProperties": {
+              "^x-": {}
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "work.resume"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "arguments": {
+            "type": "object",
+            "properties": {
+              "workItemIds": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 20,
+                "items": {
+                  "$ref": "#/$defs/workItemId"
+                }
+              }
+            },
+            "required": [
+              "workItemIds"
+            ],
+            "patternProperties": {
+              "^x-": {}
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "work.block"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "arguments": {
+            "type": "object",
+            "properties": {
+              "workItemIds": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 20,
+                "items": {
+                  "$ref": "#/$defs/workItemId"
+                }
+              },
+              "reason": {
+                "$ref": "#/$defs/text"
+              },
+              "unrecoverableReason": {
+                "$ref": "#/$defs/text",
+                "description": "Protocol 1.3: the truthful statement that the latest local state is not remotely recoverable, required to block after work no durable checkpoint covers."
+              }
+            },
+            "required": [
+              "workItemIds",
+              "reason"
+            ],
+            "patternProperties": {
+              "^x-": {}
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "work.complete"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "arguments": {
+            "type": "object",
+            "properties": {
+              "workItemIds": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 20,
+                "items": {
+                  "$ref": "#/$defs/workItemId"
+                }
+              },
+              "evidence": {
+                "type": "array",
+                "maxItems": 100,
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "path"
+                  ],
+                  "properties": {
+                    "type": {
+                      "$ref": "#/$defs/token"
+                    },
+                    "path": {
+                      "$ref": "#/$defs/path"
+                    }
+                  },
+                  "patternProperties": {
+                    "^x-": {}
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "conclusion": {
+                "$ref": "#/$defs/text"
+              }
+            },
+            "required": [
+              "workItemIds"
+            ],
+            "patternProperties": {
+              "^x-": {}
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "telemetry.record"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "arguments": {
+            "type": "object",
+            "properties": {
+              "workItemId": {
+                "$ref": "#/$defs/workItemId"
+              },
+              "metric": {
+                "$ref": "#/$defs/token"
+              },
+              "value": {
+                "type": "number",
+                "minimum": 0
+              },
+              "unit": {
+                "$ref": "#/$defs/token"
+              },
+              "currency": {
+                "type": "string",
+                "pattern": "^[A-Z]{3}$"
+              },
+              "quality": {
+                "$ref": "#/$defs/token"
+              },
+              "confidence": {
+                "oneOf": [
+                  {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  {
+                    "enum": [
+                      "low",
+                      "medium",
+                      "high"
+                    ]
+                  }
+                ]
+              },
+              "scope": {
+                "$ref": "#/$defs/token"
+              },
+              "sourceType": {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/token"
+                  },
+                  {
+                    "not": {
+                      "enum": [
+                        "ros-git",
+                        "ros-clock",
+                        "environment"
+                      ]
+                    }
+                  }
+                ]
+              },
+              "sourceName": {
+                "$ref": "#/$defs/token"
+              },
+              "mechanism": {
+                "$ref": "#/$defs/token"
+              },
+              "pricingSource": {
+                "$ref": "#/$defs/token"
+              },
+              "pricingVersion": {
+                "$ref": "#/$defs/token"
+              },
+              "collectedAt": {
+                "$ref": "#/$defs/token"
+              },
+              "step": {
+                "$ref": "#/$defs/token"
+              }
+            },
+            "required": [
+              "metric",
+              "value"
+            ],
+            "patternProperties": {
+              "^x-": {}
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "work.reconcile"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "arguments": {
+            "type": "object",
+            "properties": {
+              "workItemId": {
+                "$ref": "#/$defs/workItemId"
+              },
+              "reason": {
+                "$ref": "#/$defs/text"
+              },
+              "commits": {
+                "type": "array",
+                "maxItems": 100,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{7,64}$"
+                }
+              },
+              "ranges": {
+                "type": "array",
+                "maxItems": 100,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{7,64}\\.\\.[0-9a-f]{7,64}$"
+                }
+              },
+              "paths": {
+                "type": "array",
+                "maxItems": 100,
+                "items": {
+                  "$ref": "#/$defs/path"
+                }
+              }
+            },
+            "required": [
+              "workItemId",
+              "reason"
+            ],
+            "patternProperties": {
+              "^x-": {}
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "step.start"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "arguments": {
+            "type": "object",
+            "properties": {
+              "stepId": {
+                "$ref": "#/$defs/token"
+              },
+              "name": {
+                "$ref": "#/$defs/text"
+              }
+            },
+            "required": [
+              "stepId"
+            ],
+            "patternProperties": {
+              "^x-": {}
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "step.complete"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "arguments": {
+            "type": "object",
+            "properties": {
+              "stepId": {
+                "$ref": "#/$defs/token"
+              },
+              "reason": {
+                "$ref": "#/$defs/text"
+              }
+            },
+            "required": [
+              "stepId"
+            ],
+            "patternProperties": {
+              "^x-": {}
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "step.fail"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "arguments": {
+            "type": "object",
+            "properties": {
+              "stepId": {
+                "$ref": "#/$defs/token"
+              },
+              "reason": {
+                "$ref": "#/$defs/text"
+              }
+            },
+            "required": [
+              "stepId"
+            ],
+            "patternProperties": {
+              "^x-": {}
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "work.checkpoint"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "arguments": {
+            "type": "object",
+            "properties": {
+              "workItemId": {
+                "$ref": "#/$defs/workItemId"
+              },
+              "summary": {
+                "$ref": "#/$defs/text"
+              },
+              "nextAction": {
+                "$ref": "#/$defs/text"
+              },
+              "stepId": {
+                "$ref": "#/$defs/token"
+              }
+            },
+            "required": [
+              "workItemId",
+              "summary",
+              "nextAction"
+            ],
+            "patternProperties": {
+              "^x-": {}
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "work.continue"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "arguments": {
+            "type": "object",
+            "properties": {
+              "workItemId": {
+                "$ref": "#/$defs/workItemId"
+              }
+            },
+            "required": [
+              "workItemId"
+            ],
+            "patternProperties": {
+              "^x-": {}
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "batch"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "arguments": {
+            "type": "object",
+            "properties": {
+              "requests": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 20,
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "requestId",
+                    "operation"
+                  ],
+                  "properties": {
+                    "requestId": {
+                      "$ref": "#/$defs/requestId"
+                    },
+                    "operation": {
+                      "enum": [
+                        "praxis.describe",
+                        "status",
+                        "validate",
+                        "provenance.identity",
+                        "work.context",
+                        "request.status",
+                        "work.start",
+                        "work.resume",
+                        "work.block",
+                        "work.complete",
+                        "telemetry.record",
+                        "work.reconcile",
+                        "step.start",
+                        "step.complete",
+                        "step.fail",
+                        "work.checkpoint",
+                        "work.continue"
+                      ]
+                    },
+                    "execution": {
+                      "type": "object",
+                      "required": [
+                        "id"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^EXE-[A-Za-z0-9._-]{1,120}$"
+                        }
+                      },
+                      "patternProperties": {
+                        "^x-": {}
+                      },
+                      "additionalProperties": false
+                    },
+                    "arguments": {
+                      "type": "object"
+                    }
+                  },
+                  "patternProperties": {
+                    "^x-": {}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "requests"
+            ],
+            "patternProperties": {
+              "^x-": {}
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "enum": [
+              "work.start",
+              "work.resume",
+              "work.block",
+              "telemetry.record",
+              "work.complete",
+              "work.reconcile",
+              "step.start",
+              "step.complete",
+              "step.fail",
+              "work.checkpoint",
+              "work.continue"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "repository"
+        ],
+        "properties": {
+          "repository": {
+            "required": [
+              "ref",
+              "expectedSha"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "enum": [
+              "step.start",
+              "step.complete",
+              "step.fail",
+              "work.checkpoint"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "execution"
+        ]
+      }
+    }
+  ],
+  "$defs": {
+    "requestId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$"
+    },
+    "workItemId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "token": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127}$"
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000,
+      "pattern": "^[^-]"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[^-/\\\\][^\\\\:]*$"
+    },
+    "actorValue": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127}$"
+    }
+  }
+}

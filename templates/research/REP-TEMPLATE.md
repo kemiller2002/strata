@@ -1,4 +1,5 @@
 ---
+# Provenance: create this record inside a work execution, then run `./praxis provenance record --path <this file> --operation created` (see docs/agent-provenance.md). Never hand-edit another contributor's provenance entry.
 id: RP-AREA-YYYY-0001
 title: Replace with research package title
 research_area: replace-me

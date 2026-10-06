@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://echelonfoundry.com/schemas/ros-handoff-authority.schema.json",
-  "title": "ROS Structured Handoff Authority",
+  "title": "Praxis Structured Handoff Authority",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -109,6 +109,16 @@
       "type": "array",
       "items": {
         "type": "string"
+      }
+    },
+    "producedBy": {
+      "type": "object",
+      "description": "The actor that packaged this handoff and its execution when known (optional; DF-ROS-2026-A036).",
+      "additionalProperties": false,
+      "required": ["actor", "execution"],
+      "properties": {
+        "actor": {"$ref": "provenance-actor.schema.json"},
+        "execution": {"type": ["string", "null"]}
       }
     }
   }

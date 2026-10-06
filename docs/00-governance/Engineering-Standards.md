@@ -2,11 +2,11 @@
 id: GV-ENG-001
 title: Engineering Standards
 status: canonical
-version: 1.1.0
+version: 1.2.0
 owners:
   - repository-governance
 created: 2026-07-22
-updated: 2026-09-05
+updated: 2026-09-29
 review_cycle: quarterly
 supersedes: []
 superseded_by: []
@@ -32,7 +32,7 @@ No stack-specific standard is canonical in Phase 1 because the repository contai
 - Avoid speculative abstractions. Prefer code whose behavior can be reasoned about locally.
 - Comments explain intent, constraints, or why—not syntax already visible.
 - Validate inputs and failure paths at trust boundaries; choose safe defaults.
-- Instrument development through the ROS execution contract. Prefer Git, compiler, test, build, static-analysis, and runtime outputs over agent estimates; preserve provenance and declare attribution gaps caused by dirty baselines or unavailable runtime APIs.
+- Instrument development through the Praxis execution contract. Prefer Git, compiler, test, build, static-analysis, and runtime outputs over agent estimates; preserve provenance and declare attribution gaps caused by dirty baselines or unavailable runtime APIs.
 
 ## Architecture Decisions
 
@@ -66,4 +66,4 @@ Document public behavior, architectural intent, non-obvious constraints, migrati
 
 ## Definition of Done
 
-A change is done when its acceptance criteria are met; relevant checks pass; failures and skipped checks are explained; affected documentation and traceability are updated; no known high-severity regression remains; unrelated user work is preserved; and a capable successor can understand the resulting state and remaining risk.
+A change is done when its acceptance criteria are met; relevant checks pass; failures and skipped checks are explained; affected documentation and traceability are updated; no known high-severity regression remains; unrelated user work is preserved; the final implementation state is durably recoverable (committed, pushed, and recorded as a verified durable checkpoint) rather than existing only in one executor's environment; and a capable successor can understand the resulting state and remaining risk.

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://repository-operating-system.local/schemas/work-adapter-request.schema.json",
-  "title": "ROS external work-system adapter request",
+  "title": "Praxis external work-system adapter request",
   "type": "object",
   "required": ["protocolVersion", "requestId", "operation", "repository", "principal"],
   "properties": {

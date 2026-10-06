@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://echelonfoundry.com/schemas/ros-effect-observation.schema.json",
-  "title": "ROS External Effect Observation",
+  "title": "Praxis External Effect Observation",
   "type": "object",
   "additionalProperties": false,
   "required": [

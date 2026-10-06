@@ -2,11 +2,11 @@
 id: GV-ROS-001
 title: AI Repository Operating System
 status: canonical
-version: 1.1.0
+version: 1.1.1
 owners:
   - repository-governance
 created: 2026-07-22
-updated: 2026-09-05
+updated: 2026-09-28
 review_cycle: quarterly
 supersedes: []
 superseded_by: []
@@ -21,7 +21,7 @@ tags: [governance, constitution, lifecycle]
 
 ## Mission and Scope
 
-The ROS is the repository constitution. It keeps justified knowledge, decisions, implementation, validation, and handoffs coherent and inspectable across human and AI contributors. It governs research, engineering, documentation, design, agent behavior, knowledge capture, handoffs, and quality control.
+The repository operating system implemented by Praxis is the repository constitution. It keeps justified knowledge, decisions, implementation, validation, and handoffs coherent and inspectable across human and AI contributors. It governs research, engineering, documentation, design, agent behavior, knowledge capture, handoffs, and quality control.
 
 Phase 1 does not define domain theories, product strategy, stack-specific conventions, registry storage formats, deployment operations, or website design. Those require evidence and later canonical records.
 

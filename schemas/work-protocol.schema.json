@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://repository-operating-system.local/schemas/work-protocol.schema.json",
-  "title": "ROS work protocol configuration",
+  "title": "Praxis work protocol configuration",
   "type": "object",
   "required": ["repository", "workProtocol"],
   "properties": {
@@ -19,8 +19,53 @@
         "semanticMapping": {"type": "object", "additionalProperties": {"enum": ["backlog", "ready", "active", "review", "blocked", "complete"]}},
         "completionEvidence": {"type": "object", "additionalProperties": {"type": "array", "items": {"type": "string"}}},
         "meaningfulPaths": {"type": "array", "items": {"type": "string"}},
-        "ignoredPaths": {"type": "array", "items": {"type": "string"}}
+        "ignoredPaths": {"type": "array", "items": {"type": "string"}},
+        "continuity": {
+          "description": "Durable checkpoints and executor continuity (RQ-ROS-2026-A022, DF-ROS-2026-A042). Absent: continuity warnings are reported, but completion and blocking are not guarded (legacy-compatible). requireDurableCheckpoint: meaningful Git-backed work completes only when its final state is a durable checkpoint re-verified at its remote, and blocking after un-checkpointed work needs a checkpoint or a recorded --unrecoverable-reason.",
+          "type": "object",
+          "properties": {"requireDurableCheckpoint": {"type": "boolean"}},
+          "additionalProperties": true
+        },
+        "qualityEvidence": {
+          "description": "Completion readiness from consumed quality evidence (PRX-QUAL-023). Absent: legacy behaviour, nothing is evaluated or recorded (a migration bridge, retired when Conditor installs Dokimos by default). dokimos/ordoBoundary: required (absent, malformed, unsupported or unavailable evidence blocks), optional (failing evidence blocks; absent or unavailable evidence is recorded only), off (default). Evidence is supplied as work complete --evidence dokimos-ratchet=PATH (dokimos.ratchet 1.0.0) and ordo-boundary=PATH (ordo.boundary-amplification/1). A present but invalid policy fails closed.",
+          "type": "object",
+          "properties": {
+            "version": {"const": "1.0.0"},
+            "description": {"type": "string"},
+            "dokimos": {"enum": ["required", "optional", "off"]},
+            "dokimosBaseline": {"type": "string", "minLength": 1, "description": "Pins the Dokimos profile: the accepted baseline path the report must have been measured against."},
+            "ordoBoundary": {"enum": ["required", "optional", "off"]},
+            "requiredFacets": {"type": "array", "items": {"enum": ["implementation-complete", "behavior-verified", "architecture-verified", "release-ready"]}, "uniqueItems": true},
+            "workTypes": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+          },
+          "additionalProperties": false
+        },
+        "upstreamSync": {
+          "description": "Elapsed-time upstream synchronization policy (DF-GOV-014). The clock is measured from the last successful fetch; failed checks do not reset it. Checks fetch only and never merge, rebase, pull, stash, reset, or alter working files.",
+          "type": "object",
+          "required": ["enabled", "remote", "branch", "maxAgeMinutes"],
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "remote": {"type": "string", "minLength": 1},
+            "branch": {"type": "string", "minLength": 1},
+            "maxAgeMinutes": {"type": "number", "exclusiveMinimum": 0}
+          },
+          "additionalProperties": false
+        }
       },
+      "additionalProperties": true
+    },
+    "provenance": {
+      "description": "Agent identity and provenance policy (RQ-ROS-2026-A007). Absent: nothing is required (legacy-compatible). Enforced: canonical artifacts created on or after requiredFrom must record provenance.",
+      "type": "object",
+      "properties": {
+        "version": {"const": "1.0.0"},
+        "enforce": {"type": "boolean"},
+        "requiredFrom": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+        "requireOriginator": {"type": "array", "items": {"type": "string", "pattern": "^[A-Z]+$"}}
+      },
+      "if": {"properties": {"enforce": {"const": true}}, "required": ["enforce"]},
+      "then": {"required": ["requiredFrom"]},
       "additionalProperties": true
     },
     "telemetry": {

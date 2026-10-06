@@ -1,0 +1,25 @@
+name: Praxis validation
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # ./praxis installs and runs the Praxis version this project pins; it
+      # needs only a POSIX shell and curl (no Node.js, npm or .NET).
+      - run: ./praxis registry check
+      - run: ./praxis validate
+        env:
+          PRAXIS_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+          # Compatibility: Praxis releases pinned from before the rename read
+          # only the legacy name (DF-ROS-2026-A050).
+          ROS_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
