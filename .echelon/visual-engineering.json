@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "tool": "visual-engineering",
-  "installedVersion": "1.0.0",
+  "installedVersion": "1.0.1",
   "configurationVersion": 3,
-  "contextVersion": "1.0.0",
+  "contextVersion": "1.0.1",
   "contextDirectory": ".visual-engineering",
   "managedArtifacts": [
     {
@@ -14,42 +14,47 @@
     {
       "path": ".gitignore",
       "ownership": "shared",
-      "sha256": "3697d8376e47d99169c9d1bcd13a2786bc8f12c75dfb061fa4255515794286c1"
+      "sha256": "4d469f23e5b2edaa9f36a7d89e1651b8aa8b6ee1d3c767776b61beeb3a8da352"
     },
     {
       "path": ".visual-engineering/AGENT-INSTRUCTIONS.md",
       "ownership": "tool-owned",
-      "sha256": "6122eeb1a6fcc17b86043c0bd34c2a1474796c1953956428e4d3118b46aa9e28"
+      "sha256": "3736636964f88644de0a5c9c255dfd88d4275f254ee179166203579e823d4d2e"
+    },
+    {
+      "path": ".visual-engineering/APPLICATION-POLISH.md",
+      "ownership": "tool-owned",
+      "sha256": "94da532ba5f54617e269525a2b7188b9bf2ba531f96fa9e8c88023a08a38cf51"
     },
     {
       "path": ".visual-engineering/RESEARCH-INDEX.md",
       "ownership": "generated",
-      "sha256": "b09cd82ad563c28188ebf731fda2b362de8c1144b6c31e1a509fab25ded52db6"
+      "sha256": "1e1f7f9ebdf7ae99de1b81b18837a6d5ce2497617dc2a7a21e61d5be9badfb22"
     },
     {
       "path": ".visual-engineering/UI-ANTI-PATTERNS.md",
       "ownership": "tool-owned",
-      "sha256": "4698844792e274a40d9086c998b8b9b77a01ac9006fd0590a2688d6de9fdda49"
+      "sha256": "6066b2faca907eb0afde78b9840020186901d782880fbad23bb41599e88bafc1"
     },
     {
       "path": ".visual-engineering/UI-DECISION-CHECKLIST.md",
       "ownership": "tool-owned",
-      "sha256": "a4c66988885e89363af756a84dae6aa2731efea0024be6bfdaa2247085ad1e99"
+      "sha256": "47bcb1191362e43ebbd8064bde87015186dbe47c1a72bfbadfd2e0a3a611b629"
     },
     {
       "path": ".visual-engineering/UI-FOUNDATIONS.md",
       "ownership": "tool-owned",
-      "sha256": "0f5d4e0259038b6b8d76e3acdb937ec7b1cc099d374f45ca1ba2fdb1350252c0"
+      "sha256": "7dee7189eedd9448f9fc7816bdc22fa41e32bd1ac465c880df0754faa30a8b73"
     },
     {
       "path": ".visual-engineering/context.json",
       "ownership": "generated",
-      "sha256": "6f2f6a7ab339d4276f05cc9f4331e8bb24148ca4f0510d1c0c87bf4e95ec9251"
+      "sha256": "faafc0db3317d0584ef3f19419d8bced5781ad6e06c645078f91f6a1f4dc7f08"
     },
     {
       "path": ".visual-engineering/sources.json",
       "ownership": "generated",
-      "sha256": "cfb3c9544ab0c9ce5f8dc225002b94eccd6de0fd8875069d4daa7def1be54be5"
+      "sha256": "07b5fef9d83664e5c8aa6d00e7d20db146798e8db3b2175f97eb4c863526897c"
     },
     {
       "path": "AGENTS.md",
