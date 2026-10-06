@@ -112,4 +112,4 @@
 | WI-0101 | A materialized view's definition is never compared | ready |  | medium |
 | WI-0102 | No usage documentation for Strata or for agents driving it | complete |  | medium |
 | WI-0103 | The rules the documentation was written under are not written down | complete |  | medium |
-| WI-0104 | Repin foundations verifier to praxis a95dbf2; Limen 0.7.1; restoration baselines Forma 0.4.1 and Limen 0.7.1 | ready |  | medium |
+| WI-0104 | Repin foundations verifier to praxis a95dbf2; Limen 0.7.1; restoration baselines Forma 0.4.1 and Limen 0.7.1 | complete |  | medium |
