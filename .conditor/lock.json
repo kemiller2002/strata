@@ -1,0 +1,179 @@
+{
+  "schemaVersion": 4,
+  "project": "strata",
+  "manifestSha256": "c80262682a60effbbda70b066b01efa5b6fed3a38a4e69d6c0ab4525bac9c4b3",
+  "manifest": {
+    "schemaVersion": 1,
+    "name": "strata",
+    "registryAuthority": {
+      "kind": "resolved-release-set",
+      "path": ".conditor/authority/resolved-release-set.json",
+      "sha256": "3aa4ebbd77d9da04db5a91462584a189ffb882f35e2515bb6c90160b231d62a1"
+    },
+    "components": [
+      {
+        "id": "communication-engineering",
+        "version": "1.0.0",
+        "required": true
+      },
+      {
+        "id": "ordo",
+        "version": "1.4.2",
+        "required": true
+      },
+      {
+        "id": "praxis",
+        "version": "3.7.1",
+        "required": true
+      }
+    ],
+    "requirements": [],
+    "execution": {
+      "enabled": false
+    }
+  },
+  "components": [
+    {
+      "id": "communication-engineering",
+      "version": "1.0.0",
+      "distribution": "lifecycle-npm",
+      "package": "@echelon-foundry/communication-engineering",
+      "descriptorSha256": "ade9aafd989afcef4696d905f1c2b8405842a27f81880cb6d46796d3bf9155f6",
+      "authority": "embedded-component-descriptor",
+      "sourceReference": "github:kemiller2002/communication-engineering#707396de512065fe35aff6fcf82cd28118df14b3|node:bin/communication-engineering.mjs"
+    },
+    {
+      "id": "ordo",
+      "version": "1.4.2",
+      "distribution": "host-tool",
+      "package": "ordo",
+      "descriptorSha256": "ee057aa4a0c4cd5180269fd262e5570ff6146035e52fd6d17a0baede0df21f5c",
+      "authority": "embedded-component-descriptor",
+      "sourceReference": "host:ordo@1.4.2"
+    },
+    {
+      "id": "praxis",
+      "version": "3.7.1",
+      "distribution": "host-tool",
+      "package": "praxis",
+      "descriptorSha256": "f2f82891e7900af2877d5e4483a66ccf5a08db28023e3114fd49502a87758862",
+      "authority": "embedded-component-descriptor",
+      "sourceReference": "host:praxis@3.7.1"
+    }
+  ],
+  "requirements": [],
+  "reviewSignals": [
+    {
+      "component": "ordo",
+      "code": "SDE-STRUCT-001",
+      "band": "justification-required",
+      "path": "tests/Strata.Tests/SchemaDiffTests.fs",
+      "lineCount": 2957
+    },
+    {
+      "component": "ordo",
+      "code": "SDE-STRUCT-001",
+      "band": "justification-required",
+      "path": "src/Strata.Host.PgParser/PgParserAdapter.fs",
+      "lineCount": 2005
+    },
+    {
+      "component": "ordo",
+      "code": "SDE-STRUCT-001",
+      "band": "strong-review",
+      "path": "tests/Strata.Tests/DesiredStateTests.fs",
+      "lineCount": 1031
+    },
+    {
+      "component": "ordo",
+      "code": "SDE-STRUCT-001",
+      "band": "review",
+      "path": "src/Strata.Application/DeploymentGate.fs",
+      "lineCount": 970
+    },
+    {
+      "component": "ordo",
+      "code": "SDE-STRUCT-001",
+      "band": "review",
+      "path": "src/Strata.Host.Postgres/ShadowNormalisation.fs",
+      "lineCount": 958
+    },
+    {
+      "component": "ordo",
+      "code": "SDE-STRUCT-001",
+      "band": "review",
+      "path": "src/Strata.Cli/Program.fs",
+      "lineCount": 939
+    },
+    {
+      "component": "ordo",
+      "code": "SDE-STRUCT-001",
+      "band": "review",
+      "path": "src/Strata.Host.Files/Artifact.fs",
+      "lineCount": 880
+    },
+    {
+      "component": "ordo",
+      "code": "SDE-STRUCT-001",
+      "band": "review",
+      "path": "tests/Strata.Tests/SchemaDiffGoldenTests.fs",
+      "lineCount": 818
+    },
+    {
+      "component": "ordo",
+      "code": "SDE-STRUCT-001",
+      "band": "review",
+      "path": "tests/Strata.Tests/ArtifactTests.fs",
+      "lineCount": 804
+    },
+    {
+      "component": "ordo",
+      "code": "SDE-STRUCT-001",
+      "band": "review",
+      "path": "src/Strata.Host.Postgres/CatalogIntrospection.fs",
+      "lineCount": 766
+    },
+    {
+      "component": "ordo",
+      "code": "SDE-STRUCT-001",
+      "band": "review",
+      "path": "src/Strata.Host.Postgres/CatalogQueries.fs",
+      "lineCount": 621
+    },
+    {
+      "component": "ordo",
+      "code": "SDE-STRUCT-001",
+      "band": "review",
+      "path": "src/Strata.Semantic/Schema.fs",
+      "lineCount": 607
+    },
+    {
+      "component": "ordo",
+      "code": "SDE-STRUCT-001",
+      "band": "review",
+      "path": "src/Strata.Analysis/ProposedChange.fs",
+      "lineCount": 590
+    },
+    {
+      "component": "ordo",
+      "code": "SDE-STRUCT-001",
+      "band": "review",
+      "path": "src/Strata.Application/DesiredState.fs",
+      "lineCount": 511
+    },
+    {
+      "component": "ordo",
+      "code": "SDE-STRUCT-001",
+      "band": "review",
+      "path": "src/Strata.Application/SchemaDiff/PostgresDdl.fs",
+      "lineCount": 509
+    },
+    {
+      "component": "ordo",
+      "code": "SDE-STRUCT-001",
+      "band": "review",
+      "path": "src/Strata.Application/Validation.fs",
+      "lineCount": 507
+    }
+  ]
+}

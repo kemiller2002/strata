@@ -1,18 +1,29 @@
 {
-  "$schema": "https://raw.githubusercontent.com/kemiller2002/conditor/main/schemas/conditor.schema.json",
   "schemaVersion": 1,
   "name": "strata",
+  "registryAuthority": {
+    "kind": "resolved-release-set",
+    "path": ".conditor/authority/resolved-release-set.json",
+    "sha256": "3aa4ebbd77d9da04db5a91462584a189ffb882f35e2515bb6c90160b231d62a1"
+  },
   "components": [
-    { "id": "praxis", "version": "3.4.0" },
-    { "id": "ordo", "version": "1.4.0" },
-    { "id": "visual-engineering", "version": "1.0.0" },
-    { "id": "communication-engineering", "version": "1.0.0" },
-    { "id": "limen", "version": "0.6.1" },
-    { "id": "forma", "version": "0.2.0" },
-    { "id": "folio", "version": "0.3.0" },
-    { "id": "aegis", "version": "1.0.0" },
-    { "id": "tutela", "version": "0.1.0" }
+    {
+      "id": "communication-engineering",
+      "version": "1.0.0",
+      "required": true
+    },
+    {
+      "id": "ordo",
+      "version": "1.4.2",
+      "required": true
+    },
+    {
+      "id": "praxis",
+      "version": "3.7.1",
+      "required": true
+    }
   ],
+  "requirements": [],
   "execution": {
     "enabled": false
   }
