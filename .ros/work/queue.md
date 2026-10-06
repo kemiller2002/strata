@@ -116,4 +116,4 @@
 | WI-0105 | Move strata to Praxis 3.7.1 (ROS -> Praxis rename) and Ordo 1.4.0 | complete | praxis, ordo, toolchain | medium |
 | WI-0106 | Move strata to Ordo 1.4.1 | complete | ordo, toolchain | medium |
 | WI-0107 | WI-0107 | complete |  |  |
-| WI-0108 | Move strata to Praxis 3.7.2 and Visual Engineering 1.0.1 via conditor upgrade --current | ready | praxis, toolchain, conditor | medium |
+| WI-0108 | Move strata to Praxis 3.7.2 and Visual Engineering 1.0.1 via conditor upgrade --current | complete | praxis, toolchain, conditor | medium |
