@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "tool": "sde",
   "package": "@echelon-foundry/sde",
-  "installedVersion": "1.4.0",
+  "installedVersion": "1.4.1",
   "configurationVersion": 2,
   "installRoot": ".sde",
   "managedArtifacts": [
