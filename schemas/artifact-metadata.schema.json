@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://example.invalid/ros/artifact-metadata.schema.json",
-  "title": "ROS Artifact Metadata",
+  "title": "Praxis Artifact Metadata",
   "type": "object",
   "required": [
     "id",

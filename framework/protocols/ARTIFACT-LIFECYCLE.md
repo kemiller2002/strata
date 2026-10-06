@@ -52,7 +52,7 @@ neither implies the other.
 
 ## Enforcement boundary
 
-`ros validate` checks allowed states and relationship integrity. Accepted
+`praxis validate` checks allowed states and relationship integrity. Accepted
 content mutation requires a comparison baseline, which the initial validator
 does not yet implement; until then, review is procedural and this limitation
 must remain visible in the migration report and REP.

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://echelonfoundry.com/schemas/ros-resolution-assessment.schema.json",
-  "title": "ROS Resolution Assessment",
+  "title": "Praxis Resolution Assessment",
   "type": "object",
   "additionalProperties": false,
   "required": [

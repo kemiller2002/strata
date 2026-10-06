@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://echelonfoundry.com/schemas/ros-effective-current.schema.json",
-  "title": "ROS Effective Current Projection",
+  "title": "Praxis Effective Current Projection",
   "type": "object",
   "additionalProperties": false,
   "required": [

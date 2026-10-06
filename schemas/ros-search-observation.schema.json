@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://echelonfoundry.com/schemas/ros-search-observation.schema.json",
-  "title": "ROS Scoped Search Observation",
+  "title": "Praxis Scoped Search Observation",
   "type": "object",
   "additionalProperties": false,
   "required": [

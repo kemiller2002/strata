@@ -8,7 +8,7 @@
 - **Domain:** a stable subject or practice area shared across projects.
 - **Research area:** the narrower topic under investigation.
 - **Mission:** an authorized, bounded unit of work.
-- **Profile:** domain- or mode-specific rules extending the ROS kernel.
+- **Profile:** domain- or mode-specific rules extending the Praxis kernel.
 
 Artifacts remain organized by type and carry project, domain, and research-area
 metadata. Generated views provide alternate navigation. Shared evidence is

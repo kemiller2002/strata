@@ -2,9 +2,9 @@
   "schemaVersion": "1.0.0",
   "protocolVersion": "1.0.0",
   "repository": "strata",
-  "actor": "agent:chatgpt",
+  "actor": "anthropic/claude-code",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-10-06T10:16:22.000Z",
+  "updatedAt": "2026-10-06T12:19:38.000Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -2565,6 +2565,17 @@
         "EXE-20261006T101109800Z-6af851bf"
       ],
       "completedAt": "2026-10-06T10:16:22.000Z"
+    },
+    {
+      "id": "WI-0105",
+      "type": "mechanical",
+      "state": "active",
+      "semanticState": "active",
+      "evidence": [],
+      "updatedAt": "2026-10-06T12:19:38.000Z",
+      "telemetryExecutionIds": [
+        "EXE-20261006T121939046Z-68570be0"
+      ]
     }
   ]
 }

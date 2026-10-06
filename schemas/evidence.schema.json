@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://example.invalid/ros/evidence.schema.json",
-  "title": "ROS Evidence",
+  "title": "Praxis Evidence",
   "allOf": [{"$ref": "artifact-metadata.schema.json"}],
   "type": "object",
   "required": ["id", "title", "research_area", "evidence_type"],
