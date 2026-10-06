@@ -355,6 +355,10 @@ let private announceBuildConfiguration () =
     ()
 #endif
 
+/// Aegis for this process. Faults go to standard error; nothing is persisted
+/// (aegis-boundaries.json).
+let private aegis = Boundary.configure [ Sinks.standardError ]
+
 let private run argv =
     announceBuildConfiguration ()
     let args = List.ofArray argv
@@ -433,12 +437,14 @@ let private run argv =
             // directory: all ordinary, and all of them used to come out as an
             // unhandled exception and a SIGABRT. A tool that aborts instead of
             // saying what went wrong teaches people to distrust its exit codes.
-            try
-                IO.File.WriteAllText(privatePath, privatePem)
-                IO.File.WriteAllText(publicPath, publicPem)
-            with ex ->
-                eprintfn "error: could not write the key pair (%s)" ex.Message
-                exit 2
+            let written =
+                Boundary.attempt aegis "Strata.Cli.Keygen" "could not write the key pair" 2 (fun () ->
+                    IO.File.WriteAllText(privatePath, privatePem)
+                    IO.File.WriteAllText(publicPath, publicPem)
+                    0)
+
+            if written <> 0 then
+                exit written
 
             // Best effort: on Unix this is the difference between a key only its
             // owner can read and one every process on the box can.
@@ -480,7 +486,7 @@ let private run argv =
                     eprintfn "error: %s" message
                     2
                 | Ok signature ->
-                    try
+                    Boundary.attempt aegis "Strata.Cli.Sign" "could not write the signed artifact" 2 (fun () ->
                         IO.File.WriteAllText(
                             artifactPath,
                             Attestation.renderFile
@@ -490,10 +496,7 @@ let private run argv =
                                 resolved)
 
                         printfn "Signed %s." artifactPath
-                        0
-                    with ex ->
-                        eprintfn "error: could not write the signed artifact (%s)" ex.Message
-                        2
+                        0)
 
     | "sign" :: _, None ->
         eprintfn "error: sign needs --artifact <file>."
@@ -502,16 +505,13 @@ let private run argv =
     | "validate" :: sqlPath :: _, Some artifactPath ->
         let parser = PgParserAdapter.PostgresParser() :> Strata.Analysis.DialectPort.IDialectParser
 
-        try
+        Boundary.attempt aegis "Strata.Cli.ValidateOffline" "could not validate the SQL against the artifact" 2 (fun () ->
             OfflineValidation.run
                 parser
                 artifactPath
                 sqlPath
                 (valueOf "--search-path" args)
-                (List.contains "--json" args)
-        with ex ->
-            eprintfn "error: %s" ex.Message
-            2
+                (List.contains "--json" args))
 
     | "validate" :: _, Some _ ->
         eprintfn "error: validate needs a path to a .sql file."
@@ -524,6 +524,15 @@ let private run argv =
         eprintfn "error: no connection string. Pass --connection or set STRATA_PG."
         2
     | Some connectionString ->
+
+    // An unreadable connection string is the operator's input, refused here
+    // as such. Left to the adapters it is an ArgumentException, which the
+    // Aegis boundary rightly treats as a defect and re-raises.
+    match ConnectionString.validate connectionString with
+    | Error message ->
+        eprintfn "error: %s" message
+        2
+    | Ok () ->
 
 
     // `check` is not a retrieval query — it reads a file and returns an exit
@@ -633,16 +642,13 @@ let private run argv =
         | Some artifactPath ->
             let parser = PgParserAdapter.PostgresParser() :> Strata.Analysis.DialectPort.IDialectParser
 
-            try
+            Boundary.attempt aegis "Strata.Cli.Drift" "could not check the server for drift" 2 (fun () ->
                 Deploy.drift
                     parser
                     connectionString
                     artifactPath
                     (match corpusDirectory with Some dir -> [ dir ] | None -> [])
-                    (List.contains "--json" args)
-            with ex ->
-                eprintfn "error: %s" ex.Message
-                2
+                    (List.contains "--json" args))
 
     elif wantsDeploy then
         match valueOf "--artifact" args with
@@ -663,17 +669,14 @@ let private run argv =
 
             // The warning for an empty corpus is `Deployment.run`'s, not this
             // branch's — saying it twice teaches people to skim it.
-            try
+            Boundary.attempt aegis "Strata.Cli.Deploy" "could not complete the deployment" 2 (fun () ->
                 Deploy.run
                     parser
                     connectionString
                     artifactPath
                     (List.contains "--require-signature" args)
                     (valueOf "--public-key" args |> Option.map IO.File.ReadAllText)
-                    { deploymentOptions corpusRoots with Apply = true }
-            with ex ->
-                eprintfn "error: %s" ex.Message
-                2
+                    { deploymentOptions corpusRoots with Apply = true })
 
     elif wantsCompile then
         match valueOf "--out" args with
@@ -685,7 +688,7 @@ let private run argv =
             Compile.run parser connectionString projectRoot outputPath
 
     elif wantsPlan then
-        try
+        Boundary.attempt aegis "Strata.Cli.Plan" "could not plan the deployment" 2 (fun () ->
             let parser = PgParserAdapter.PostgresParser() :> Strata.Analysis.DialectPort.IDialectParser
 
             match Compile.load parser projectRoot with
@@ -743,10 +746,7 @@ let private run argv =
                     { deploymentOptions corpusRoots with Apply = wantsApply }
                     project.Schemas
                     desired
-                    resolved
-        with ex ->
-            eprintfn "error: %s" ex.Message
-            2
+                    resolved)
     else
 
     match validateFile with
@@ -754,7 +754,7 @@ let private run argv =
         eprintfn "error: file not found: %s" path
         2
     | Some path ->
-        try
+        Boundary.attempt aegis "Strata.Cli.Validate" "could not validate the SQL file against the server" 2 (fun () ->
             let snapshot = CatalogIntrospection.introspect connectionString
 
             let searchPath =
@@ -798,10 +798,7 @@ let private run argv =
                     printfn "statement, which catches type mismatches, bad function signatures and"
                     printfn "ambiguous columns that a reference check cannot see."
 
-                referenceCode
-        with ex ->
-            eprintfn "error: %s" ex.Message
-            2
+                referenceCode)
 
     | None ->
 
@@ -810,7 +807,7 @@ let private run argv =
         eprintfn "error: proposed migration not found: %s" path
         2
     | Some path ->
-        try
+        Boundary.attempt aegis "Strata.Cli.Check" "could not check the proposed migration" 2 (fun () ->
             let snapshot = CatalogIntrospection.introspect connectionString
 
             let searchPath =
@@ -861,10 +858,7 @@ let private run argv =
             else
                 printfn "%s" (DeploymentGate.toText result)
 
-            DeploymentGate.Verdict.exitCode result.Verdict
-        with ex ->
-            eprintfn "error: %s" ex.Message
-            2
+            DeploymentGate.Verdict.exitCode result.Verdict)
 
     | None ->
 
@@ -876,7 +870,8 @@ let private run argv =
         2
     | Ok query ->
 
-    try
+    // A host failure is reported as a failure, never as an empty result.
+    Boundary.attempt aegis "Strata.Cli.Query" "could not answer the query" 1 (fun () ->
         let snapshot = CatalogIntrospection.introspect connectionString
 
         let searchPath =
@@ -937,40 +932,8 @@ let private run argv =
         else
             printfn "%s" (Retrieval.toText answer)
 
-        0
-    with ex ->
-        // A host failure is reported as a failure, never as an empty result.
-        eprintfn "error: %s" ex.Message
-        1
-
-let private aegis =
-    let configured = Aegis.configure "Strata" None [ Sinks.standardError ]
-
-    match Bootstrap.validate None configured with
-    | Ok valid -> valid
-    | Result.Error problems ->
-        invalidOp $"Invalid Strata Aegis configuration: %A{problems}"
-
-let private classifyCliFailure scope (ex: exn) =
-    Aegis.faultOf
-        aegis
-        scope
-        (FaultCode "STRATA.CLI.UNEXPECTED")
-        IntegrationFailure
-        FaultSeverity.Error
-        OperationOnly
-        Transient
-        Continue
-        "Strata could not complete the requested operation."
-        ex
+        0)
 
 [<EntryPoint>]
 let main argv =
-    let scope = Aegis.scope aegis "Strata.Cli" Map.empty
-
-    match Aegis.capture aegis scope classifyCliFailure (fun () -> run argv) with
-    | Ok exitCode -> exitCode
-    | Result.Error fault ->
-        eprintfn "error: %s [%s]" fault.UserMessage (Presentation.reference fault)
-        1
-
+    Boundary.attempt aegis "Strata.Cli" "could not complete the requested operation" 1 (fun () -> run argv)

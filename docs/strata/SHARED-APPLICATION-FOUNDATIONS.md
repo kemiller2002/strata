@@ -18,12 +18,20 @@ Dependencies MUST be pinned to an explicit released version or immutable artifac
 Current baselines:
 
 - `EchelonFoundry.Aegis.Core` **1.0.0**.
-- `@echelon-foundry/design-system` (Forma) **0.2.0**, consumed from the
-  immutable v0.2.0 release artifact until npm is the selected canonical source.
-- `@echelon-foundry/print-components` (Folio) **0.3.0**. Until a canonical
-  v0.3.0 package/release artifact exists, pin immutable Folio commit
-  `2b101b6d840a670abb959148fff8e1477c059eda`; once published, pin the exact
-  canonical package version.
+- `@echelon-foundry/design-system` (Forma) **0.3.0**, consumed from the
+  immutable v0.3.0 release tarball until npm is the selected canonical source.
+- `@echelon-foundry/print-components` (Folio) **0.3.0**, consumed from the
+  immutable v0.3.0 release tarball.
+- `@echelon-foundry/limen` (Limen) **0.7.0**.
+
+Current applicability (`DF-STRATA-FND-2026-0001`): Strata is a command-line
+tool. Aegis is required and enforced at the CLI boundary
+(`src/Strata.Cli/Boundary.fs`, `aegis-boundaries.json`). Forma, Folio and
+Limen are declared not applicable in `.echelon/foundations.json` because no
+browser, document or engine/kernel surface exists; the record lists the
+triggers that make each required, and
+`tests/Strata.Tests/FoundationsConformanceTests.fs` fails when one is crossed
+without the declaration changing.
 
 Merely listing a shared dependency is not sufficient. Completion requires
 evidence that the applicable canonical capability is actually used.

@@ -9,23 +9,28 @@
       "codes": [
         "STRATA.CLI.UNEXPECTED"
       ],
-      "guarded": true
+      "guarded": true,
+      "$comment": "Composition root (src/Strata.Cli/Boundary.fs). Every command runs inside Boundary.attempt; failures no adapter translated into a typed result are classified here, recorded through Aegis with Blocking delivery, and shown as a safe message and reference. Programming defects and cancellation are re-raised (Aegis core 19, 29)."
     },
     {
       "name": "PostgreSQL catalog and deployment adapter",
       "kind": "database",
       "owner": "Strata.Host.Postgres",
-      "codes": [],
-      "guarded": false,
-      "$comment": "Typed host/application outcomes remain authoritative. Unexpected exceptions escaping adapters are captured at the CLI composition boundary; future host-specific mappings should move stable codes closer to this boundary."
+      "codes": [
+        "STRATA.POSTGRES.FAILURE"
+      ],
+      "guarded": true,
+      "$comment": "Typed host/application outcomes remain authoritative. A DbException that escapes the adapter is classified as STRATA.POSTGRES.FAILURE at the CLI composition boundary (the Cli tests on DbException, not Npgsql's type, because only Strata.Host.Postgres references Npgsql). A malformed connection string is refused as a typed outcome by ConnectionString.validate before any command runs."
     },
     {
       "name": "Filesystem corpus and artifact adapter",
       "kind": "filesystem",
       "owner": "Strata.Host.Files",
-      "codes": [],
-      "guarded": false,
-      "$comment": "Expected read/validation failures remain typed results. Unexpected exceptions escaping the host are captured at the CLI boundary."
+      "codes": [
+        "STRATA.FILES.FAILURE"
+      ],
+      "guarded": true,
+      "$comment": "Expected read/validation failures remain typed results. An IOException or UnauthorizedAccessException that escapes the host is classified as STRATA.FILES.FAILURE at the CLI composition boundary."
     }
   ],
   "persistence": {

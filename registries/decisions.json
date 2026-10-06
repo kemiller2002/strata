@@ -291,5 +291,40 @@
     ],
     "title": "PostgreSQL is the only supported engine; the port boundary is kept honest now so other engines stay possible later, but nothing is built for them",
     "updated": "2026-09-11"
+  },
+  {
+    "confidence": "high",
+    "created": "2026-10-06",
+    "created_by_agent": "claude",
+    "decision_type": "applicability",
+    "evidence": [],
+    "id": "DF-STRATA-FND-2026-0001",
+    "path": "research/decisions/DF-STRATA-FND-2026-0001--forma-folio-limen-not-applicable-to-a-command-line-tool.md",
+    "related_documents": [
+      ".echelon/foundations.json",
+      "aegis-boundaries.json",
+      "limen.config.json",
+      "docs/strata/SHARED-APPLICATION-FOUNDATIONS.md",
+      "docs/strata/REQUIREMENTS-ANALYSIS.md",
+      "input-documents/strata-pre-requirements-design-notebook.txt",
+      "src/Strata.Cli/Boundary.fs",
+      "tests/Strata.Tests/BoundaryTests.fs",
+      "tests/Strata.Tests/FoundationsConformanceTests.fs",
+      ".github/workflows/echelon-foundations.yml"
+    ],
+    "status": "accepted",
+    "superseded_by": [],
+    "supersedes": [],
+    "tags": [
+      "governance",
+      "foundations",
+      "aegis",
+      "forma",
+      "folio",
+      "limen",
+      "applicability"
+    ],
+    "title": "Forma, Folio and Limen are not applicable to Strata, a command-line tool with no browser or document surface; Aegis applies and is enforced at the CLI boundary",
+    "updated": "2026-10-06"
   }
 ]
