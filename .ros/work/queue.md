@@ -3,7 +3,12 @@
 | ID | Work | Status | Tags | Priority |
 |---|---|---|---|---|
 | ECHELON-UPGRADE-2026-09-21 | Reconcile current Echelon engineering capabilities | complete | tooling,ordo,ros,limen | high |
+| FOUNDATIONS-PARITY | FOUNDATIONS-PARITY | complete |  |  |
+| LIMEN-0-7-0 | LIMEN-0-7-0 | complete |  |  |
+| LIMEN-0-7-0-FND | LIMEN-0-7-0-FND | complete |  |  |
 | ROS-INSTALL-2-0-1-main-78-1 | ROS-INSTALL-2-0-1-main-78-1 | complete |  |  |
+| STRATA-QUAL-001 | STRATA-QUAL-001 | complete |  |  |
+| STRATA-QUAL-002 | STRATA-QUAL-002 | complete |  |  |
 | WI-0001 | Install State-Directed Engineering (SDE) v1.1.1 methodology inputs | complete | tooling, methodology | medium |
 | WI-0002 | Convert Strata design notebook into ROS requirements, decisions, experiments and work items | complete | strata, planning, requirements | high |
 | WI-0003 | S1: Strata four-tier F# solution skeleton with mechanical architecture check | complete | strata, slice-s1 | high |
@@ -107,3 +112,4 @@
 | WI-0101 | A materialized view's definition is never compared | ready |  | medium |
 | WI-0102 | No usage documentation for Strata or for agents driving it | complete |  | medium |
 | WI-0103 | The rules the documentation was written under are not written down | complete |  | medium |
+| WI-0104 | Repin foundations verifier to praxis a95dbf2; Limen 0.7.1; restoration baselines Forma 0.4.1 and Limen 0.7.1 | complete |  | medium |

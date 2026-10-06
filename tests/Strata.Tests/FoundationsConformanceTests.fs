@@ -40,7 +40,7 @@ let ``foundations.json requires Aegis, Ordo and Praxis and keeps current baselin
     for name in [ "aegis"; "ordo"; "praxis" ] do
         Assert.True(required name, $"{name} must be required")
 
-    for name, version in [ "aegis", "1.0.0"; "forma", "0.3.0"; "folio", "0.3.0"; "limen", "0.7.0" ] do
+    for name, version in [ "aegis", "1.0.0"; "forma", "0.4.1"; "folio", "0.3.0"; "limen", "0.7.1" ] do
         Assert.Equal(version, str capabilities.[name].["version"])
 
     Assert.Equal("aegis-boundaries.json", str capabilities.["aegis"].["boundaryManifest"])
@@ -194,5 +194,5 @@ let ``while Limen is not applicable its own configuration says so, with a reason
         Assert.Null(boundary.["kernel"])
 
         // Limen stays installed so `limen verify --strict` re-checks the claim.
-        Assert.Equal("0.7.0", str (json ".echelon/limen.json").["installedVersion"])
+        Assert.Equal("0.7.1", str (json ".echelon/limen.json").["installedVersion"])
         Assert.True(File.Exists(Path.Combine(repoRoot, ".github", "workflows", "limen-verify.yml")))
