@@ -1843,10 +1843,10 @@
         "correctness"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-10-07T21:21:13.000Z",
-      "updatedAt": "2026-10-07T21:21:13.000Z",
+      "updatedAt": "2026-10-07T21:25:30.000Z",
       "createdBy": "unknown",
       "createdByActor": {
         "kind": "agent",

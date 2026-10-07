@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "anthropic/claude-code",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-10-07T21:21:14.000Z",
+  "updatedAt": "2026-10-07T21:25:30.000Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -2757,10 +2757,27 @@
     {
       "id": "WI-0109",
       "type": "task",
-      "state": "active",
-      "semanticState": "active",
-      "evidence": [],
-      "updatedAt": "2026-10-07T21:21:14.000Z",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Application/SchemaDiff/ObjectDependencies.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Host.PgParser/PgParserAdapter.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/CliTests.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/SchemaDiffTests.fs"
+        }
+      ],
+      "updatedAt": "2026-10-07T21:25:30.000Z",
       "telemetryExecutionIds": [
         "EXE-20261007T212114625Z-fb0a2a1a"
       ],
@@ -2783,7 +2800,9 @@
           "status": "verified",
           "mechanism": "git-remote-observation"
         }
-      }
+      },
+      "completedAt": "2026-10-07T21:25:30.000Z",
+      "conclusion": "Four deploy defects fixed; 766 tests pass on PostgreSQL 16 locally and build-and-test is green on PR #25."
     }
   ]
 }
