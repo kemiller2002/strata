@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "anthropic/claude-code",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-10-06T16:34:27.000Z",
+  "updatedAt": "2026-10-07T21:21:14.000Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -2753,6 +2753,37 @@
         }
       },
       "completedAt": "2026-10-06T16:34:27.000Z"
+    },
+    {
+      "id": "WI-0109",
+      "type": "task",
+      "state": "active",
+      "semanticState": "active",
+      "evidence": [],
+      "updatedAt": "2026-10-07T21:21:14.000Z",
+      "telemetryExecutionIds": [
+        "EXE-20261007T212114625Z-fb0a2a1a"
+      ],
+      "latestCheckpoint": {
+        "id": "44eea43d9753fc6b70c83c04",
+        "recordedAt": "2026-10-07T21:22:13.000Z",
+        "executionId": "EXE-20261007T212114625Z-fb0a2a1a",
+        "repository": "strata",
+        "branch": "fix/deploy-real-application-schemas",
+        "commit": "9300e186b30fe77ab4182db4d83497fad8c954b2",
+        "remote": {
+          "name": "origin",
+          "url": "https://github.com/kemiller2002/strata"
+        },
+        "remoteBranch": "fix/deploy-real-application-schemas",
+        "remoteCommit": "9300e186b30fe77ab4182db4d83497fad8c954b2",
+        "summary": "Four deploy defects fixed with unit and live tests (766 pass on PG16); branch pushed",
+        "nextAction": "Open PR, get CI green, complete WI-0109, merge",
+        "verification": {
+          "status": "verified",
+          "mechanism": "git-remote-observation"
+        }
+      }
     }
   ]
 }
