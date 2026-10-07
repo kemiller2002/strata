@@ -78,6 +78,16 @@ module DesiredState =
           /// trigger that fires more often than the file asked for.
           TriggerDeclarations: ((QualifiedName * Identifier) * string) list
 
+          /// The verbatim text that declared each index, keyed by its table
+          /// and its own name.
+          ///
+          /// Verbatim for the trigger's reason: an index's predicate, sort
+          /// order, expressions, access method and INCLUDE list are not in the
+          /// model, so a reconstruction from it builds a different index. One
+          /// did — a `UNIQUE ... WHERE` index was created as a plain UNIQUE
+          /// one, refusing every second row the predicate was there to allow.
+          IndexDeclarations: ((QualifiedName * Identifier) * string) list
+
           /// Reference rows, one entry per declaring file.
           Data: DeclaredData list
 
@@ -127,6 +137,7 @@ module DesiredState =
         let indexes = ResizeArray<QualifiedName * Index>()
         let triggers = ResizeArray<QualifiedName * Trigger>()
         let triggerDeclarations = ResizeArray<(QualifiedName * Identifier) * string>()
+        let indexDeclarations = ResizeArray<(QualifiedName * Identifier) * string>()
         let data = ResizeArray<DeclaredData>()
         let grants = ResizeArray<Grant>()
         let policies = ResizeArray<QualifiedName * Policy>()
@@ -274,6 +285,18 @@ module DesiredState =
                 with
                 | [ (table, trigger) ] when List.isEmpty declaredHere ->
                     triggerDeclarations.Add((table, trigger.Name), contents)
+                | _ -> ()
+
+                // An index file, by the same rule: one CREATE INDEX and
+                // nothing else, or the text is attributed to none of them.
+                match
+                    declarations
+                    |> List.choose (function
+                        | DeclaredIndex (table, index) -> Some(table, index)
+                        | _ -> None)
+                with
+                | [ (table, index) ] when List.isEmpty declaredHere ->
+                    indexDeclarations.Add((table, index.Name), contents)
                 | _ -> ()
 
                 // And again for a policy, for the third time and the same
@@ -478,6 +501,7 @@ module DesiredState =
           Failures = allFailures
           Declarations = List.ofSeq declarations'
           TriggerDeclarations = List.ofSeq triggerDeclarations
+          IndexDeclarations = List.ofSeq indexDeclarations
           Policies = List.ofSeq policies
           PolicyDeclarations = List.ofSeq policyDeclarations
           RowSecurity = List.ofSeq rowSecurity

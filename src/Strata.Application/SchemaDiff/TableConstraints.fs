@@ -408,7 +408,7 @@ module TableConstraints =
                           "%d column default(s) exist on both sides; their expressions were NOT compared, so they may differ"
                           (List.length sharedDefaults) }
               ]
-            @ Option.toList indexDisclosure
+            @ indexDisclosure
             @ Option.toList triggerDisclosure
             @ [ if checksUnattributable then
                   { Object = desired.Name

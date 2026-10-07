@@ -121,3 +121,26 @@ module PostgresSql =
         match name with
         | Some n -> sprintf "CONSTRAINT %s " (quote n)
         | None -> ""
+
+    /// `CREATE EXTENSION`, with the schema and version the FILE named, if it
+    /// named them.
+    ///
+    /// Dropping `WITH SCHEMA app` put the extension wherever the session's
+    /// search_path pointed — usually `public` — so every default written as
+    /// `app.uuid_generate_v4()` failed with 42883 later in the same plan, and
+    /// the whole apply rolled back. A file that named neither gets neither:
+    /// PostgreSQL's own default is what it asked for.
+    let createExtension (extension: Identifier) (declared: Extension option) =
+        let schema =
+            declared
+            |> Option.bind (fun d -> d.Schema)
+            |> Option.map (fun s -> sprintf " WITH SCHEMA %s" (quote s))
+            |> Option.defaultValue ""
+
+        let version =
+            declared
+            |> Option.bind (fun d -> d.Version)
+            |> Option.map (fun v -> sprintf " VERSION %s" (literal v))
+            |> Option.defaultValue ""
+
+        sprintf "CREATE EXTENSION %s%s%s" (quote extension) schema version

@@ -65,7 +65,7 @@ module Plan =
             |> List.choose (function
                 | Ok change -> Some change
                 | Error _ -> None)
-            |> Ordering.sort tables.Created
+            |> Ordering.sort tables.Created inputs.Declarations
 
         let sources = PostgresDdl.sources inputs
 

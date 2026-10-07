@@ -214,6 +214,7 @@ let run
                 ManagedSchemas = managedSchemas
                 Declarations = declared.Declarations
                 TriggerDeclarations = declared.TriggerDeclarations
+                IndexDeclarations = declared.IndexDeclarations
                 ExistingSchemas = existingSchemas
                 DeclaredGrants = declared.Grants
                 ActualGrants = actualGrants

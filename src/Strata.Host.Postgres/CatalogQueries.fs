@@ -127,6 +127,28 @@ module CatalogQueries =
                ic.relname   AS index_name,
                i.indisunique AS is_unique,
                pg_catalog.pg_get_expr(i.indpred, i.indrelid) AS predicate,
+               -- What the index carries beyond its key columns, in the words
+               -- the parser side uses (Schema.Index.Unmodelled). The content is
+               -- not read; its PRESENCE is what lets the diff tell a partial,
+               -- descending or expression index from a plain one.
+               ARRAY_REMOVE(ARRAY[
+                 CASE WHEN i.indpred IS NOT NULL THEN 'a predicate' END,
+                 CASE WHEN EXISTS (SELECT 1 FROM unnest(i.indoption::int2[]) AS o(v) WHERE o.v <> 0)
+                      THEN 'a sort order' END,
+                 CASE WHEN i.indexprs IS NOT NULL THEN 'an expression' END,
+                 CASE WHEN am.amname <> 'btree' THEN 'access method ' || am.amname END,
+                 CASE WHEN i.indnatts > i.indnkeyatts THEN 'INCLUDE columns' END,
+                 CASE WHEN EXISTS (SELECT 1 FROM unnest(i.indclass::oid[]) WITH ORDINALITY AS k(opc, ord)
+                                   JOIN pg_catalog.pg_opclass oc ON oc.oid = k.opc
+                                   WHERE k.ord <= i.indnkeyatts AND NOT oc.opcdefault)
+                      THEN 'an operator class' END,
+                 CASE WHEN EXISTS (SELECT 1 FROM unnest(i.indcollation::oid[]) WITH ORDINALITY AS k(coll, ord)
+                                   JOIN pg_catalog.pg_attribute att
+                                     ON att.attrelid = i.indrelid AND att.attnum = (i.indkey::int2[])[k.ord - 1]
+                                   WHERE k.coll <> 0 AND att.attnum > 0 AND k.coll <> att.attcollation)
+                      THEN 'a collation' END,
+                 CASE WHEN ic.reloptions IS NOT NULL THEN 'storage options' END
+               ], NULL) AS unmodelled,
                COALESCE(
                  (SELECT array_agg(att.attname ORDER BY k.ord)
                   FROM unnest(i.indkey::int[]) WITH ORDINALITY AS k(attnum, ord)
@@ -137,6 +159,7 @@ module CatalogQueries =
         FROM pg_catalog.pg_index i
         JOIN pg_catalog.pg_class c  ON c.oid = i.indrelid
         JOIN pg_catalog.pg_class ic ON ic.oid = i.indexrelid
+        JOIN pg_catalog.pg_am am ON am.oid = ic.relam
         JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
         WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
         ORDER BY n.nspname, c.relname, ic.relname

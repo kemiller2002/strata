@@ -61,11 +61,12 @@ let private table : Table =
             ReferencedTable = qn "shop" "bin"
             ReferencedColumns = [ id' "id" ] } ]
       Indexes =
-        [ { Name = id' "product_status_idx"; Columns = [ id' "status" ]; IsUnique = false; Predicate = None }
+        [ { Name = id' "product_status_idx"; Columns = [ id' "status" ]; IsUnique = false; Predicate = None; Unmodelled = [] }
           { Name = id' "product_open_idx"
             Columns = [ id' "id" ]
             IsUnique = true
-            Predicate = Some "(status = 'open'::text)" } ]
+            Predicate = Some "(status = 'open'::text)"
+            Unmodelled = [ "a predicate" ] } ]
       Triggers =
         [ { Name = id' "set_updated_at"
             Timing = TriggerTiming.Before
@@ -195,6 +196,8 @@ let private sample : ResolvedDesiredState =
           Declarations = [ qn "shop" "product", "CREATE TABLE shop.product (id bigint);" ]
           TriggerDeclarations =
             [ (qn "shop" "product", id' "set_updated_at"), "CREATE TRIGGER set_updated_at ..." ]
+          IndexDeclarations =
+            [ (qn "shop" "product", id' "product_open_idx"), "CREATE INDEX product_open_idx ON shop.product (status) WHERE status = 'open';" ]
           Data =
             [ { Table = qn "shop" "account_type"
                 Columns = [ id' "id"; id' "name" ]

@@ -23,6 +23,7 @@ module PostgresDdl =
         { /// The verbatim text that declared each object.
           Declarations: (QualifiedName * string) list
           TriggerDeclarations: ((QualifiedName * Identifier) * string) list
+          IndexDeclarations: ((QualifiedName * Identifier) * string) list
           PolicyDeclarations: ((QualifiedName * Identifier) * string) list
           Data: ResolvedData list
           DesiredSequences: Sequence list
@@ -31,17 +32,22 @@ module PostgresDdl =
           /// expression is not recoverable from the parse tree, so this is
           /// the only source for one.
           NormalisedTables: NormalisedTable list
-          DesiredTables: Table list }
+          DesiredTables: Table list
+          /// The extensions the project declares, with the schema and version
+          /// each file named, if it named them.
+          DeclaredExtensions: Extension list }
 
     let sources (inputs: Inputs) =
         { Declarations = inputs.Declarations
           TriggerDeclarations = inputs.TriggerDeclarations
+          IndexDeclarations = inputs.IndexDeclarations
           PolicyDeclarations = inputs.PolicyDeclarations
           Data = inputs.Data
           DesiredSequences = SnapshotObjects.sequences inputs.Desired
           DesiredEnums = SnapshotObjects.enums inputs.Desired
           NormalisedTables = inputs.NormalisedTables
-          DesiredTables = SnapshotObjects.tables inputs.Desired }
+          DesiredTables = SnapshotObjects.tables inputs.Desired
+          DeclaredExtensions = inputs.DeclaredExtensions }
 
     /// DDL for one change, or `None` when Strata cannot write it faithfully.
     ///
@@ -306,13 +312,21 @@ module PostgresDdl =
         | RenameColumn (table, from, to') ->
             Some(sprintf "ALTER TABLE %s RENAME COLUMN %s TO %s" (quoteName table) (quote from) (quote to'))
 
+        // The declaring file's own text when there is one: it is the only
+        // source of a predicate, a sort order, an expression or an access
+        // method. Reconstruction is the fallback, and it refuses any index
+        // carrying something the model does not hold — building it without
+        // that would index every row, or the wrong thing, and report success.
         | CreateIndex (table, index) ->
+            match
+                sources.IndexDeclarations
+                |> List.tryFind (fun ((t, n), _) -> Names.same t table && Identifier.sameName n index)
+            with
+            | Some (_, text) -> Some text
+            | None ->
             desiredTable table
             |> Option.bind (fun t -> t.Indexes |> List.tryFind (fun i -> Identifier.sameName i.Name index))
-            // A partial index's predicate is not carried, so one cannot be
-            // created faithfully — building it without the WHERE would index
-            // every row and silently differ from what was declared.
-            |> Option.filter (fun i -> i.Predicate.IsNone)
+            |> Option.filter (fun i -> i.Predicate.IsNone && List.isEmpty i.Unmodelled)
             |> Option.map (fun i ->
                 sprintf
                     "CREATE %sINDEX %s ON %s (%s)"
@@ -436,7 +450,11 @@ module PostgresDdl =
         // No IF NOT EXISTS. The diff already established it is absent, and
         // adding the guard would hide a disagreement between what Strata read
         // and what the server holds rather than letting it fail loudly.
-        | CreateExtension extension -> Some(sprintf "CREATE EXTENSION %s" (quote extension))
+        | CreateExtension extension ->
+            sources.DeclaredExtensions
+            |> List.tryFind (fun d -> Identifier.sameName d.Name extension)
+            |> createExtension extension
+            |> Some
         | UpdateExtension (extension, version) ->
             Some(sprintf "ALTER EXTENSION %s UPDATE TO %s" (quote extension) (literal version))
         | SetExtensionSchema (extension, schema) ->

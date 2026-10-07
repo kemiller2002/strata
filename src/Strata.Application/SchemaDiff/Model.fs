@@ -102,6 +102,9 @@ type Inputs =
       /// The verbatim text that declared each object.
       Declarations: (QualifiedName * string) list
       TriggerDeclarations: ((QualifiedName * Identifier) * string) list
+      /// The verbatim text of each declared index, keyed by table and index
+      /// name. An index is created by executing this when it is present.
+      IndexDeclarations: ((QualifiedName * Identifier) * string) list
       /// The verbatim text of each declared policy, keyed by table and
       /// policy name. A policy is created by executing this, never by
       /// reconstruction: its expressions are not in the model.
@@ -165,6 +168,7 @@ module Inputs =
           ManagedSchemas = []
           Declarations = []
           TriggerDeclarations = []
+          IndexDeclarations = []
           PolicyDeclarations = []
           DeclaredPolicies = []
           DeclaredRowSecurity = []

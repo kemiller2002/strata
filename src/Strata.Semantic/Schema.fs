@@ -83,7 +83,18 @@ module Schema =
           Columns: Identifier list
           IsUnique: bool
           /// Partial-index predicate text, if any.
-          Predicate: string option }
+          Predicate: string option
+          /// What the index carries beyond a plain list of key columns, which
+          /// this model does not hold the content of: a predicate, a sort
+          /// order, an expression, another access method, INCLUDE columns, an
+          /// operator class, a collation, storage options.
+          ///
+          /// Named so it can be COMPARED as a set and DISCLOSED as not
+          /// compared, rather than left out — which is what happened before:
+          /// a `UNIQUE ... WHERE` index compared equal to a plain `UNIQUE` one
+          /// and was created without its WHERE, so the plan reported
+          /// convergence on an index that refused rows the file allowed.
+          Unmodelled: string list }
 
     /// When a trigger fires relative to the statement that provoked it.
     ///

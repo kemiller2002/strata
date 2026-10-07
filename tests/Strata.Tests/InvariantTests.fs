@@ -120,7 +120,7 @@ let private withForeignKey columns indexes =
         Indexes =
           indexes
           |> List.map (fun (name, cols) ->
-              { Name = id' name; Columns = cols |> List.map id'; IsUnique = false; Predicate = None }) }
+              { Name = id' name; Columns = cols |> List.map id'; IsUnique = false; Predicate = None; Unmodelled = [] }) }
 
 [<Fact>]
 let ``an unindexed foreign key is a violation`` () =

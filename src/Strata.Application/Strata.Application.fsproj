@@ -45,6 +45,7 @@
     <Compile Include="SchemaDiff/TableConstraints.fs" />
     <Compile Include="SchemaDiff/Objects.fs" />
     <Compile Include="SchemaDiff/ReferenceRows.fs" />
+    <Compile Include="SchemaDiff/ObjectDependencies.fs" />
     <Compile Include="SchemaDiff/Ordering.fs" />
     <Compile Include="SchemaDiff/PostgresSql.fs" />
     <Compile Include="SchemaDiff/PostgresDdl.fs" />
