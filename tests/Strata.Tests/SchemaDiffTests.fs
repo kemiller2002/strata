@@ -185,7 +185,7 @@ let ``indexes are disclosed as not compared rather than ignored`` () =
               UniqueConstraints = []
               CheckConstraints = []
               ForeignKeys = []
-              Indexes = [ { Name = id' "idx_total"; Columns = [ id' "id" ]; IsUnique = false; Predicate = None } ]
+              Indexes = [ { Name = id' "idx_total"; Columns = [ id' "id" ]; IsUnique = false; Predicate = None; Unmodelled = [] } ]
               Triggers = []
               Scope = Observed }
 
@@ -208,7 +208,7 @@ let ``an index backing a constraint is not reported as uncompared`` () =
               UniqueConstraints = []
               CheckConstraints = []
               ForeignKeys = []
-              Indexes = [ { Name = id' "orders_pkey"; Columns = [ id' "id" ]; IsUnique = true; Predicate = None } ]
+              Indexes = [ { Name = id' "orders_pkey"; Columns = [ id' "id" ]; IsUnique = true; Predicate = None; Unmodelled = [] } ]
               Triggers = []
               Scope = Observed }
 
@@ -989,7 +989,7 @@ let private tableWithIndexes name columns indexes =
           Scope = Managed }
 
 let private index name columns unique =
-    { Name = id' name; Columns = columns |> List.map id'; IsUnique = unique; Predicate = None }
+    { Name = id' name; Columns = columns |> List.map id'; IsUnique = unique; Predicate = None; Unmodelled = [] }
 
 /// A snapshot whose desired side DECLARES indexes, which is how a project takes
 /// ownership of them.
@@ -1078,6 +1078,126 @@ let ``creating an index is additive and dropping one needs approval`` () =
     // working and get slower, which no error surfaces.
     Assert.False(Change.isPotentiallyDestructive (CreateIndex(qn "sales" "t", id' "i")))
     Assert.True(Change.isPotentiallyDestructive (DropIndex(qn "sales" "t", id' "i")))
+
+let private shaped name columns unique unmodelled =
+    { index name columns unique with Unmodelled = unmodelled }
+
+let private deployedWithIndexes indexes =
+    complete
+        [ TableObject
+            { Name = qn "sales" "orders"
+              Columns = orders |> List.mapi (fun i (n, nullable) -> col (i + 1) n nullable)
+              PrimaryKey = None
+              UniqueConstraints = []
+              CheckConstraints = []
+              ForeignKeys = []
+              Indexes = indexes
+              Triggers = []
+              Scope = Observed } ]
+
+[<Fact>]
+let ``a partial index against a full one of the same name and columns is a difference`` () =
+    // The defect: `UNIQUE (owner) WHERE kind = 'self'` and `UNIQUE (owner)`
+    // compared equal, so a plan reported convergence on an index that refuses
+    // every second row the predicate exists to allow.
+    let result =
+        run true managed
+            (declaringIndexes [ tableWithIndexes "orders" orders [ shaped "one_owner" [ "id" ] true [ "a predicate" ] ] ])
+            (deployedWithIndexes [ index "one_owner" [ "id" ] true ])
+
+    Assert.Contains(result.Changes, fun c ->
+        match c with
+        | UnclassifiedChange d -> d.Contains "'one_owner'" && d.Contains "with a predicate in desired state"
+        | _ -> false)
+
+[<Fact>]
+let ``a predicate on both sides is disclosed as not compared rather than reported as a match`` () =
+    let result =
+        run true managed
+            (declaringIndexes [ tableWithIndexes "orders" orders [ shaped "one_owner" [ "id" ] true [ "a predicate" ] ] ])
+            (deployedWithIndexes [ shaped "one_owner" [ "id" ] true [ "a predicate" ] ])
+
+    Assert.Empty result.Changes
+    Assert.Contains(result.Suppressed, fun s -> s.Reason = NotCompared && s.Detail.Contains "one_owner")
+
+[<Fact>]
+let ``an index is created from its declaring text, predicate and all`` () =
+    let text = "CREATE UNIQUE INDEX one_owner ON sales.orders (id) WHERE total > 0;"
+
+    let result =
+        Strata.Application.SchemaDiff.Plan.run
+            { Strata.Application.SchemaDiff.Inputs.between
+                (declaringIndexes [ tableWithIndexes "orders" orders [ shaped "one_owner" [ "id" ] true [ "a predicate" ] ] ])
+                (complete [ tbl Observed "sales" "orders" orders ]) with
+                AllowDrops = true
+                ManagedSchemas = managed
+                ExistingSchemas = Some managed
+                IndexDeclarations = [ (qn "sales" "orders", id' "one_owner"), text ] }
+
+    let statement =
+        result.Statements |> List.find (fun s -> s.Change = CreateIndex(qn "sales" "orders", id' "one_owner"))
+
+    Assert.Equal(Some text, statement.Sql)
+
+[<Fact>]
+let ``an index whose shape the model does not hold is never reconstructed`` () =
+    // No declaring text (an artifact from before it was carried): building the
+    // index from the model would drop its predicate, so nothing is emitted.
+    let result =
+        run true managed
+            (declaringIndexes [ tableWithIndexes "orders" orders [ shaped "one_owner" [ "id" ] true [ "a predicate" ] ] ])
+            (complete [ tbl Observed "sales" "orders" orders ])
+
+    let statement =
+        result.Statements |> List.find (fun s -> s.Change = CreateIndex(qn "sales" "orders", id' "one_owner"))
+
+    Assert.Equal(None, statement.Sql)
+
+// ---- extensions are created where the file put them ------------------------
+
+[<Fact>]
+let ``CREATE EXTENSION carries the schema and version the file named`` () =
+    let declared =
+        { Name = id' "uuid-ossp"; Schema = Some(id' "helix"); Version = Some "1.1"; IsRelocatable = false }
+
+    Assert.Equal(
+        "CREATE EXTENSION \"uuid-ossp\" WITH SCHEMA \"helix\" VERSION '1.1'",
+        PostgresSql.createExtension (id' "uuid-ossp") (Some declared)
+    )
+
+[<Fact>]
+let ``CREATE EXTENSION names no schema the file did not name`` () =
+    let declared = { Name = id' "citext"; Schema = None; Version = None; IsRelocatable = false }
+    Assert.Equal("CREATE EXTENSION \"citext\"", PostgresSql.createExtension (id' "citext") (Some declared))
+
+// ---- views and routines in dependency order -----------------------------------
+
+[<Fact>]
+let ``a routine returning a view's rows waits for the view`` () =
+    let declarations =
+        [ qn "app" "a_open", "CREATE FUNCTION app.a_open() RETURNS SETOF app.open_orders LANGUAGE sql AS $$ SELECT * FROM app.open_orders $$;"
+          qn "app" "open_orders", "CREATE VIEW app.open_orders AS SELECT 1 AS id;" ]
+
+    let depths =
+        ObjectDependencies.depths declarations [ CreateRoutine(qn "app" "a_open"); CreateView(qn "app" "open_orders") ]
+
+    Assert.Equal(1, depths.["app.a_open"])
+    Assert.Equal(0, depths.["app.open_orders"])
+
+    let sorted =
+        Ordering.sort [] declarations [ CreateRoutine(qn "app" "a_open"); CreateView(qn "app" "open_orders") ]
+
+    Assert.Equal<Change list>([ CreateView(qn "app" "open_orders"); CreateRoutine(qn "app" "a_open") ], sorted)
+
+[<Fact>]
+let ``a name mentioned only in a comment, or inside a longer word, is no dependency`` () =
+    let declarations =
+        [ qn "app" "f", "-- see app.v\nCREATE FUNCTION app.f() RETURNS int LANGUAGE sql AS $$ SELECT v_total FROM app.t $$;"
+          qn "app" "v", "CREATE VIEW app.v AS SELECT 1 AS v_total;" ]
+
+    let depths = ObjectDependencies.depths declarations [ CreateRoutine(qn "app" "f"); CreateView(qn "app" "v") ]
+
+    Assert.Equal(0, depths.["app.f"])
 
 
 // ---- triggers as desired state ---------------------------------------------

@@ -295,6 +295,63 @@ let ``deploy applies an artifact with the project deleted, and drift then report
         finally
             try File.Delete artifact with _ -> ())
 
+/// A project shaped like a real application's, which `apply` could not
+/// deploy AT ALL before: an extension placed in the project's own schema, an
+/// array column, a partial unique index, a descending index, and a function
+/// returning a view's rows whose file sorts ahead of the view's.
+let private applicationShaped =
+    let files =
+        [ "schema/cli/extensions/uuid_ossp.sql", "CREATE EXTENSION \"uuid-ossp\" WITH SCHEMA cli;"
+          "schema/cli/tables/account.sql",
+          "CREATE TABLE cli.account (id uuid PRIMARY KEY DEFAULT cli.uuid_generate_v4(), owner_id uuid NOT NULL, kind text NOT NULL, tags text[], created_at timestamptz NOT NULL DEFAULT now());"
+          "schema/cli/indexes/account_single_self.sql",
+          "CREATE UNIQUE INDEX account_single_self ON cli.account (owner_id) WHERE kind = 'self';"
+          "schema/cli/indexes/account_newest.sql", "CREATE INDEX account_newest ON cli.account (created_at DESC);"
+          "schema/cli/views/self_account.sql",
+          "CREATE VIEW cli.self_account AS SELECT id, owner_id, tags FROM cli.account WHERE kind = 'self';"
+          "schema/cli/routines/a_self_accounts.sql",
+          "CREATE FUNCTION cli.a_self_accounts(p_owner uuid) RETURNS SETOF cli.self_account LANGUAGE sql STABLE AS $$ SELECT * FROM cli.self_account WHERE owner_id = p_owner $$;"
+          "schema/cli/routines/tagged.sql",
+          "CREATE FUNCTION cli.tagged(p_tags text[]) RETURNS bigint LANGUAGE sql STABLE AS $$ SELECT count(*) FROM cli.account WHERE tags && p_tags $$;" ]
+
+    ("strata.json", manifest (files |> List.map fst)) :: files
+
+[<RequiresCliAndPostgres>]
+let ``an application-shaped project applies to an empty schema, converges, and keeps every index's shape`` () =
+    database (fun connection ->
+        project applicationShaped (fun root ->
+            let applied = Cli.run [ "apply"; "--project"; root; "--connection"; connection; "--confirm"; "--approve" ]
+            Assert.True((applied.ExitCode = 0), applied.Output)
+
+            let replanned = Cli.run [ "plan"; "--project"; root; "--connection"; connection ]
+            Assert.True((replanned.ExitCode = 0), replanned.Output)
+            Assert.Contains("PLAN: 0 change(s)", replanned.Stdout)
+            // Partial and descending indexes cannot be compared by content, and
+            // the plan says so rather than calling them matched.
+            Assert.Contains("only its PRESENCE was compared", replanned.Stdout)
+
+            use c = new NpgsqlConnection(connection)
+            c.Open()
+
+            let scalar (sql: string) =
+                use command = new NpgsqlCommand(sql, c)
+                command.ExecuteScalar() |> string
+
+            Assert.Equal("cli", scalar "SELECT extnamespace::regnamespace::text FROM pg_extension WHERE extname = 'uuid-ossp'")
+            Assert.Equal("text[]", scalar "SELECT format_type(atttypid, atttypmod) FROM pg_attribute WHERE attrelid = 'cli.account'::regclass AND attname = 'tags'")
+            Assert.Contains("WHERE (kind = 'self'::text)", scalar "SELECT pg_get_indexdef('cli.account_single_self'::regclass)")
+            Assert.Contains("created_at DESC", scalar "SELECT pg_get_indexdef('cli.account_newest'::regclass)")
+
+            // The predicate is behaviour, not decoration: two non-self rows
+            // for one owner are allowed.
+            let owner = Guid.NewGuid()
+
+            for kind in [ "caregiver"; "clinician" ] do
+                use insert = new NpgsqlCommand("INSERT INTO cli.account (owner_id, kind) VALUES (@o, @k)", c)
+                insert.Parameters.AddWithValue("o", owner) |> ignore
+                insert.Parameters.AddWithValue("k", kind) |> ignore
+                insert.ExecuteNonQuery() |> ignore))
+
 [<RequiresCliAndPostgres>]
 let ``drift exits 1 when the target has an object the artifact does not`` () =
     // Removals count as drift. Without that this reports a match on a server

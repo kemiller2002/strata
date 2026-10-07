@@ -95,6 +95,12 @@ module Artifact =
     let private items (name: string) (e: JsonElement) =
         (prop name e).EnumerateArray() |> List.ofSeq
 
+    /// An array that an older artifact may not carry at all.
+    let private itemsIfPresent (name: string) (e: JsonElement) =
+        match e.TryGetProperty name with
+        | true, p when p.ValueKind = JsonValueKind.Array -> p.EnumerateArray() |> List.ofSeq
+        | _ -> []
+
     let private getStrings (name: string) (e: JsonElement) =
         items name e |> List.map (fun i -> i.GetString())
 
@@ -311,13 +317,17 @@ module Artifact =
         JObject [ "name", renderIdentifier i.Name
                   "columns", renderNames i.Columns
                   "unique", JBool i.IsUnique
-                  "predicate", (match i.Predicate with Some p -> JString p | None -> JNull) ]
+                  "predicate", (match i.Predicate with Some p -> JString p | None -> JNull)
+                  "unmodelled", JArray(i.Unmodelled |> List.map JString) ]
 
     let readIndex (e: JsonElement) : Index =
         { Name = readIdentifier (prop "name" e)
           Columns = readNames "columns" e
           IsUnique = getBool "unique" e
-          Predicate = optionalString "predicate" e }
+          Predicate = optionalString "predicate" e
+          // Absent from an artifact written before the field existed. Read as
+          // nothing named, which is what that artifact's compiler knew.
+          Unmodelled = itemsIfPresent "unmodelled" e |> List.map (fun i -> i.GetString()) }
 
     // ---- Triggers -----------------------------------------------------------
 
@@ -694,6 +704,8 @@ module Artifact =
                   "declarations", JArray(l.Declarations |> List.map renderDeclaration)
                   "triggerDeclarations",
                   JArray(l.TriggerDeclarations |> List.map (fun ((t, n), text) -> renderTableScoped (t, n, text)))
+                  "indexDeclarations",
+                  JArray(l.IndexDeclarations |> List.map (fun ((t, n), text) -> renderTableScoped (t, n, text)))
                   "data", JArray(l.Data |> List.map renderDeclaredData)
                   "grants", JArray(l.Grants |> List.map renderGrant)
                   "policies",
@@ -711,6 +723,10 @@ module Artifact =
           Failures = items "failures" e |> List.map readLoadFailure
           Declarations = items "declarations" e |> List.map readDeclaration
           TriggerDeclarations = items "triggerDeclarations" e |> List.map readTableScoped
+          // An artifact compiled before index text was carried has none; its
+          // indexes are then created by reconstruction, which refuses any
+          // index whose shape the model does not hold.
+          IndexDeclarations = itemsIfPresent "indexDeclarations" e |> List.map readTableScoped
           Data = items "data" e |> List.map readDeclaredData
           Grants = items "grants" e |> List.map readGrant
           Policies =

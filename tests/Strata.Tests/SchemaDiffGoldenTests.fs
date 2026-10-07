@@ -151,8 +151,8 @@ let private tablesFixture () =
             PrimaryKey = Some { ConstraintName = Some(id' "customers_pkey"); Columns = [ id' "id" ] }
             UniqueConstraints = [ { ConstraintName = None; Columns = [ id' "email" ] } ]
             Indexes =
-              [ { Name = id' "customers_email_lower"; Columns = [ id' "email" ]; IsUnique = false; Predicate = None }
-                { Name = id' "customers_active"; Columns = [ id' "id" ]; IsUnique = true; Predicate = Some "active" } ]
+              [ { Name = id' "customers_email_lower"; Columns = [ id' "email" ]; IsUnique = false; Predicate = None; Unmodelled = [] }
+                { Name = id' "customers_active"; Columns = [ id' "id" ]; IsUnique = true; Predicate = Some "active"; Unmodelled = [ "a predicate" ] } ]
             Triggers = [ trigger "customers_touch"; trigger "customers_audit" ] }
 
     let orders =
@@ -255,7 +255,7 @@ let private constraintsFixture () =
           ReferencedColumns = refs |> List.map id' }
 
     let index name cols unique : Index =
-        { Name = id' name; Columns = cols |> List.map id'; IsUnique = unique; Predicate = None }
+        { Name = id' name; Columns = cols |> List.map id'; IsUnique = unique; Predicate = None; Unmodelled = [] }
 
     let desired =
         { table Managed "sales" "orders" [ "id", "integer", false; "customer_id", "integer", true; "code", "text", true; "status", "text", true; "qty", "integer", true ] with
@@ -299,7 +299,7 @@ let private constraintsFixture () =
                 { ConstraintName = Some(id' "unrendered_check"); Expression = "CHECK (true)" }
                 { ConstraintName = Some(id' "stale_check"); Expression = "CHECK (false)" } ]
             Indexes =
-              [ { Name = id' "orders_status_key"; Columns = [ id' "status" ]; IsUnique = true; Predicate = None }
+              [ { Name = id' "orders_status_key"; Columns = [ id' "status" ]; IsUnique = true; Predicate = None; Unmodelled = [] }
                 index "orders_code_idx" [ "code"; "id" ] false
                 index "orders_stale_idx" [ "id" ] false ]
             Triggers =

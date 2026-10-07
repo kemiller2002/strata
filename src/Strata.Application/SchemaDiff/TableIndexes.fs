@@ -69,19 +69,25 @@ module TableIndexes =
                         |> List.tryFind (fun a -> named a.Name = named d.Name)
                         |> Option.bind (fun a ->
                             let columnsOf (i: Index) = i.Columns |> List.map named |> String.concat ","
+                            let shapeOf (i: Index) = i.Unmodelled |> List.distinct |> List.sort
 
-                            if columnsOf d <> columnsOf a || d.IsUnique <> a.IsUnique then
+                            let describe (i: Index) =
+                                if List.isEmpty (shapeOf i) then "" else sprintf " with %s" (String.concat ", " (shapeOf i))
+
+                            if columnsOf d <> columnsOf a || d.IsUnique <> a.IsUnique || shapeOf d <> shapeOf a then
                                 Some(
                                     Ok(
                                         UnclassifiedChange(
                                             sprintf
-                                                "%s: index '%s' covers (%s)%s in desired state and (%s)%s in the database"
+                                                "%s: index '%s' covers (%s)%s%s in desired state and (%s)%s%s in the database"
                                                 (QualifiedName.display desired.Name)
                                                 d.Name.Text
                                                 (columnsOf d)
                                                 (if d.IsUnique then " unique" else "")
+                                                (describe d)
                                                 (columnsOf a)
-                                                (if a.IsUnique then " unique" else ""))))
+                                                (if a.IsUnique then " unique" else "")
+                                                (describe a))))
                             else
                                 None))
 
@@ -89,17 +95,36 @@ module TableIndexes =
 
         let uncompared = if indexesDeclared then [] else deployedIndexes
 
+        // The same KINDS of unmodelled content on both sides (a predicate and
+        // a predicate): their content was not read, so say so.
+        let shapesNotCompared =
+            if not indexesDeclared then
+                []
+            else
+                declaredIndexes
+                |> List.filter (fun d ->
+                    not (List.isEmpty d.Unmodelled)
+                    && deployedIndexes
+                       |> List.exists (fun a ->
+                           named a.Name = named d.Name
+                           && (a.Unmodelled |> List.distinct |> List.sort) = (d.Unmodelled |> List.distinct |> List.sort)))
+
         changes,
-        (if List.isEmpty uncompared then
-             None
-         else
-             Some
-                 { Object = desired.Name
-                   Reason = NotModelled
-                   Detail =
-                     sprintf
-                         "%d index(es) exist in the database and this project declares none, so indexes were NOT compared. Declaring any index file takes ownership of them."
-                         (List.length uncompared) })
+        [ if not (List.isEmpty uncompared) then
+              { Object = desired.Name
+                Reason = NotModelled
+                Detail =
+                  sprintf
+                      "%d index(es) exist in the database and this project declares none, so indexes were NOT compared. Declaring any index file takes ownership of them."
+                      (List.length uncompared) }
+          if not (List.isEmpty shapesNotCompared) then
+              { Object = desired.Name
+                Reason = NotCompared
+                Detail =
+                  sprintf
+                      "%d index(es) carry a predicate, sort order, expression or other content on both sides (%s); only its PRESENCE was compared, so the content may differ"
+                      (List.length shapesNotCompared)
+                      (shapesNotCompared |> List.map (fun i -> i.Name.Text) |> String.concat ", ") } ]
 
     /// Everything the model carries about a trigger, in one comparable string.
     /// A condition is compared by PRESENCE only, because its text is

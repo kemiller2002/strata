@@ -588,10 +588,22 @@ module PgParserAdapter =
                     else
                         sprintf "%s(%s)" name rendered
 
+            // `uuid[]`, `text[][]` and `integer ARRAY[3]` are all ONE type to
+            // PostgreSQL: an array's dimensions and bounds are not enforced and
+            // not stored, and `format_type` renders every one of them as a
+            // single `[]` after the element type (modifier included:
+            // `character varying(50)[]`). An earlier version dropped the
+            // brackets altogether, so a `uuid[]` column was created as `uuid`,
+            // and against a database that already held the array the plan
+            // proposed narrowing it to its element type.
+            let withArray (name: string) =
+                if isNull (box typeName.ArrayBounds) || typeName.ArrayBounds.Count = 0 then name
+                else name + "[]"
+
             match parts with
-            | [ "pg_catalog"; name ] -> QualifiedName.unqualified (identifierOf (withModifiers (canonical name)))
-            | [ name ] -> QualifiedName.unqualified (identifierOf (withModifiers (canonical name)))
-            | [ schema; name ] -> qualifiedNameOf schema (withModifiers name)
+            | [ "pg_catalog"; name ] -> QualifiedName.unqualified (identifierOf (withArray (withModifiers (canonical name))))
+            | [ name ] -> QualifiedName.unqualified (identifierOf (withArray (withModifiers (canonical name))))
+            | [ schema; name ] -> qualifiedNameOf schema (withArray (withModifiers name))
             | _ -> QualifiedName.unqualified (identifierOf "unknown")
 
     /// The name the file gave a constraint, if it gave one.
@@ -1005,8 +1017,11 @@ module PgParserAdapter =
     ///
     /// `Predicate` is left `None` even when the statement has a WHERE clause:
     /// the expression is not recoverable from the parse tree without
-    /// deparsing, and the catalog reports its own normalised rendering. The
-    /// diff compares name, columns and uniqueness, and discloses predicates.
+    /// deparsing, and the catalog reports its own normalised rendering. What
+    /// the file says beyond its key columns is NAMED in `Unmodelled`, in the
+    /// same words the catalog side uses, so the diff can tell "both have a
+    /// predicate" (disclosed as not compared) from "only one does" (a
+    /// difference).
     let private indexOf (stmt: IndexStmt) =
         let columns =
             if isNull (box stmt.IndexParams) then []
@@ -1021,11 +1036,47 @@ module PgParserAdapter =
             if isNull (box stmt.Relation) then QualifiedName.unqualified (identifierOf "unknown")
             else qualifiedNameOf stmt.Relation.Schemaname stmt.Relation.Relname
 
+        let elements =
+            if isNull (box stmt.IndexParams) then []
+            else stmt.IndexParams |> Seq.choose (fun n -> if isNull (box n.IndexElem) then None else Some n.IndexElem) |> List.ofSeq
+
+        // The catalog stores a key's order as two bits, DESC and NULLS FIRST,
+        // and `ASC NULLS LAST` is the zero both default to. So `ASC` and
+        // `DESC NULLS FIRST` written out are no different from what they
+        // imply; only a key whose bits come out non-zero has a sort order.
+        //
+        // libpg_query's protobuf values: SortByDir 3 = DESC, 4 = USING;
+        // SortByNulls 2 = NULLS FIRST, 3 = NULLS LAST (0 and 1 are unset and
+        // DEFAULT on both).
+        let sortsOtherThanDefault (e: IndexElem) =
+            let direction = int e.Ordering
+            let descending = direction = 3
+
+            let nullsFirst =
+                match int e.NullsOrdering with
+                | 2 -> true
+                | 3 -> false
+                | _ -> descending
+
+            direction = 4 || descending || nullsFirst
+
+        let unmodelled =
+            [ if not (isNull (box stmt.WhereClause)) then "a predicate"
+              if elements |> List.exists sortsOtherThanDefault then "a sort order"
+              if elements |> List.exists (fun e -> not (isNull (box e.Expr))) then "an expression"
+              if not (String.IsNullOrEmpty stmt.AccessMethod) && stmt.AccessMethod <> "btree" then
+                  sprintf "access method %s" stmt.AccessMethod
+              if not (isNull (box stmt.IndexIncludingParams)) && stmt.IndexIncludingParams.Count > 0 then "INCLUDE columns"
+              if elements |> List.exists (fun e -> not (isNull (box e.Opclass)) && e.Opclass.Count > 0) then "an operator class"
+              if elements |> List.exists (fun e -> not (isNull (box e.Collation)) && e.Collation.Count > 0) then "a collation"
+              if not (isNull (box stmt.Options)) && stmt.Options.Count > 0 then "storage options" ]
+
         table,
         { Name = identifierOf stmt.Idxname
           Columns = columns
           IsUnique = stmt.Unique
-          Predicate = None }
+          Predicate = None
+          Unmodelled = unmodelled }
 
     /// PostgreSQL's trigger type bitmask, from `trigger.h`.
     ///

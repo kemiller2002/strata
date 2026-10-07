@@ -335,7 +335,8 @@ let ``inspect includes constraints and indexes, not just columns and keys`` () =
                 [ { Name = id' "idx_orders_status"
                     Columns = [ id' "status" ]
                     IsUnique = false
-                    Predicate = Some "status = 'open'" } ]
+                    Predicate = Some "status = 'open'"
+                    Unmodelled = [ "a predicate" ] } ]
               Triggers = []
               Scope = ManagementScope.Observed }
 
@@ -366,7 +367,8 @@ let ``a partial index predicate survives into the answer`` () =
                 [ { Name = id' "idx_open"
                     Columns = [ id' "status" ]
                     IsUnique = false
-                    Predicate = Some "status = 'open'" } ]
+                    Predicate = Some "status = 'open'"
+                    Unmodelled = [ "a predicate" ] } ]
               Triggers = []
               Scope = ManagementScope.Observed }
 

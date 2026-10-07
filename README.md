@@ -495,12 +495,13 @@ This table is the honest map of coverage. Measured, not aspirational.
 | **Materialized views** | ✅ | ❌ | **Presence only** — disclosed as not-compared |
 | Functions, procedures | ✅ | ✅ | Body text vs `prosrc`, when both sides hold text |
 | `BEGIN ATOMIC` / C routines | ✅ | ❌ | No body text to compare — disclosed |
-| Indexes, triggers, sequences | ✅ | ✅ | |
+| Indexes | ✅ | ✅ | Created from the declaring file's own text. A predicate, sort order, expression, access method, `INCLUDE`, operator class, collation or storage option is compared by **presence** — one side having a predicate the other lacks is a difference; both having one is disclosed as not-compared |
+| Triggers, sequences | ✅ | ✅ | |
 | Enum types | ✅ | ✅ | Can add a value at a position; **cannot** remove or reorder |
 | Domains | ✅ | ✅ | Base type and collation cannot change at all |
 | Grants, column grants | ✅ | ✅ | Per grantee; a grantee you never name is untouched |
 | RLS policies | ✅ | ✅ | Never dropped, `--allow-drops` included |
-| Extensions | ✅ | ✅ | Installed and updated, **never** dropped |
+| Extensions | ✅ | ✅ | Installed (in the file's `WITH SCHEMA`, at its `VERSION`) and updated, **never** dropped |
 | Reference rows | ✅ | ✅ | Never deleted |
 | Composite / range types | ❌ | ❌ | **Refused by name**, loudly — never silently ignored |
 

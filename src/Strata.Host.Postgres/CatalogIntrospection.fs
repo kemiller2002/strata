@@ -213,7 +213,8 @@ module CatalogIntrospection =
                     { Name = identifierOf (str r "index_name")
                       Columns = arrayOf r "column_names" |> List.map identifierOf
                       IsUnique = boolOf r "is_unique"
-                      Predicate = strOpt r "predicate" } })
+                      Predicate = strOpt r "predicate"
+                      Unmodelled = arrayOf r "unmodelled" } })
             |> categoryResult "indexes"
 
         let triggers =

@@ -176,14 +176,19 @@ module Ordering =
         parents |> Map.map (fun name _ -> depth Set.empty name)
 
     /// Sort changes into execution order: phase first, then foreign-key depth
-    /// among creations. F#'s sort is stable, so everything else keeps the order
-    /// it was assembled in.
-    let sort (creating: Table list) (changes: Change list) =
+    /// among table creations and dependency depth among views and routines.
+    /// F#'s sort is stable, so everything else keeps the order it was
+    /// assembled in.
+    let sort (creating: Table list) (declarations: (QualifiedName * string) list) (changes: Change list) =
         let depths = creationDepths creating
+        let objectDepths = ObjectDependencies.depths declarations changes
 
         let depthOf (change: Change) =
             match change with
             | CreateTable name -> depths |> Map.tryFind (QualifiedName.display name) |> Option.defaultValue 0
-            | _ -> 0
+            | _ ->
+                match ObjectDependencies.viewOrRoutine change with
+                | Some name -> objectDepths |> Map.tryFind (QualifiedName.display name) |> Option.defaultValue 0
+                | None -> 0
 
         changes |> List.sortBy (fun c -> phase c, depthOf c)

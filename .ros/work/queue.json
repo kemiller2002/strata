@@ -1833,6 +1833,30 @@
       },
       "source": "manual",
       "sourceReference": null
+    },
+    {
+      "id": "WI-0109",
+      "title": "Deploy real application schemas: array types, extension schema, view/routine order, index shape",
+      "description": "Found by moving HelixNote (53 tables, 23 views, 114 routines, 76 indexes) onto Strata. Four defects: (1) array types lost their [] in columns and routine signatures, so uuid[] was created as uuid and a plan proposed narrowing a live array column; (2) CREATE EXTENSION dropped WITH SCHEMA/VERSION, so defaults naming schema.uuid_generate_v4() failed and the apply rolled back; (3) views and routines were created in assembly order, so a function RETURNS SETOF view failed with 42704; (4) indexes were rebuilt from the model, dropping WHERE/DESC, so a partial UNIQUE index became a full one while plan and drift reported a match. Exploratory edits were made in a scratch clone before this item began; they are the content of this item.",
+      "tags": [
+        "deploy",
+        "correctness"
+      ],
+      "priority": "high",
+      "status": "complete",
+      "attachments": [],
+      "createdAt": "2026-10-07T21:21:13.000Z",
+      "updatedAt": "2026-10-07T21:25:30.000Z",
+      "createdBy": "unknown",
+      "createdByActor": {
+        "kind": "agent",
+        "id": "anthropic/claude-code",
+        "provider": "anthropic",
+        "model": "unknown",
+        "runtime": "claude-code"
+      },
+      "source": "manual",
+      "sourceReference": null
     }
   ]
 }

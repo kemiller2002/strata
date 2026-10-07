@@ -59,6 +59,7 @@ let private layers =
           "TableConstraints", DiffersLayer
           "Objects", DiffersLayer
           "ReferenceRows", DiffersLayer
+          "ObjectDependencies", OrderingLayer
           "Ordering", OrderingLayer
           "PostgresSql", SqlLayer
           "PostgresDdl", SqlLayer

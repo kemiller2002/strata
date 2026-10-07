@@ -205,6 +205,72 @@ let ``a precision on a phrase-spelled type goes inside the phrase`` () =
 
     Assert.Equal("timestamp(3) with time zone", QualifiedName.display column.Type.TypeName)
 
+// ---- array types ------------------------------------------------------------
+//
+// PostgreSQL has one array type per element type: dimensions and bounds are
+// neither enforced nor stored, and format_type() renders every spelling as a
+// single `[]`. Dropping the brackets created a `uuid[]` column as `uuid`, and
+// against a database that held the array the plan proposed narrowing it.
+
+[<Theory>]
+[<InlineData("uuid[]", "uuid[]")>]
+[<InlineData("text[][]", "text[]")>]
+[<InlineData("integer ARRAY[3]", "integer[]")>]
+[<InlineData("varchar(50)[]", "character varying(50)[]")>]
+[<InlineData("timestamptz[]", "timestamp with time zone[]")>]
+let ``an array type is rendered the way the catalog renders it`` (declared: string) (expected: string) =
+    let loaded = load [ "f.sql", sprintf "CREATE TABLE s.t (c %s)" declared ]
+    let column = (tableNamed loaded "s.t").Value.Columns |> List.head
+
+    Assert.Equal(expected, QualifiedName.display column.Type.TypeName)
+
+[<Fact>]
+let ``a routine's array argument and return types keep their brackets`` () =
+    let loaded =
+        load [ "f.sql", "CREATE FUNCTION s.f(p_ids uuid[], p_tags text[]) RETURNS uuid[] LANGUAGE sql AS $$ SELECT p_ids $$;" ]
+
+    let routine =
+        loaded.Snapshot.Objects
+        |> List.pick (function
+            | RoutineObject r -> Some r
+            | _ -> None)
+
+    Assert.Equal<string list>([ "uuid[]"; "text[]" ], routine.ArgumentTypes)
+    Assert.Equal(Some "uuid[]", routine.ReturnType)
+
+// ---- what an index says beyond its key columns -------------------------------
+
+let private declaredIndex (sql: string) =
+    let loaded = load [ "t.sql", "CREATE TABLE s.t (a int, b text);"; "i.sql", sql ]
+    (tableNamed loaded "s.t").Value.Indexes |> List.exactlyOne, loaded
+
+[<Theory>]
+[<InlineData("CREATE INDEX i ON s.t (a)", "")>]
+[<InlineData("CREATE INDEX i ON s.t (a ASC)", "")>]
+[<InlineData("CREATE INDEX i ON s.t (a ASC NULLS LAST)", "")>]
+[<InlineData("CREATE INDEX i ON s.t (a DESC)", "a sort order")>]
+[<InlineData("CREATE INDEX i ON s.t (a NULLS FIRST)", "a sort order")>]
+[<InlineData("CREATE UNIQUE INDEX i ON s.t (a) WHERE b = 'self'", "a predicate")>]
+[<InlineData("CREATE INDEX i ON s.t (lower(b))", "an expression")>]
+[<InlineData("CREATE INDEX i ON s.t USING hash (a)", "access method hash")>]
+[<InlineData("CREATE INDEX i ON s.t (a) INCLUDE (b)", "INCLUDE columns")>]
+[<InlineData("CREATE INDEX i ON s.t (b text_pattern_ops)", "an operator class")>]
+[<InlineData("CREATE INDEX i ON s.t (b COLLATE \"C\")", "a collation")>]
+[<InlineData("CREATE INDEX i ON s.t (a) WITH (fillfactor = 70)", "storage options")>]
+let ``an index names what it carries beyond its key columns`` (sql: string) (expected: string) =
+    let index, _ = declaredIndex sql
+    Assert.Equal(expected, String.concat "; " index.Unmodelled)
+
+[<Fact>]
+let ``a single-index file records its verbatim text`` () =
+    let sql = "CREATE UNIQUE INDEX i ON s.t (a) WHERE b = 'self';"
+    let _, loaded = declaredIndex sql
+
+    Assert.Equal<((QualifiedName * Identifier) * string) list>(
+        [ (qn "s" "t", Identifier.unquoted "i"), sql ],
+        loaded.IndexDeclarations
+    )
+
 // ---- serial pseudo-types --------------------------------------------------
 //
 // `serial` is not a type. `id bigserial` becomes `id bigint NOT NULL DEFAULT
