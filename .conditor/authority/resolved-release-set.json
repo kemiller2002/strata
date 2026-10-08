@@ -2,8 +2,8 @@
   "schema": "echelon.resolved-release-set/v1",
   "profile": {
     "id": "echelon-current",
-    "version": "1.1.0",
-    "sha256": "786a6336fbb4b940e5666ad45e0ed93d6e06c3aeafc1b35573c97343b0523156"
+    "version": "1.3.0",
+    "sha256": "0af894fc8b847b2e92a0f6b1e7581590c416bbfaa24da4358fe012a5ea577a41"
   },
   "platform": "linux-x64",
   "resolver": {
@@ -11,7 +11,7 @@
     "version": "0.1.0"
   },
   "catalogSnapshot": {
-    "sha256": "2a4abb1efb8a20f5b36cae7ed3b5bde0a99e3e182f9bc9349770e9905f109f67"
+    "sha256": "781ab642add87e591aff28b6b8442dd285a63929330485a174a7c3e7d3851564"
   },
   "components": [
     {
@@ -54,35 +54,35 @@
       "systemId": "ordo",
       "role": "host-tool",
       "required": true,
-      "version": "1.4.2",
+      "version": "1.5.0",
       "repository": "kemiller2002/ordo",
-      "tag": "v1.4.2",
-      "commit": "6637b22f67d7e972d7b209ba649f476a77af996b",
+      "tag": "v1.5.0",
+      "commit": "869bc4840382a2b1bbeedad4a06dba6c15067d52",
       "releaseStage": "stable",
       "lifecycleState": "active",
       "distributionClass": "self-contained-native-cli",
       "executable": "ordo",
       "releaseManifest": {
         "schema": "echelon.release/v2",
-        "sha256": "cfb7c8064c000f6054782cf6aaccd091ae51b4af2a3bc6470613be3a66626db0"
+        "sha256": "077bead5ca780ee638ce836e320e1650c16d1361e558aa6a9e1f2634035134be"
       },
       "distribution": {
         "mechanism": "github-release",
         "package": null,
-        "url": "https://github.com/kemiller2002/ordo/releases/tag/v1.4.2"
+        "url": "https://github.com/kemiller2002/ordo/releases/tag/v1.5.0"
       },
       "artifacts": [
         {
           "name": "ordo-linux-x64.tar.gz",
           "purpose": "executable",
           "platform": "linux-x64",
-          "sha256": "64ee9562aab3f1a8a789af39e0086d479d26150352824e53dd534a4fc8b79ca0"
+          "sha256": "52a83fa81dcbc0b50b4c7548e22cdc6c3c1051fccb3a581831c81710d9b51aa0"
         },
         {
           "name": "native-checksums.txt",
           "purpose": "checksums",
           "platform": null,
-          "sha256": "9bbed2363fb2754f841162f505fd4a8330d33f88d4cd9695cd3bdd12ec119071"
+          "sha256": "e9057525fa71da5411272c973ab4a4313f1397b217589c5c7fa7d0646d247a62"
         }
       ]
     },
@@ -399,6 +399,46 @@
           "purpose": "checksums",
           "platform": null,
           "sha256": "0553679e83ec6498171f005031afbe0d2274e73a4439cad6ca23fba19933613d"
+        }
+      ]
+    },
+    {
+      "systemId": "strata",
+      "role": "repository-lifecycle",
+      "required": false,
+      "version": "0.1.1",
+      "repository": "kemiller2002/strata",
+      "tag": "v0.1.1",
+      "commit": "f650d91e2930dfcbe82a1d2c52d8c5245e0f9996",
+      "releaseStage": "stable",
+      "lifecycleState": "active",
+      "distributionClass": "self-contained-native-cli",
+      "executable": "strata",
+      "repositoryLifecycle": {
+        "contract": "echelon.repository-lifecycle",
+        "contractVersion": 1
+      },
+      "releaseManifest": {
+        "schema": "echelon.release/v2",
+        "sha256": "262bf735e8af934a5d104cad910e34d55e8ffcf310696f8604560bc73eb8ab04"
+      },
+      "distribution": {
+        "mechanism": "github-release",
+        "package": null,
+        "url": "https://github.com/kemiller2002/strata/releases/tag/v0.1.1"
+      },
+      "artifacts": [
+        {
+          "name": "strata-linux-x64.tar.gz",
+          "purpose": "executable",
+          "platform": "linux-x64",
+          "sha256": "497ec245b60994e13b8a8923ec6a8fb994acdb8365d022e9e4fcf955605f2a1b"
+        },
+        {
+          "name": "native-checksums.txt",
+          "purpose": "checksums",
+          "platform": null,
+          "sha256": "fc42113dfbeb48f361cd2b402c1a3a5dbdcd3c38c35034e2856544f7d618a1fe"
         }
       ]
     }
