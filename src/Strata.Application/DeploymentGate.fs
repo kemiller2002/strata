@@ -749,6 +749,46 @@ module DeploymentGate =
                 if List.isEmpty dependents then cleanResultNextMove
                 else "Confirm the new body behaves as the listed callers expect, then approve explicitly." }
 
+        // A drop is followed by the routine's re-creation when the server would
+        // not replace it in place; either way every caller is affected, so the
+        // callers found are listed and the decision is a person's.
+        | DropRoutine (routine, arguments) ->
+            let dependents =
+                graph.Dependencies
+                |> List.filter (fun d -> QualifiedName.display d.Target = QualifiedName.display routine)
+                |> List.map (fun d -> d.SourceId)
+                |> List.distinct
+
+            { Change = change
+              Verdict = RequiresApproval
+              Detected =
+                sprintf
+                    "drops routine %s(%s), which %d source(s) depend on"
+                    (QualifiedName.display routine)
+                    (String.concat ", " arguments)
+                    (List.length dependents)
+              Rationale =
+                "Every call to this signature fails until a routine of that signature exists again. \
+                 Nothing in the database depends on it: Strata read that from the catalog before proposing the drop."
+              AffectedSources = dependents
+              NextSafeMove = "Confirm every caller is changed or the routine is re-created in this plan, then approve explicitly." }
+
+        | ReplaceCheckConstraint (table, constraintName, definition) ->
+            { Change = change
+              Verdict = RequiresApproval
+              Detected =
+                sprintf
+                    "redefines check constraint %s on %s as %s"
+                    constraintName.Display
+                    (QualifiedName.display table)
+                    definition
+              Rationale =
+                "Stored rows are checked against the new expression, and one it excludes fails the whole plan, \
+                 so no data is lost or admitted unchecked. What changes is the guarantee: a widening admits values \
+                 readers may assume cannot arrive, and a narrowing refuses writers that still send what it excludes."
+              AffectedSources = []
+              NextSafeMove = "Confirm the readers and writers of this table expect the new set of values, then approve explicitly." }
+
         | CreateRoutine routine ->
             { Change = change
               Verdict = Allow

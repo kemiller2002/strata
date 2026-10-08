@@ -122,10 +122,12 @@ module Ordering =
         | RenameTable _
         | CreateTable _ -> Phase.Relations
         | AddColumn _
+        | DropRoutine _
         | DropConstraint _ -> Phase.ColumnsAndConstraintReleases
         | AlterColumnType _
         | CreateIndex _
         | DropIndex _
+        | ReplaceCheckConstraint _
         | AddConstraint _ -> Phase.Structure
         | CreateView _
         | ReplaceView _

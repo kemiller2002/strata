@@ -241,6 +241,15 @@ module ProposedChange =
         /// NOT additive. Every caller gets the new behaviour immediately, and
         /// a body change that compiles reports nothing.
         | ReplaceRoutine of routine: QualifiedName
+        /// Removes one function or procedure, named by its argument types:
+        /// overloads share a name, and `DROP ROUTINE f` without them would
+        /// name whichever one the server resolves.
+        ///
+        /// Destructive. Every caller of it starts failing. Proposed for a
+        /// routine absent from desired state, and for a redefinition the
+        /// server will not take in place (a changed return type or argument
+        /// list), which is then created again from the declaring file.
+        | DropRoutine of routine: QualifiedName * argumentTypes: string list
         /// Creates a function or procedure. Additive for the same reason.
         ///
         /// This does NOT mean the routine's BODY is safe — its body may read
@@ -302,6 +311,16 @@ module ProposedChange =
         ///
         /// Always named: a constraint in the catalog always has one.
         | DropConstraint of table: QualifiedName * constraintName: Identifier * kind: ConstraintKind
+        /// Redefines a named CHECK constraint whose expression changed.
+        ///
+        /// PostgreSQL has no ALTER for a check's expression, so the constraint
+        /// is dropped and added again under its own name, in one statement.
+        /// `definition` is the declared clause as the server renders it
+        /// (`CHECK ((...))`). Unless it is itself `NOT VALID`, it is added
+        /// `NOT VALID` and then validated, so a stored row the new expression
+        /// excludes fails the VALIDATE, and with it the whole plan, rather
+        /// than being admitted.
+        | ReplaceCheckConstraint of table: QualifiedName * constraintName: Identifier * definition: string
         /// Removes every row. No schema change, total data loss.
         | TruncateTable of table: QualifiedName
         /// Strata parsed the statement but does not model its consequences.
@@ -360,9 +379,11 @@ module ProposedChange =
             | CreateView _ -> "create-view"
             | ReplaceView _ -> "replace-view"
             | ReplaceRoutine _ -> "replace-routine"
+            | DropRoutine _ -> "drop-routine"
             | CreateRoutine _ -> "create-routine"
             | AddConstraint _ -> "add-constraint"
             | DropConstraint _ -> "drop-constraint"
+            | ReplaceCheckConstraint _ -> "replace-check-constraint"
             | TruncateTable _ -> "truncate-table"
             | UnclassifiedChange _ -> "unclassified"
 
@@ -394,6 +415,7 @@ module ProposedChange =
             | CreateView table
             | ReplaceView table
             | ReplaceRoutine table
+            | DropRoutine (table, _)
             | CreateRoutine table
             | CreateIndex (table, _)
             | DropIndex (table, _)
@@ -404,6 +426,7 @@ module ProposedChange =
             | ReplaceTrigger (table, _)
             | AddConstraint (table, _, _, _)
             | DropConstraint (table, _, _)
+            | ReplaceCheckConstraint (table, _, _)
             | CreatePolicy (table, _)
             | ReplacePolicy (table, _)
             | EnableRowLevelSecurity table
@@ -449,6 +472,11 @@ module ProposedChange =
             | DropTable _
             | ReplaceView _
             | ReplaceRoutine _
+            | DropRoutine _
+            // Widening admits values every reader assumed could not arrive;
+            // narrowing is checked against the stored rows by VALIDATE, and
+            // stops every writer that still sends what it now excludes.
+            | ReplaceCheckConstraint _
             | RenameTable _
             | RenameColumn _
             | AlterColumnType _

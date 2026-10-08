@@ -233,6 +233,7 @@ let private everyChange : Change list =
       CreateView(qn "sales" "v")
       ReplaceView(qn "sales" "v")
       ReplaceRoutine(qn "sales" "f")
+      DropRoutine(qn "sales" "f", [ "integer"; "text" ])
       CreateRoutine(qn "sales" "f")
       CreateTrigger(orders, id' "t")
       DropTrigger(orders, id' "t")
@@ -241,6 +242,7 @@ let private everyChange : Change list =
       UpdateRow(orders, "1")
       AddConstraint(orders, Some(id' "ck"), ConstraintKind.Check, [ id' "c" ])
       DropConstraint(orders, id' "ck", ConstraintKind.Check)
+      ReplaceCheckConstraint(orders, id' "ck", "CHECK ((c > 0))")
       TruncateTable orders
       UnclassifiedChange "something Strata does not model" ]
 

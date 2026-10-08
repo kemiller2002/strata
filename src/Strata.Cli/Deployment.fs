@@ -67,6 +67,60 @@ type Options =
 /// `managedSchemas` likewise. For a project it is the directory names; for an
 /// artifact it is derived from the objects, which compile guarantees is the
 /// same set because an empty schema directory does not compile.
+/// What the server says about the routines this plan may redefine or drop
+/// (strata#28): which redefinitions it refuses to take in place, and what
+/// depends on each deployed routine in a managed schema. Both are read with
+/// nothing changed; a fact that cannot be read is reported, and leaves the
+/// plan proposing less, never more.
+let private routineFacts
+    (connectionString: string)
+    (managedSchemas: string list)
+    (declared: DesiredState.Loaded)
+    (desired: SchemaSnapshot)
+    (actual: SchemaSnapshot)
+    =
+    let declaredText (name: QualifiedName) =
+        declared.Declarations
+        |> List.tryPick (fun (n, text) -> if QualifiedName.display n = QualifiedName.display name then Some text else None)
+
+    let candidates =
+        SchemaDiff.Routines.redefined desired actual
+        |> List.choose (fun (d, a) ->
+            declaredText d.Name
+            |> Option.bind (SchemaDiff.RedefinitionSql.orReplace [ "FUNCTION"; "PROCEDURE" ])
+            |> Option.map (fun sql -> SchemaDiff.Routines.identity a, sql))
+
+    let rejections =
+        match RoutineProbe.replacements connectionString candidates with
+        | Ok probed ->
+            for key, message in probed.Undecided do
+                eprintfn "note: could not test replacing %s in place (%s); it is planned as CREATE OR REPLACE." key message
+
+            probed.Rejected
+        | Microsoft.FSharp.Core.Error message ->
+            eprintfn "warning: could not test the routine redefinitions (%s)." message
+            eprintfn "         Each is planned as CREATE OR REPLACE; the apply reports any the server refuses."
+            []
+
+    let deployed =
+        actual.Objects
+        |> List.choose (function
+            | RoutineObject r when SchemaDiff.DropSafety.isManaged managedSchemas r.Name -> Some r
+            | _ -> None)
+
+    let dependents =
+        deployed
+        |> List.map (fun r -> SchemaDiff.Routines.identity r, SchemaDiff.RedefinitionSql.signature r.Name r.ArgumentTypes)
+        |> RoutineProbe.dependents connectionString
+        |> function
+            | Ok found -> Some found
+            | Microsoft.FSharp.Core.Error message ->
+                eprintfn "warning: could not read what depends on the deployed routines (%s)." message
+                eprintfn "         No routine will be dropped."
+                None
+
+    rejections, dependents
+
 let run
     (parser: DialectPort.IDialectParser)
     (connectionString: string)
@@ -150,6 +204,8 @@ let run
             eprintfn "warning: could not read the database's extensions (%s)." message
             eprintfn "         Declared extensions will be reported as not-compared."
             Some(Microsoft.FSharp.Core.Error message)
+
+    let routineRejections, routineDependents = routineFacts connectionString managedSchemas declared desired actual
 
     let searchPath =
         match CatalogIntrospection.readSearchPath connectionString with
@@ -243,7 +299,9 @@ let run
                 NormalisedTables = resolved.NormalisedTables
                 NormalisedIndexes = resolved.NormalisedIndexes
                 NormalisedDomains = resolved.NormalisedDomains
-                Renames = renames }
+                Renames = renames
+                RoutineRejections = routineRejections
+                RoutineDependents = routineDependents }
     let gate = DeploymentGate.run graph scope diff.Changes
 
     if options.Json then

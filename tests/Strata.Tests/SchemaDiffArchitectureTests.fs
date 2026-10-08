@@ -60,11 +60,13 @@ let private layers =
           "TableTriggers", DiffersLayer
           "TableConstraints", DiffersLayer
           "Objects", DiffersLayer
+          "Routines", DiffersLayer
           "ReferenceRows", DiffersLayer
           "ObjectDependencies", OrderingLayer
           "Ordering", OrderingLayer
           "PostgresSql", SqlLayer
           "CommentSql", SqlLayer
+          "RedefinitionSql", SqlLayer
           "PostgresDdl", SqlLayer
           "Plan", OrchestrationLayer
           "Render", RenderingLayer ]
@@ -213,7 +215,7 @@ let ``a removal Change is constructed only as the argument of a DropSafety decis
     let removal = String.Join("|", Strata.Tests.SchemaDiffGoldenTests.removalCases)
     let mention = Regex(sprintf @"\b(%s)\b" removal)
     let asArgument = Regex(sprintf @"^\s*\((%s)\b" removal)
-    let decision = Regex(@"\bDropSafety\.(removal|objectRemoval)\b")
+    let decision = Regex(@"\bDropSafety\.(removal|objectRemoval|objectRemovalWith)\b")
 
     let violations =
         [ for file in moduleFiles () do

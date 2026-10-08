@@ -135,6 +135,9 @@ module Render =
         | CreateView view -> sprintf "create-view        %s" (QualifiedName.display view)
         | ReplaceView view -> sprintf "replace-view       %s" (QualifiedName.display view)
         | ReplaceRoutine r -> sprintf "replace-routine    %s" (QualifiedName.display r)
+        | DropRoutine (r, arguments) -> sprintf "drop-routine       %s(%s)" (QualifiedName.display r) (String.concat ", " arguments)
+        | ReplaceCheckConstraint (table, name, definition) ->
+            sprintf "replace-check      %s %s %s" (QualifiedName.display table) name.Text definition
         | CreateRoutine routine -> sprintf "create-routine     %s" (QualifiedName.display routine)
         | TruncateTable table -> sprintf "truncate-table     %s" (QualifiedName.display table)
 

@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 112,
+  "nextSeq": 113,
   "items": [
     {
       "id": "WI-0001",
@@ -1889,6 +1889,29 @@
       "attachments": [],
       "createdAt": "2026-10-08T01:29:55.956Z",
       "updatedAt": "2026-10-08T01:32:17.000Z",
+      "createdBy": "unknown",
+      "createdByActor": {
+        "kind": "agent",
+        "id": "anthropic/claude-code",
+        "provider": "anthropic",
+        "model": "unknown",
+        "runtime": "claude-code"
+      },
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0112",
+      "title": "Plan and apply in-place CHECK widening and routine redefinition on an existing database (strata#28)",
+      "description": null,
+      "tags": [
+        "deploy,correctness"
+      ],
+      "priority": "high",
+      "status": "complete",
+      "attachments": [],
+      "createdAt": "2026-10-08T06:48:57.228Z",
+      "updatedAt": "2026-10-08T07:12:08.000Z",
       "createdBy": "unknown",
       "createdByActor": {
         "kind": "agent",

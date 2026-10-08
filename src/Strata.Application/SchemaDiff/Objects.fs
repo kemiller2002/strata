@@ -35,15 +35,11 @@ module Objects =
         let normalisedViews = inputs.NormalisedViews
         let desired = inputs.Desired.Objects
         let actual = inputs.Actual.Objects
-        // Routines are identified by name AND argument types: PostgreSQL
-        // allows overloads, so f(int) and f(text) are different objects and
-        // matching on name alone would read one as a redefinition of the other.
         let identity (o: SchemaObject) =
             match o with
             | TableObject t -> "table:" + QualifiedName.display t.Name
             | ViewObject v -> "view:" + QualifiedName.display v.Name
-            | RoutineObject r ->
-                sprintf "routine:%s(%s)" (QualifiedName.display r.Name) (String.concat "," r.ArgumentTypes)
+            | RoutineObject r -> Routines.identity r
             | SequenceObject s -> "sequence:" + QualifiedName.display s.Name
             | EnumObject e -> "enum:" + QualifiedName.display e.Name
             | DomainObject d -> "domain:" + QualifiedName.display d.Name
@@ -99,22 +95,28 @@ module Objects =
             |> List.map (fun a ->
                 let name = SchemaObject.name a
 
-                DropSafety.objectRemoval
-                    policy
-                    name
-                    (SchemaObject.scope a)
+                let wording =
                     { OutsideManaged =
                         sprintf "%s exists in the database and not in desired state, but its schema is not managed" (kindOf a)
                       ExtensionOwned = sprintf "%s is owned by an extension" (kindOf a)
                       Incomplete =
                         sprintf "%s is absent from desired state, but desired state did not load completely" (kindOf a)
                       DropsNotEnabled = sprintf "%s would be dropped; pass --allow-drops to propose removals" (kindOf a) }
-                    (UnclassifiedChange(
-                        sprintf
-                            "%s %s exists in the database and not in desired state"
-                            (kindOf a)
-                            (QualifiedName.display name)
-                    )))
+
+                match a with
+                | RoutineObject r -> Routines.removal policy inputs (SchemaObject.scope a) wording r
+                | _ ->
+                    DropSafety.objectRemoval
+                        policy
+                        name
+                        (SchemaObject.scope a)
+                        wording
+                        (UnclassifiedChange(
+                            sprintf
+                                "%s %s exists in the database and not in desired state"
+                                (kindOf a)
+                                (QualifiedName.display name)
+                        )))
 
         let onBothSides =
             desiredOther
@@ -127,29 +129,18 @@ module Objects =
         // exactly: both sides now carry PostgreSQL's own rendering.
         let redefinitions =
             onBothSides
-            |> List.choose (fun (d, a) ->
+            |> List.collect (fun (d, a) ->
                 match d, a with
                 | ViewObject dv, ViewObject av when not dv.IsMaterialized ->
                     normalisedViews
                     |> List.tryPick (fun (name, definition) ->
                         if name = QualifiedName.display dv.Name then Some definition else None)
-                    |> Option.bind (fun declaredDefinition ->
-                        if declaredDefinition.Trim() <> av.Definition.Trim() then
-                            Some(Ok(ReplaceView dv.Name))
-                        else
-                            None)
-                // A routine body needs no shadow: PostgreSQL stores a classic
-                // `AS $$...$$` body verbatim in prosrc, so the declared text
-                // and the deployed text compare directly. A body the server
-                // holds only as a parse tree (SQL-standard BEGIN ATOMIC) or as
-                // a symbol name (C) yields None on one side and is disclosed.
-                | RoutineObject dr, RoutineObject ar ->
-                    match dr.Body, ar.Body with
-                    | Some declared, Some deployed when declared.Trim() <> deployed.Trim() ->
-                        Some(Ok(ReplaceRoutine dr.Name))
-                    | _ -> None
-
-                | _ -> None)
+                    |> Option.filter (fun declaredDefinition -> declaredDefinition.Trim() <> av.Definition.Trim())
+                    |> Option.map (fun _ -> Ok(ReplaceView dv.Name))
+                    |> Option.toList
+                | RoutineObject dr, RoutineObject ar when Routines.bodiesDiffer dr ar ->
+                    Routines.redefinition policy inputs (dr, ar)
+                | _ -> [])
 
         // Everything on both sides that could NOT be compared. A view that
         // normalised and matched produces nothing here — silence is correct

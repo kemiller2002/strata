@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "anthropic/claude-code",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-10-08T01:32:17.000Z",
+  "updatedAt": "2026-10-08T07:12:08.000Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -2905,6 +2905,68 @@
         }
       },
       "completedAt": "2026-10-08T01:32:17.000Z"
+    },
+    {
+      "id": "WI-0112",
+      "type": "bug",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Application/SchemaDiff/Routines.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Application/SchemaDiff/RedefinitionSql.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Host.Postgres/RoutineProbe.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Application/SchemaDiff/TableConstraints.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/CliTests.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/SchemaDiffTests.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/golden/schemadiff/objects.golden"
+        }
+      ],
+      "updatedAt": "2026-10-08T07:12:08.000Z",
+      "telemetryExecutionIds": [
+        "EXE-20261008T064902559Z-869b9e7e"
+      ],
+      "latestCheckpoint": {
+        "id": "b0a576d153273c85ee34f673",
+        "recordedAt": "2026-10-08T07:08:10.000Z",
+        "executionId": "EXE-20261008T064902559Z-869b9e7e",
+        "repository": "strata",
+        "branch": "fix/check-and-routine-redefinition-28",
+        "commit": "c0d144b9cf4d027da6d05d7ae07d25d340a8209c",
+        "remote": {
+          "name": "origin",
+          "url": "https://github.com/kemiller2002/strata"
+        },
+        "remoteBranch": "fix/check-and-routine-redefinition-28",
+        "remoteCommit": "c0d144b9cf4d027da6d05d7ae07d25d340a8209c",
+        "summary": "CHECK replacement (NOT VALID + VALIDATE), CREATE OR REPLACE for any routine file shape, server-probed drop+create gated by --allow-drops and pg_depend; 822 tests pass locally against PostgreSQL 16; version 0.1.1",
+        "nextAction": "Open the PR, get CI green, record completion, merge to release 0.1.1",
+        "verification": {
+          "status": "verified",
+          "mechanism": "git-remote-observation"
+        }
+      },
+      "completedAt": "2026-10-08T07:12:08.000Z",
+      "conclusion": "CHECK redefinitions are replaced NOT VALID then validated, and routine redefinitions are written CREATE OR REPLACE from any file shape; a server-refused redefinition is a DropRoutine+CreateRoutine gated by --allow-drops and pg_depend. 822 tests pass against PostgreSQL 16 (CI Build and test green on PR #29). Released as 0.1.1."
     }
   ]
 }

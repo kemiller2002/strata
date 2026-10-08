@@ -30,6 +30,9 @@ type RemovalGuard =
     | DesiredStateLoaded of detail: string
     /// Removals were enabled for this run (`--allow-drops`).
     | DropsEnabled of detail: string
+    /// Nothing in the database depends on the object. `None` means the
+    /// dependents could not be read, which is not "there are none".
+    | NoDependents of dependents: string list option * detail: string
 
 /// What a removal of a whole schema object reports at each guard.
 type ObjectRemovalWording =
@@ -112,6 +115,8 @@ module DropSafety =
         | NotExtensionOwned (scope, detail) -> if scope = ExtensionOwned then Some(ExtensionOwnedObject, detail) else None
         | DesiredStateLoaded detail -> if policy.DesiredComplete then None else Some(DesiredStateIncomplete, detail)
         | DropsEnabled detail -> if policy.AllowDrops then None else Some(DropsNotEnabled, detail)
+        | NoDependents (Some [], _) -> None
+        | NoDependents (_, detail) -> Some(HasDependents, detail)
 
     /// Propose `change`, or report the first guard it fails against `object'`.
     let removal
@@ -130,7 +135,11 @@ module DropSafety =
 
     /// A whole schema object present in the database and absent from desired
     /// state: every guard, in the canonical order.
-    let objectRemoval
+    ///
+    /// `further` are checked after those, for an object with conditions of
+    /// its own, such as a routine something still calls.
+    let objectRemovalWith
+        (further: RemovalGuard list)
         (policy: RemovalPolicy)
         (name: QualifiedName)
         (scope: ManagementScope)
@@ -140,8 +149,12 @@ module DropSafety =
         removal
             policy
             name
-            [ InManagedSchema(isManaged policy.ManagedSchemas name, wording.OutsideManaged)
-              NotExtensionOwned(scope, wording.ExtensionOwned)
-              DesiredStateLoaded wording.Incomplete
-              DropsEnabled wording.DropsNotEnabled ]
+            ([ InManagedSchema(isManaged policy.ManagedSchemas name, wording.OutsideManaged)
+               NotExtensionOwned(scope, wording.ExtensionOwned)
+               DesiredStateLoaded wording.Incomplete
+               DropsEnabled wording.DropsNotEnabled ]
+             @ further)
             change
+
+    let objectRemoval policy name scope wording change =
+        objectRemovalWith [] policy name scope wording change

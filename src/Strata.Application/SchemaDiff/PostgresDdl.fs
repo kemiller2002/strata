@@ -108,12 +108,8 @@ module PostgresDdl =
             |> Option.bind (fun i -> row.Literals |> List.tryItem i)
 
         match change with
-        // Most unclassified changes cannot be written — they describe a
-        // difference rather than name an object. A declared view or routine is
-        // the exception: the change names it, and the file holds exactly the
-        // DDL that creates it. Matching on the message is unpleasant, but the
-        // alternative is inventing CreateView and CreateFunction cases that the
-        // gate would then judge by rules written for tables.
+        // An unclassified change describes a difference, not an object, so
+        // there is nothing it names that DDL could be written for.
         | UnclassifiedChange _ -> None
 
         // A view or routine is created by executing the file that declares it.
@@ -123,17 +119,11 @@ module PostgresDdl =
         | CreateView name
         | CreateRoutine name -> declaredText name
 
-        // The declaring file says CREATE VIEW; replacing needs CREATE OR
-        // REPLACE VIEW. Rewriting only the leading keyword keeps the author's
-        // body byte-for-byte, which is the whole reason the file is used.
-        | ReplaceView name -> declaredText name |> Option.bind (replaceKeyword "CREATE VIEW")
-
-        | ReplaceRoutine name ->
-            declaredText name
-            |> Option.bind (fun text ->
-                match replaceKeyword "CREATE FUNCTION" text with
-                | Some rewritten -> Some rewritten
-                | None -> replaceKeyword "CREATE PROCEDURE" text)
+        // The declaring file, with only its leading keywords made CREATE OR
+        // REPLACE, so the author's body is kept byte-for-byte.
+        | ReplaceView name -> declaredText name |> Option.bind (RedefinitionSql.orReplace [ "VIEW" ])
+        | ReplaceRoutine name -> declaredText name |> Option.bind (RedefinitionSql.orReplace [ "FUNCTION"; "PROCEDURE" ])
+        | DropRoutine (name, arguments) -> Some(RedefinitionSql.dropRoutine name arguments)
 
         // The declaring file holds exactly the DDL the author wrote, defaults
         // and check expressions included. Reconstruction below is the fallback
@@ -528,3 +518,5 @@ module PostgresDdl =
         // automatically; PostgreSQL will not let one be dropped separately.
         | DropConstraint (table, name, _) ->
             Some(sprintf "ALTER TABLE %s DROP CONSTRAINT %s" (quoteName table) (quote name))
+
+        | ReplaceCheckConstraint (table, name, definition) -> Some(RedefinitionSql.replaceCheck table name definition)
