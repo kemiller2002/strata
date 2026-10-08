@@ -1929,10 +1929,10 @@
       "description": null,
       "tags": [],
       "priority": "medium",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-10-08T08:14:19.252Z",
-      "updatedAt": "2026-10-08T08:14:19.474Z",
+      "updatedAt": "2026-10-08T08:15:17.563Z",
       "createdBy": "unknown",
       "createdByActor": {
         "kind": "agent",
