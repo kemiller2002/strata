@@ -8,6 +8,8 @@
     "Enums.fs": 120,
     "Extensions.fs": 110,
     "Grants.fs": 190,
+    "Comments.fs": 150,
+    "CommentSql.fs": 60,
     "Model.fs": 270,
     "ObjectDependencies.fs": 110,
     "Objects.fs": 210,
@@ -22,7 +24,8 @@
     "Schemas.fs": 70,
     "Sequences.fs": 90,
     "TableConstraints.fs": 470,
-    "TableIndexes.fs": 240,
+    "TableIndexes.fs": 180,
+    "TableTriggers.fs": 150,
     "Tables.fs": 330
   },
   "exceptions": []

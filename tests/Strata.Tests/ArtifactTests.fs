@@ -235,12 +235,27 @@ let private sample : ResolvedDesiredState =
             [ { Name = id' "citext"; Schema = Some(id' "public"); Version = Some "1.6"; IsRelocatable = true }
               // A file that pinned no version and named no schema. Neither is
               // the same as choosing the default.
-              { Name = id' "pgcrypto"; Schema = None; Version = None; IsRelocatable = false } ] }
+              { Name = id' "pgcrypto"; Schema = None; Version = None; IsRelocatable = false } ]
+          Comments =
+            // Every target kind and every relation kind, and text that needs
+            // escaping: a quote, a newline and a non-ASCII character.
+            [ { Target = CommentTarget.Schema(id' "shop"); Text = "the shop's schema" }
+              { Target = CommentTarget.Relation(RelationKind.Table, qn "shop" "product"); Text = "line one\nline two" }
+              { Target = CommentTarget.Relation(RelationKind.View, qn "shop" "open_product"); Text = "open — products" }
+              { Target = CommentTarget.Relation(RelationKind.MaterializedView, qn "shop" "product_totals"); Text = "m" }
+              { Target = CommentTarget.Relation(RelationKind.Sequence, qn "shop" "product_id_seq"); Text = "s" }
+              { Target = CommentTarget.Relation(RelationKind.Index, qn "shop" "product_open_idx"); Text = "i" }
+              { Target = CommentTarget.Column(qn "shop" "product", id' "status"); Text = "c" }
+              { Target = CommentTarget.Routine(qn "shop" "touch", [ "text" ]); Text = "r" }
+              { Target = CommentTarget.Type(qn "shop" "email"); Text = "t" }
+              { Target = CommentTarget.Constraint(qn "shop" "product", id' "product_total_positive"); Text = "k" }
+              { Target = CommentTarget.Trigger(qn "shop" "product", id' "set_updated_at"); Text = "g" } ] }
       NormalisedViews = [ "shop.open_product", " SELECT id\n   FROM shop.product;" ]
       NormalisedTables =
         [ { Table = "shop.product"
             Defaults = [ "status", "'open'::text" ]
             Checks = [ "product_total_positive", "(total > (0)::numeric)" ] } ]
+      NormalisedIndexes = [ { Table = "shop.product"; Index = "product_open_idx"; Predicate = "(status = 'open'::text)" } ]
       NormalisedDomains =
         [ { Domain = "shop.email"
             BaseType = "text"

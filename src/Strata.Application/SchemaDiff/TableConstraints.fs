@@ -357,7 +357,7 @@ module TableConstraints =
         let indexChanges, indexDisclosure = TableIndexes.indexes policy indexesDeclared desired actual
 
         let triggerChanges, triggerDisclosure, conditionDisclosure =
-            TableIndexes.triggers policy triggersDeclared desired actual
+            TableTriggers.triggers policy triggersDeclared desired actual
 
         // Everything above establishes PRESENCE. Two expressions Strata cannot
         // read might still differ, and saying so is the difference between a
@@ -439,7 +439,13 @@ module TableConstraints =
         let perTable =
             m.Shared
             |> List.map (fun (d, a) ->
-                forTable policy indexesDeclared triggersDeclared inputs.NormalisedTables d a)
+                forTable
+                    policy
+                    indexesDeclared
+                    triggersDeclared
+                    inputs.NormalisedTables
+                    (TableIndexes.withRenderedPredicates inputs.NormalisedIndexes d)
+                    a)
 
         { Differences = perTable |> List.collect fst
           Disclosures = perTable |> List.collect snd }

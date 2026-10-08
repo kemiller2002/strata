@@ -736,6 +736,144 @@ module ShadowNormalisation =
         with ex ->
             Error ex.Message
 
+    /// A declared partial index's predicate, as the catalog renders it.
+    type IndexPredicate =
+        { Table: string
+          Index: string
+          /// `pg_get_expr(indpred, indrelid)`: `WHERE status = 'open'` comes
+          /// back as `(status = 'open'::text)`.
+          Predicate: string }
+
+    /// Normalise the WHERE predicates of declared partial indexes.
+    ///
+    /// A predicate is not recoverable from the parse tree, and the catalog
+    /// reports its own rewritten form, so without this a partial index could
+    /// only be compared on whether it HAS a predicate — `WHERE status = 'open'`
+    /// and `WHERE status = 'closed'` read as the same index. The declared index
+    /// is built on a shadow copy of its table and its predicate read back
+    /// through the same function the catalog side uses.
+    ///
+    /// The shape `normalisePolicies` uses, for the same reason: a schema of
+    /// its own per table, the table under its OWN bare name with `search_path`
+    /// set to that schema, and the file's qualified table name rewritten to
+    /// the shadow's. An unqualified `ON t` and a qualified `ON app.t` then both
+    /// land on the shadow, and the index lands in the shadow schema, where it
+    /// cannot collide with anything. Same transaction discipline as everywhere
+    /// here: one transaction, always rolled back, a savepoint per table and per
+    /// index. An index whose DDL the server rejects is absent from the result,
+    /// and its predicate is then disclosed as not-compared rather than guessed.
+    let normaliseIndexPredicates
+        (connectionString: string)
+        (tables: (string * string * (string * string) list) list)
+        : Result<IndexPredicate list, string> =
+
+        if List.isEmpty tables then Ok []
+        else
+
+        try
+            use connection = new NpgsqlConnection(connectionString)
+            connection.Open()
+            use transaction = connection.BeginTransaction()
+
+            try
+                let exec (sql: string) =
+                    use command = new NpgsqlCommand(sql, connection, transaction)
+                    command.ExecuteNonQuery() |> ignore
+
+                let savepoint () = "sp_" + Guid.NewGuid().ToString("N").Substring(0, 8)
+
+                let predicateOf (schema: string) (index: string) =
+                    use command =
+                        new NpgsqlCommand(
+                            """
+                            SELECT pg_catalog.pg_get_expr(i.indpred, i.indrelid)
+                            FROM pg_catalog.pg_index i
+                            JOIN pg_catalog.pg_class c ON c.oid = i.indexrelid
+                            JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                            WHERE n.nspname = $1 AND c.relname = $2 AND i.indpred IS NOT NULL
+                            """,
+                            connection,
+                            transaction
+                        )
+
+                    command.Parameters.AddWithValue schema |> ignore
+                    command.Parameters.AddWithValue index |> ignore
+
+                    match command.ExecuteScalar() with
+                    | :? string as predicate -> Some predicate
+                    | _ -> None
+
+                let normalised =
+                    tables
+                    |> List.collect (fun (table, tableDdl, indexes) ->
+                        let schema = shadowSchema ()
+                        let outer = savepoint ()
+
+                        let bare, schemaPart =
+                            match table.LastIndexOf '.' with
+                            | -1 -> table, ""
+                            | i -> table.Substring(i + 1), table.Substring(0, i)
+
+                        let onShadow (text: string) =
+                            if schemaPart = "" then
+                                text
+                            else
+                                text
+                                |> replaceSignificant
+                                    [ sprintf "\"%s\".\"%s\"" schemaPart bare
+                                      sprintf "\"%s\".%s" schemaPart bare
+                                      sprintf "%s.\"%s\"" schemaPart bare
+                                      sprintf "%s.%s" schemaPart bare ]
+                                    (sprintf "%s.\"%s\"" schema bare)
+
+                        try
+                            exec (sprintf "SAVEPOINT %s" outer)
+
+                            match tableBodyStart tableDdl with
+                            | None ->
+                                exec (sprintf "ROLLBACK TO SAVEPOINT %s" outer)
+                                []
+                            | Some bodyStart ->
+                                exec (sprintf "CREATE SCHEMA %s" schema)
+                                exec (sprintf "SET LOCAL search_path TO %s" schema)
+                                exec (sprintf "CREATE TABLE %s.\"%s\" %s" schema bare (tableDdl.Substring bodyStart))
+
+                                let built =
+                                    indexes
+                                    |> List.filter (fun (_, indexDdl) ->
+                                        let inner = savepoint ()
+
+                                        try
+                                            exec (sprintf "SAVEPOINT %s" inner)
+                                            exec (onShadow indexDdl)
+                                            true
+                                        with _ ->
+                                            try exec (sprintf "ROLLBACK TO SAVEPOINT %s" inner) with _ -> ()
+                                            false)
+
+                                // Read under the session's own search path, not
+                                // the shadow's: `pg_get_expr` qualifies a name by
+                                // the path in force when it RENDERS, and the
+                                // catalog side renders under the session's.
+                                exec "RESET search_path"
+
+                                built
+                                |> List.choose (fun (index, _) ->
+                                    predicateOf schema index
+                                    |> Option.map (fun predicate ->
+                                        { Table = table; Index = index; Predicate = predicate }))
+                        with _ ->
+                            try exec (sprintf "ROLLBACK TO SAVEPOINT %s" outer) with _ -> ()
+                            [])
+
+                transaction.Rollback()
+                Ok normalised
+            with ex ->
+                try transaction.Rollback() with _ -> ()
+                Error ex.Message
+        with ex ->
+            Error ex.Message
+
     /// One declared domain, as the catalog would render it.
     ///
     /// `Constraints` are in DECLARATION order — `pg_constraint`'s oid order

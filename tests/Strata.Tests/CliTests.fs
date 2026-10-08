@@ -316,6 +316,87 @@ let private applicationShaped =
 
     ("strata.json", manifest (files |> List.map fst)) :: files
 
+/// A table documented with `COMMENT ON` in its own file, as a project writes it.
+let private documented (tableComment: string) (columnComment: string option) =
+    let table =
+        [ Some "CREATE TABLE cli.note (id bigint PRIMARY KEY, body text NOT NULL);"
+          Some(sprintf "COMMENT ON TABLE cli.note IS '%s';" (tableComment.Replace("'", "''")))
+          columnComment |> Option.map (fun c -> sprintf "COMMENT ON COLUMN cli.note.body IS '%s';" (c.Replace("'", "''"))) ]
+        |> List.choose id
+        |> String.concat "\n"
+
+    [ "strata.json", manifest [ "schema/cli/tables/note.sql" ]
+      "schema/cli/tables/note.sql", table ]
+
+[<RequiresCliAndPostgres>]
+let ``declared comments are deployed, converge, and a change to one is planned and applied`` () =
+    database (fun connection ->
+        let descriptionOf (sql: string) =
+            use c = new NpgsqlConnection(connection)
+            c.Open()
+            use command = new NpgsqlCommand(sql, c)
+            command.ExecuteScalar() |> string
+
+        let tableComment () = descriptionOf "SELECT obj_description('cli.note'::regclass, 'pg_class')"
+        let columnComment () = descriptionOf "SELECT col_description('cli.note'::regclass, 2)"
+
+        project (documented "One row per note — café" (Some "It's the text")) (fun root ->
+            let applied = Cli.run [ "apply"; "--project"; root; "--connection"; connection; "--confirm"; "--approve" ]
+            Assert.True((applied.ExitCode = 0), applied.Output)
+            Assert.Equal("One row per note — café", tableComment ())
+            Assert.Equal("It's the text", columnComment ())
+
+            let replanned = Cli.run [ "plan"; "--project"; root; "--connection"; connection ]
+            Assert.True((replanned.ExitCode = 0), replanned.Output)
+            Assert.Contains("PLAN: 0 change(s)", replanned.Stdout))
+
+        // The same project with the table's comment edited and the column's
+        // taken out: one set, and one removal that waits for --allow-drops.
+        project (documented "One row per note, edited" None) (fun root ->
+            let planned = Cli.run [ "plan"; "--project"; root; "--connection"; connection ]
+            Assert.Contains("set-comment        relation:cli.note", planned.Stdout)
+            Assert.Contains("pass --allow-drops to remove it", planned.Stdout)
+
+            let applied =
+                Cli.run [ "apply"; "--project"; root; "--connection"; connection; "--confirm"; "--approve"; "--allow-drops" ]
+
+            Assert.True((applied.ExitCode = 0), applied.Output)
+            Assert.Equal("One row per note, edited", tableComment ())
+            Assert.Equal("", columnComment ())
+
+            let replanned = Cli.run [ "plan"; "--project"; root; "--connection"; connection; "--allow-drops" ]
+            Assert.True((replanned.ExitCode = 0), replanned.Output)
+            Assert.Contains("PLAN: 0 change(s)", replanned.Stdout)))
+
+/// One table and one partial index on it, with the predicate given.
+let private partiallyIndexed (predicate: string) =
+    [ "strata.json", manifest [ "schema/cli/tables/ticket.sql"; "schema/cli/indexes/open_ticket.sql" ]
+      "schema/cli/tables/ticket.sql", "CREATE TABLE cli.ticket (id bigint PRIMARY KEY, status text NOT NULL);"
+      "schema/cli/indexes/open_ticket.sql", sprintf "CREATE INDEX open_ticket ON cli.ticket (id) WHERE %s;" predicate ]
+
+[<RequiresCliAndPostgres>]
+let ``a partial index's predicate is compared by content, so an edited one is a difference`` () =
+    database (fun connection ->
+        project (partiallyIndexed "status = 'open'") (fun root ->
+            let applied = Cli.run [ "apply"; "--project"; root; "--connection"; connection; "--confirm"; "--approve" ]
+            Assert.True((applied.ExitCode = 0), applied.Output)
+
+            // Converged, and converged on CONTENT: the server's rendering of the
+            // declared predicate matched the deployed one, so nothing about the
+            // index is left disclosed as compared by presence only.
+            let replanned = Cli.run [ "plan"; "--project"; root; "--connection"; connection ]
+            Assert.True((replanned.ExitCode = 0), replanned.Output)
+            Assert.Contains("PLAN: 0 change(s)", replanned.Stdout)
+            Assert.DoesNotContain("only its PRESENCE was compared", replanned.Stdout))
+
+        // Same index, same columns, a different predicate. Compared by presence
+        // this read as converged.
+        project (partiallyIndexed "status = 'closed'") (fun root ->
+            let planned = Cli.run [ "plan"; "--project"; root; "--connection"; connection ]
+            Assert.DoesNotContain("PLAN: 0 change(s)", planned.Stdout)
+            Assert.Contains("where (status = 'closed'::text)", planned.Stdout)
+            Assert.Contains("where (status = 'open'::text)", planned.Stdout)))
+
 [<RequiresCliAndPostgres>]
 let ``an application-shaped project applies to an empty schema, converges, and keeps every index's shape`` () =
     database (fun connection ->

@@ -51,17 +51,20 @@ let private layers =
           "Extensions", DiffersLayer
           "RowSecurity", DiffersLayer
           "Grants", DiffersLayer
+          "Comments", DiffersLayer
           "Sequences", DiffersLayer
           "Enums", DiffersLayer
           "Domains", DiffersLayer
           "Tables", DiffersLayer
           "TableIndexes", DiffersLayer
+          "TableTriggers", DiffersLayer
           "TableConstraints", DiffersLayer
           "Objects", DiffersLayer
           "ReferenceRows", DiffersLayer
           "ObjectDependencies", OrderingLayer
           "Ordering", OrderingLayer
           "PostgresSql", SqlLayer
+          "CommentSql", SqlLayer
           "PostgresDdl", SqlLayer
           "Plan", OrchestrationLayer
           "Render", RenderingLayer ]

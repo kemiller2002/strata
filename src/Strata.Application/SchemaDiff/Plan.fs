@@ -35,6 +35,7 @@ module Plan =
         let enums = Enums.compare policy inputs
         let domains = Domains.compare policy inputs
         let grants = Grants.compare policy inputs
+        let comments = Comments.compare policy inputs
         let policies = RowSecurity.comparePolicies inputs
         let extensions = Extensions.compare inputs
         let tableChanges = Tables.compare policy inputs tables
@@ -53,6 +54,7 @@ module Plan =
                   enums.Differences
                   domains.Differences
                   grants.Differences
+                  comments.Differences
                   policies.Differences
                   extensions.Differences
                   tableChanges.Differences
@@ -87,6 +89,7 @@ module Plan =
                   ReferenceRows.enumTwoStep enums inputs.DataFailures
                   schemas.Disclosures
                   grants.Disclosures
+                  comments.Disclosures
                   RowSecurity.disclosures inputs
                   policies.Disclosures
                   extensions.Disclosures

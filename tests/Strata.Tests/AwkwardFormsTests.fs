@@ -255,6 +255,33 @@ let ``Strata reads the declaration the way the server does`` (name: string) =
                 | GrantTarget.RelationColumn (n, c) -> { g with Target = GrantTarget.RelationColumn(qualify n, c) }
                 | GrantTarget.Schema _ -> g)
 
+        // Comments, qualified the same way. A schema's comment names its schema
+        // already, so it is left alone, as a schema grant is.
+        let comments =
+            declared.Comments
+            |> List.map (fun c ->
+                { c with
+                    Target =
+                        match c.Target with
+                        | CommentTarget.Schema _ -> c.Target
+                        | CommentTarget.Relation (kind, n) -> CommentTarget.Relation(kind, qualify n)
+                        | CommentTarget.Column (n, m) -> CommentTarget.Column(qualify n, m)
+                        | CommentTarget.Routine (n, args) -> CommentTarget.Routine(qualify n, args)
+                        | CommentTarget.Type n -> CommentTarget.Type(qualify n)
+                        | CommentTarget.Constraint (n, m) -> CommentTarget.Constraint(qualify n, m)
+                        | CommentTarget.Trigger (n, m) -> CommentTarget.Trigger(qualify n, m) })
+
+        let actualComments =
+            match CatalogIntrospection.readComments connection with
+            | Ok cs ->
+                Some(
+                    cs
+                    |> List.filter (fun c ->
+                        match CommentTarget.schema c.Target with
+                        | Some s -> Identifier.folded s = Fixture.schema
+                        | None -> false))
+            | Microsoft.FSharp.Core.Error _ -> None
+
         let actualGrants =
             match CatalogIntrospection.readGrants connection with
             | Ok gs ->
@@ -280,6 +307,9 @@ let ``Strata reads the declaration the way the server does`` (name: string) =
             { declared with
                 Snapshot = desired
                 Declarations = declared.Declarations |> List.map (fun (n, text) -> qualify n, text)
+                IndexDeclarations =
+                    declared.IndexDeclarations
+                    |> List.map (fun ((table, name), text) -> (qualify table, name), text)
                 Policies = declared.Policies |> List.map (fun (table, policy) -> qualify table, policy)
                 PolicyDeclarations =
                     declared.PolicyDeclarations
@@ -329,10 +359,13 @@ let ``Strata reads the declaration the way the server does`` (name: string) =
                     ExistingSchemas = Some [ Fixture.schema ]
                     DeclaredGrants = grants
                     ActualGrants = actualGrants
+                    DeclaredComments = comments
+                    ActualComments = actualComments
                     Data = resolved.Data
                     DataFailures = resolved.DataFailures
                     NormalisedViews = resolved.NormalisedViews
                     NormalisedTables = resolved.NormalisedTables
+                    NormalisedIndexes = resolved.NormalisedIndexes
                     NormalisedDomains = resolved.NormalisedDomains }
 
         // Rendered so a failure names what diverged rather than just counting.

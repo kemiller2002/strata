@@ -495,7 +495,7 @@ This table is the honest map of coverage. Measured, not aspirational.
 | **Materialized views** | ✅ | ❌ | **Presence only** — disclosed as not-compared |
 | Functions, procedures | ✅ | ✅ | Body text vs `prosrc`, when both sides hold text |
 | `BEGIN ATOMIC` / C routines | ✅ | ❌ | No body text to compare — disclosed |
-| Indexes | ✅ | ✅ | Created from the declaring file's own text. A predicate, sort order, expression, access method, `INCLUDE`, operator class, collation or storage option is compared by **presence** — one side having a predicate the other lacks is a difference; both having one is disclosed as not-compared |
+| Indexes | ✅ | ✅ | Created from the declaring file's own text. A partial index's `WHERE` predicate is rendered by the server and compared by **content**; a different predicate under the same name is reported, not rebuilt. A sort order, expression, access method, `INCLUDE`, operator class, collation or storage option is compared by **presence** — one side having one the other lacks is a difference; both having one is disclosed as not-compared |
 | Triggers, sequences | ✅ | ✅ | |
 | Enum types | ✅ | ✅ | Can add a value at a position; **cannot** remove or reorder |
 | Domains | ✅ | ✅ | Base type and collation cannot change at all |
@@ -503,6 +503,7 @@ This table is the honest map of coverage. Measured, not aspirational.
 | RLS policies | ✅ | ✅ | Never dropped, `--allow-drops` included |
 | Extensions | ✅ | ✅ | Installed (in the file's `WITH SCHEMA`, at its `VERSION`) and updated, **never** dropped |
 | Reference rows | ✅ | ✅ | Never deleted |
+| Comments (`COMMENT ON`) | ✅ | ✅ | On schemas, tables, views, materialized views, sequences, indexes, columns, routines, types, domains, table constraints and triggers; written in the object's own file or any other. Declaring any takes ownership of the comments on every object the project declares; an undeclared one is removed only with `--allow-drops`. `IS NULL` is refused: declare no comment instead |
 | Composite / range types | ❌ | ❌ | **Refused by name**, loudly — never silently ignored |
 
 Two things follow from PostgreSQL's own limits rather than from Strata's:

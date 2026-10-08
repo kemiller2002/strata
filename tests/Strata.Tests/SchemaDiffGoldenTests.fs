@@ -532,6 +532,61 @@ let private objectsFixture () =
             "sales.same_view", " SELECT 2 AS y;"
             "sales.summary", " SELECT 4;" ] }
 
+/// Comments: set, changed, unchanged and removed; every target kind's SQL
+/// spelling; text that needs quoting; a comment on an undeclared object, which
+/// is withheld; and a deployed comment on an undeclared object, which is not
+/// the project's to remove.
+let private commentsFixture () =
+    let orders =
+        { table Managed "sales" "orders" [ "id", "integer", false; "email", "text", true ] with
+            Indexes = [ { Name = id' "orders_email"; Columns = [ id' "email" ]; IsUnique = false; Predicate = None; Unmodelled = [] } ]
+            Triggers = [ trigger "orders_touch" ] }
+
+    let total =
+        RoutineObject
+            { Name = qn "sales" "total"
+              Kind = Function
+              ArgumentTypes = [ "integer"; "character varying" ]
+              ReturnType = None
+              Language = "sql"
+              Body = None
+              Scope = Managed }
+
+    let comment target text : Comment = { Target = target; Text = text }
+    let ordersTable = CommentTarget.Relation(RelationKind.Table, qn "sales" "orders")
+    let routine = CommentTarget.Routine(qn "sales" "total", [ "integer"; "character varying" ])
+
+    { baseInputs
+          (complete [ TableObject orders; total; enum' Managed "status" [ "open" ] ])
+          (complete
+              [ TableObject { orders with Scope = Observed }
+                RoutineObject
+                    { Name = qn "sales" "total"
+                      Kind = Function
+                      ArgumentTypes = [ "integer"; "character varying" ]
+                      ReturnType = None
+                      Language = "sql"
+                      Body = None
+                      Scope = Observed }
+                enum' Observed "status" [ "open" ]
+                TableObject(table Observed "other" "legacy" [ "id", "integer", false ]) ]) with
+        DeclaredComments =
+          [ comment (CommentTarget.Schema(id' "sales")) "Sales, as recorded"
+            comment ordersTable "One row per order"
+            comment (CommentTarget.Column(qn "sales" "orders", id' "email")) "Where the receipt goes; it's optional"
+            comment (CommentTarget.Relation(RelationKind.Index, qn "sales" "orders_email")) "for receipts"
+            comment routine "Sums an order"
+            comment (CommentTarget.Type(qn "sales" "status")) "unchanged"
+            comment (CommentTarget.Constraint(qn "sales" "orders", id' "orders_pkey")) "the key"
+            comment (CommentTarget.Trigger(qn "sales" "orders", id' "orders_touch")) "keeps updated_at"
+            comment (CommentTarget.Relation(RelationKind.View, qn "sales" "missing")) "nothing declares this" ]
+        ActualComments =
+          Some
+              [ comment ordersTable "One row per orders"
+                comment (CommentTarget.Type(qn "sales" "status")) "unchanged"
+                comment (CommentTarget.Column(qn "sales" "orders", id' "id")) "a stale note"
+                comment (CommentTarget.Relation(RelationKind.Table, qn "other" "legacy")) "not ours" ] }
+
 /// Reference data rows, including the enum two-step disclosure.
 let private dataFixture () =
     let row key rendered literals =
@@ -576,7 +631,9 @@ let private dropsDisabledFixture () =
                 @ (objectsFixture ()).Actual.Objects }
         NormalisedDomains = (typesFixture ()).NormalisedDomains
         DeclaredGrants = (grantsFixture ()).DeclaredGrants
-        ActualGrants = (grantsFixture ()).ActualGrants }
+        ActualGrants = (grantsFixture ()).ActualGrants
+        DeclaredComments = (commentsFixture ()).DeclaredComments
+        ActualComments = (commentsFixture ()).ActualComments }
 
 let private partialDesiredFixture () =
     let inputs = dropsDisabledFixture ()
@@ -599,6 +656,8 @@ let private unreadableFixture () =
         ExistingSchemas = None
         DeclaredGrants = [ grant (GrantTarget.Relation(qn "sales" "orders")) "app_user" [ "SELECT" ] [] ]
         ActualGrants = None
+        DeclaredComments = [ { Target = CommentTarget.Schema(id' "sales"); Text = "unread" } ]
+        ActualComments = None
         DeclaredExtensions = [ extension "citext" None None false ]
         ActualExtensions = Some(Error "permission denied for pg_extension")
         DeclaredPolicies = [ qn "sales" "orders", policy "p" PolicyCommand.All [ "app_user" ] (Some "true") None ]
@@ -615,6 +674,7 @@ let private fixtures: (string * (unit -> Inputs)) list =
       "constraints", constraintsFixture
       "types", typesFixture
       "grants", grantsFixture
+      "comments", commentsFixture
       "security", securityFixture
       "objects", objectsFixture
       "data", dataFixture
@@ -738,6 +798,7 @@ let removalCases =
         [ "DropColumn"
           "DropTable"
           "RevokePrivileges"
+          "RemoveComment"
           "DropSequence"
           "DropEnumType"
           "DropDomainType"

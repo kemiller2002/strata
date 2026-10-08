@@ -43,6 +43,16 @@ type NormalisedTable =
       Defaults: (string * string) list
       Checks: (string * string) list }
 
+/// A declared partial index's WHERE predicate as the SERVER renders it.
+///
+/// Absent for an index the server could not build in the shadow, whose
+/// predicate is then disclosed as not-compared rather than compared with
+/// nothing.
+type NormalisedIndex =
+    { Table: string
+      Index: string
+      Predicate: string }
+
 /// A declared domain as the SERVER renders it.
 ///
 /// A domain read from a file carries no default expression and no check

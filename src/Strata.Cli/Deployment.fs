@@ -112,6 +112,17 @@ let run
             eprintfn "         Declared grants will be reported as not-compared."
             None
 
+    // Read with the same care: comments that could not be read are not
+    // absent comments, and treating them as absent would set every declared
+    // one again on every run.
+    let actualComments =
+        match CatalogIntrospection.readComments connectionString with
+        | Ok comments -> Some comments
+        | Microsoft.FSharp.Core.Error message ->
+            eprintfn "warning: could not read the database's comments (%s)." message
+            eprintfn "         Declared comments will be reported as not-compared."
+            None
+
     // Reported, not compared — but READ, which is the point. Nothing
     // looked at row-level security before, so a table with it
     // enabled and no policies, hiding every row from every role,
@@ -218,6 +229,8 @@ let run
                 ExistingSchemas = existingSchemas
                 DeclaredGrants = declared.Grants
                 ActualGrants = actualGrants
+                DeclaredComments = declared.Comments
+                ActualComments = actualComments
                 ActualRowLevelSecurity = actualRowLevelSecurity
                 PolicyDeclarations = declared.PolicyDeclarations
                 DeclaredPolicies = resolved.Policies
@@ -228,6 +241,7 @@ let run
                 DataFailures = resolved.DataFailures
                 NormalisedViews = resolved.NormalisedViews
                 NormalisedTables = resolved.NormalisedTables
+                NormalisedIndexes = resolved.NormalisedIndexes
                 NormalisedDomains = resolved.NormalisedDomains
                 Renames = renames }
     let gate = DeploymentGate.run graph scope diff.Changes

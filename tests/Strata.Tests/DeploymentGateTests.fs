@@ -213,6 +213,8 @@ let private everyChange : Change list =
       CreateSchema(id' "sales")
       GrantPrivileges(GrantTarget.Relation orders, "app_user", [ "SELECT" ])
       RevokePrivileges(GrantTarget.Relation orders, "app_user", [ "SELECT" ])
+      SetComment(CommentTarget.Relation(RelationKind.Table, orders), "the orders")
+      RemoveComment(CommentTarget.Column(orders, id' "c"))
       CreateExtension(id' "citext")
       UpdateExtension(id' "citext", "1.7")
       SetExtensionSchema(id' "citext", id' "ext")

@@ -1537,7 +1537,7 @@ module PgParserAdapter =
     /// overload, or on a routine that is not the one meant. Which overload is
     /// intended depends on what is deployed, so a FILE cannot say, and a
     /// desired-state file that cannot say must not be guessed at.
-    let private grantRoutineOf (o: ObjectWithArgs) =
+    let private routineSignatureOf (statement: string) (o: ObjectWithArgs) =
         let name =
             if isNull (box o.Objname) then []
             else
@@ -1548,8 +1548,10 @@ module PgParserAdapter =
                 |> List.ofSeq
 
         if o.ArgsUnspecified then
-            Microsoft.FSharp.Core.Error
-                "a GRANT on a routine named without its argument types is not read as declared state: PostgreSQL resolves it against whatever is deployed, so the file does not say which overload it means"
+            Microsoft.FSharp.Core.Error(
+                sprintf
+                    "a %s on a routine named without its argument types is not read as declared state: PostgreSQL resolves it against whatever is deployed, so the file does not say which overload it means"
+                    statement)
         else
 
         // `objfuncargs` in preference to `objargs`: the same reason
@@ -1570,9 +1572,127 @@ module PgParserAdapter =
                 |> List.ofSeq
 
         match name with
-        | [ schema; routine ] -> Ok(GrantTarget.Routine(qualifiedNameOf schema routine, arguments))
-        | [ routine ] -> Ok(GrantTarget.Routine(QualifiedName.unqualified (identifierOf routine), arguments))
-        | _ -> Microsoft.FSharp.Core.Error "a GRANT on a routine whose name Strata cannot resolve" 
+        | [ schema; routine ] -> Ok(qualifiedNameOf schema routine, arguments)
+        | [ routine ] -> Ok(QualifiedName.unqualified (identifierOf routine), arguments)
+        | _ -> Microsoft.FSharp.Core.Error(sprintf "a %s on a routine whose name Strata cannot resolve" statement)
+
+    let private grantRoutineOf (o: ObjectWithArgs) =
+        routineSignatureOf "GRANT" o |> Result.map GrantTarget.Routine
+
+    /// The object a `COMMENT ON` statement documents.
+    ///
+    /// Each kind carries its name in a different node, the same encoding a
+    /// GRANT uses: a schema as a bare String, a type as a TypeName, a routine
+    /// as an ObjectWithArgs, and everything else as a List of name parts in
+    /// which a column, constraint or trigger is the LAST part and its relation
+    /// the parts before it. Measured on the parser, not assumed.
+    let private commentTargetOf (objectType: ObjectType) (node: Node) : Result<CommentTarget, string> =
+        let partsOf (names: Google.Protobuf.Collections.RepeatedField<Node>) =
+            names
+            |> Seq.choose (fun n ->
+                if isNull (box n.String) || String.IsNullOrEmpty n.String.Sval then None else Some n.String.Sval)
+            |> List.ofSeq
+
+        let listParts () =
+            if isNull (box node) || isNull (box node.List) then [] else partsOf node.List.Items
+
+        let relationOf parts =
+            match parts with
+            | [ schema; relation ] -> Some(qualifiedNameOf schema relation)
+            | [ relation ] -> Some(QualifiedName.unqualified (identifierOf relation))
+            | _ -> None
+
+        // A name with a member on the end: `schema.table.column`.
+        let memberOf parts =
+            match List.rev parts with
+            | last :: relation when not (List.isEmpty relation) ->
+                relationOf (List.rev relation) |> Option.map (fun r -> r, identifierOf last)
+            | _ -> None
+
+        let required what found =
+            match found with
+            | Some value -> Ok value
+            | None -> Microsoft.FSharp.Core.Error(sprintf "a COMMENT ON %s whose name Strata cannot resolve" what)
+
+        let relation kind what =
+            listParts () |> relationOf |> required what |> Result.map (fun n -> CommentTarget.Relation(kind, n))
+
+        let ofMember what make =
+            listParts () |> memberOf |> required what |> Result.map make
+
+        match objectType with
+        | ObjectType.ObjectSchema ->
+            if isNull (box node) || isNull (box node.String) || String.IsNullOrEmpty node.String.Sval then
+                Microsoft.FSharp.Core.Error "a COMMENT ON SCHEMA whose schema name Strata cannot resolve"
+            else
+                Ok(CommentTarget.Schema(identifierOf node.String.Sval))
+        | ObjectType.ObjectTable -> relation RelationKind.Table "TABLE"
+        | ObjectType.ObjectView -> relation RelationKind.View "VIEW"
+        | ObjectType.ObjectMatview -> relation RelationKind.MaterializedView "MATERIALIZED VIEW"
+        | ObjectType.ObjectSequence -> relation RelationKind.Sequence "SEQUENCE"
+        | ObjectType.ObjectIndex -> relation RelationKind.Index "INDEX"
+        | ObjectType.ObjectColumn -> ofMember "COLUMN" CommentTarget.Column
+        | ObjectType.ObjectTabconstraint -> ofMember "CONSTRAINT" CommentTarget.Constraint
+        | ObjectType.ObjectTrigger -> ofMember "TRIGGER" CommentTarget.Trigger
+        | ObjectType.ObjectType
+        | ObjectType.ObjectDomain ->
+            if isNull (box node) || isNull (box node.TypeName) then
+                Microsoft.FSharp.Core.Error "a COMMENT ON TYPE whose name Strata cannot resolve"
+            else
+                partsOf node.TypeName.Names |> relationOf |> required "TYPE" |> Result.map CommentTarget.Type
+        | ObjectType.ObjectFunction
+        | ObjectType.ObjectProcedure
+        | ObjectType.ObjectRoutine ->
+            if isNull (box node) || isNull (box node.ObjectWithArgs) then
+                Microsoft.FSharp.Core.Error "a COMMENT ON a routine Strata cannot resolve"
+            else
+                routineSignatureOf "COMMENT" node.ObjectWithArgs |> Result.map CommentTarget.Routine
+        | other ->
+            Microsoft.FSharp.Core.Error(
+                sprintf
+                    "COMMENT ON %s is not read as declared state: Strata models comments on schemas, tables, views, materialized views, sequences, indexes, columns, routines, types, domains, table constraints and triggers"
+                    (string other))
+
+    /// A comment a file declares.
+    ///
+    /// `IS NULL` and `IS ''` are refused: both REMOVE a comment, which is an
+    /// operation rather than a state, and the declarative way to have none is
+    /// to declare none. Same reason REVOKE is refused.
+    let private commentOf (stmt: CommentStmt) : Result<Comment, string> =
+        if String.IsNullOrEmpty stmt.Comment then
+            Microsoft.FSharp.Core.Error
+                "COMMENT ... IS NULL (or IS '') is not read as declared state: it removes a comment, and the declarative way to have none is to declare none"
+        else
+            commentTargetOf stmt.Objtype stmt.Object
+            |> Result.map (fun target -> { Target = target; Text = stmt.Comment })
+
+    /// Where a statement sits in `sql`, in characters, from libpg_query's
+    /// UTF-8 byte offsets. A length of zero means "to the end", as libpg_query
+    /// reports for the last statement. The span starts at the statement's own
+    /// first word, not at whatever whitespace or comments precede it: those
+    /// belong to the file (a rename annotation may sit there), not to the
+    /// statement.
+    let private characterSpan (sql: string) (byteOffset: int) (byteLength: int) : TextSpan =
+        let bytes = Text.Encoding.UTF8.GetBytes sql
+        let toChars count = Text.Encoding.UTF8.GetCharCount(bytes, 0, min bytes.Length (max 0 count))
+        let start = toChars byteOffset
+        let finish = if byteLength = 0 then sql.Length else toChars (byteOffset + byteLength)
+
+        let rec significant i =
+            if i >= finish then finish
+            elif Char.IsWhiteSpace sql.[i] then significant (i + 1)
+            elif i + 1 < finish && sql.[i] = '-' && sql.[i + 1] = '-' then
+                match sql.IndexOf('\n', i) with
+                | -1 -> finish
+                | e -> significant (e + 1)
+            elif i + 1 < finish && sql.[i] = '/' && sql.[i + 1] = '*' then
+                match sql.IndexOf("*/", i + 2, StringComparison.Ordinal) with
+                | -1 -> finish
+                | e -> significant (e + 2)
+            else i
+
+        let first = significant start
+        { Start = first; Length = finish - first }
 
     /// Grants a file declares, one per object/grantee pair.
     let private grantsOf (stmt: GrantStmt) : Result<Grant list, string> =
@@ -1851,6 +1971,11 @@ module PgParserAdapter =
                             match grantsOf stmt.GrantStmt with
                             | Ok [] -> [ Unmodelled "GRANT declared nothing" ]
                             | Ok grants -> grants |> List.map DeclaredGrant
+                            | Microsoft.FSharp.Core.Error detail -> [ Unmodelled detail ]
+
+                        | Node.NodeOneofCase.CommentStmt ->
+                            match commentOf stmt.CommentStmt with
+                            | Ok comment -> [ DeclaredComment(comment, characterSpan sql raw.StmtLocation raw.StmtLen) ]
                             | Microsoft.FSharp.Core.Error detail -> [ Unmodelled detail ]
 
                         | Node.NodeOneofCase.CreateSeqStmt when not (isNull (box stmt.CreateSeqStmt.Sequence)) ->

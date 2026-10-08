@@ -116,7 +116,31 @@ module DesiredState =
 
           /// Extensions the project requires. Created and version-updated,
           /// never dropped.
-          Extensions: Extension list }
+          Extensions: Extension list
+
+          /// Comments the project declares, one per commented object.
+          ///
+          /// Declaring any takes ownership of the comments on every object the
+          /// project declares, the same rule indexes and triggers follow; a
+          /// project that declares none says nothing about them.
+          Comments: Comment list }
+
+    /// The text with each span cut out, together with the `;` that ends it.
+    ///
+    /// Used to take `COMMENT ON` statements out of the text that declares an
+    /// object: that text is executed to CREATE the object and reshaped by
+    /// shadow normalisation, and neither should carry a comment along. Spans are
+    /// cut from the end backwards so each cut leaves the earlier offsets valid.
+    let private withoutStatements (spans: TextSpan list) (text: string) =
+        let cut (t: string) (span: TextSpan) =
+            let rec terminatorEnd i =
+                if i < t.Length && System.Char.IsWhiteSpace t.[i] then terminatorEnd (i + 1)
+                elif i < t.Length && t.[i] = ';' then i + 1
+                else span.Start + span.Length
+
+            t.Remove(span.Start, terminatorEnd (span.Start + span.Length) - span.Start)
+
+        spans |> List.sortByDescending (fun span -> span.Start) |> List.fold cut text
 
     /// Declared schema names, from the objects actually loaded.
     let private declaredSchemas (objects: SchemaObject list) =
@@ -144,6 +168,7 @@ module DesiredState =
         let policyDeclarations = ResizeArray<(QualifiedName * Identifier) * string>()
         let rowSecurity = ResizeArray<QualifiedName * RowSecuritySetting>()
         let extensions = ResizeArray<Extension>()
+        let comments = ResizeArray<Comment>()
 
         for path, expectedSchema, contents in files do
             let declarations = parser.ParseObjectDefinitions contents
@@ -154,6 +179,15 @@ module DesiredState =
                     { Path = path
                       Reason = "file declares no statements" }
             | _ ->
+                // The text that declares this file's object, its comments
+                // taken out: they are applied by the diff, not by the CREATE.
+                let contents =
+                    declarations
+                    |> List.choose (function
+                        | DeclaredComment (_, span) -> Some span
+                        | _ -> None)
+                    |> fun spans -> withoutStatements spans contents
+
                 let declaredHere =
                     declarations
                     |> List.choose (function
@@ -165,6 +199,7 @@ module DesiredState =
                         | DeclaredExtension _
                         | DeclaredRows _
                         | DeclaredGrant _
+                        | DeclaredComment _
                         | Unmodelled _
                         | DeclarationFailed _ -> None)
 
@@ -200,6 +235,7 @@ module DesiredState =
                     // the other statements in its file.
                     | DeclaredRows _ -> ()
                     | DeclaredGrant grant -> grants.Add grant
+                    | DeclaredComment (comment, _) -> comments.Add comment
                     | Unmodelled detail -> failures.Add { Path = path; Reason = detail }
                     | DeclarationFailed error ->
                         failures.Add
@@ -444,7 +480,18 @@ module DesiredState =
                 { Path = identity
                   Reason = sprintf "declared %d times across the project" count })
 
-        let allFailures = loadFailures @ duplicates @ orphanIndexes @ orphanTriggers @ orphanData
+        // One object, one comment. Two declarations for the same object would
+        // have the plan set it twice and converge on whichever ran last.
+        let duplicateComments =
+            List.ofSeq comments
+            |> List.countBy (fun c -> CommentTarget.key c.Target)
+            |> List.filter (fun (_, count) -> count > 1)
+            |> List.map (fun (key, count) ->
+                { Path = key
+                  Reason = sprintf "comment declared %d times across the project" count })
+
+        let allFailures =
+            loadFailures @ duplicates @ orphanIndexes @ orphanTriggers @ orphanData @ duplicateComments
 
         let state reason =
             if List.isEmpty allFailures then Complete else Partial reason
@@ -496,6 +543,11 @@ module DesiredState =
                       "reference_data",
                       (if Seq.isEmpty data then NotRequested
                        else state "declared rows are only as complete as the files that parsed")
+                      // Same rule as indexes: no comment declared anywhere says
+                      // nothing about comments.
+                      "comments",
+                      (if Seq.isEmpty comments then NotRequested
+                       else state "comment declarations are only as complete as the files that parsed")
                       "view_definitions", NotRequested
                       "routines", NotRequested ] }
           Failures = allFailures
@@ -506,6 +558,7 @@ module DesiredState =
           PolicyDeclarations = List.ofSeq policyDeclarations
           RowSecurity = List.ofSeq rowSecurity
           Extensions = List.ofSeq extensions
+          Comments = List.ofSeq comments
           Data = List.ofSeq data |> List.filter (fun d -> declaresTable d.Table)
           // Two declarations for the same object and grantee are merged rather
           // than treated as rivals: `GRANT SELECT` and `GRANT INSERT` written

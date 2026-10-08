@@ -263,6 +263,9 @@ module PostgresDdl =
                     (grantTargetSql target)
                     (granteeSql grantee))
 
+        | SetComment (target, text) -> Some(CommentSql.set target text)
+        | RemoveComment target -> Some(CommentSql.remove target)
+
         | CreateTable name when (declaredText name).IsSome -> declaredText name
 
         | CreateTable name ->

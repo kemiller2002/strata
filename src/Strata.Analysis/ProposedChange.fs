@@ -89,6 +89,13 @@ module ProposedChange =
         /// starts failing on its next statement. Strata cannot say what that
         /// is, because the corpus records SQL and not the role that runs it.
         | RevokePrivileges of target: GrantTarget * grantee: string * privileges: string list
+        /// Sets an object's comment, or replaces the one it has.
+        ///
+        /// Documentation only: no query, write or privilege depends on
+        /// `pg_description`, so nothing that works today behaves differently.
+        | SetComment of target: CommentTarget * text: string
+        /// Removes an object's comment. Documentation only, like `SetComment`.
+        | RemoveComment of target: CommentTarget
         /// Creates a sequence. Additive: nothing can already draw from one that
         /// does not exist.
         /// Installs an extension.
@@ -314,6 +321,8 @@ module ProposedChange =
             | CreateSchema _ -> "create-schema"
             | GrantPrivileges _ -> "grant"
             | RevokePrivileges _ -> "revoke"
+            | SetComment _ -> "set-comment"
+            | RemoveComment _ -> "remove-comment"
             | CreateExtension _ -> "create-extension"
             | UpdateExtension _ -> "update-extension"
             | SetExtensionSchema _ -> "set-extension-schema"
@@ -408,6 +417,8 @@ module ProposedChange =
             // writer matches on the target itself rather than calling this.
             | GrantPrivileges (target, _, _)
             | RevokePrivileges (target, _, _) -> Some(GrantTarget.name target)
+            | SetComment (target, _)
+            | RemoveComment target -> Some(CommentTarget.name target)
             // A schema is not an object IN a schema, so there is no qualified
             // target to report. Saying None beats inventing one.
             | CreateSchema _
@@ -515,6 +526,10 @@ module ProposedChange =
             | CreateExtension _
             | CreatePolicy _
             | GrantPrivileges _
+            // Documentation. Overwriting or removing it changes what a reader
+            // of the catalog is told, and nothing any statement does.
+            | SetComment _
+            | RemoveComment _
             | CreateTable _
             | InsertRow _
             | CreateIndex _

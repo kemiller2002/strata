@@ -566,6 +566,58 @@ module Artifact =
           Privileges = getStrings "privileges" e
           Grantable = getStrings "grantable" e }
 
+    // ---- Comments -------------------------------------------------------------
+
+    let private relationKinds =
+        [ RelationKind.Table, "table"
+          RelationKind.View, "view"
+          RelationKind.MaterializedView, "materialized-view"
+          RelationKind.Sequence, "sequence"
+          RelationKind.Index, "index" ]
+
+    let renderCommentTarget (target: CommentTarget) =
+        let onRelation kind (n: QualifiedName) (memberName: string) (m: Identifier) =
+            JObject [ "kind", JString kind; "name", renderQualifiedName n; memberName, renderIdentifier m ]
+
+        match target with
+        | CommentTarget.Schema s -> JObject [ "kind", JString "schema"; "schema", renderIdentifier s ]
+        | CommentTarget.Relation (k, n) ->
+            JObject [ "kind", JString "relation"
+                      "relationKind", JString(relationKinds |> List.find (fst >> (=) k) |> snd)
+                      "name", renderQualifiedName n ]
+        | CommentTarget.Column (n, c) -> onRelation "column" n "column" c
+        | CommentTarget.Routine (n, args) ->
+            JObject [ "kind", JString "routine"
+                      "name", renderQualifiedName n
+                      "argumentTypes", renderStrings args ]
+        | CommentTarget.Type n -> JObject [ "kind", JString "type"; "name", renderQualifiedName n ]
+        | CommentTarget.Constraint (n, c) -> onRelation "constraint" n "constraint" c
+        | CommentTarget.Trigger (n, t) -> onRelation "trigger" n "trigger" t
+
+    let readCommentTarget (e: JsonElement) : CommentTarget =
+        let name () = readQualifiedName (prop "name" e)
+
+        match getString "kind" e with
+        | "schema" -> CommentTarget.Schema(readIdentifier (prop "schema" e))
+        | "relation" ->
+            let tag = getString "relationKind" e
+
+            match relationKinds |> List.tryFind (snd >> (=) tag) with
+            | Some (kind, _) -> CommentTarget.Relation(kind, name ())
+            | None -> failwithf "unknown relation kind '%s'" tag
+        | "column" -> CommentTarget.Column(name (), readIdentifier (prop "column" e))
+        | "routine" -> CommentTarget.Routine(name (), getStrings "argumentTypes" e)
+        | "type" -> CommentTarget.Type(name ())
+        | "constraint" -> CommentTarget.Constraint(name (), readIdentifier (prop "constraint" e))
+        | "trigger" -> CommentTarget.Trigger(name (), readIdentifier (prop "trigger" e))
+        | other -> failwithf "unknown comment target '%s'" other
+
+    let renderComment (c: Comment) =
+        JObject [ "target", renderCommentTarget c.Target; "text", JString c.Text ]
+
+    let readComment (e: JsonElement) : Comment =
+        { Target = readCommentTarget (prop "target" e); Text = getString "text" e }
+
     let renderExtension (x: Extension) =
         JObject [ "name", renderIdentifier x.Name
                   "schema", (match x.Schema with Some s -> renderIdentifier s | None -> JNull)
@@ -716,7 +768,8 @@ module Artifact =
                   "rowSecurity",
                   JArray(l.RowSecurity |> List.map (fun (t, s) ->
                       JObject [ "table", renderQualifiedName t; "setting", renderRowSecuritySetting s ]))
-                  "extensions", JArray(l.Extensions |> List.map renderExtension) ]
+                  "extensions", JArray(l.Extensions |> List.map renderExtension)
+                  "comments", JArray(l.Comments |> List.map renderComment) ]
 
     let readLoaded (e: JsonElement) : DesiredState.Loaded =
         { Snapshot = readSnapshot (prop "snapshot" e)
@@ -736,7 +789,10 @@ module Artifact =
           RowSecurity =
             items "rowSecurity" e
             |> List.map (fun i -> readQualifiedName (prop "table" i), readRowSecuritySetting (prop "setting" i))
-          Extensions = items "extensions" e |> List.map readExtension }
+          Extensions = items "extensions" e |> List.map readExtension
+          // An artifact compiled before comments were modelled declares none,
+          // which is what its compiler knew: comments are then not compared.
+          Comments = itemsIfPresent "comments" e |> List.map readComment }
 
     // ---- The normalisations -------------------------------------------------
 
@@ -749,6 +805,14 @@ module Artifact =
         { Table = getString "table" e
           Defaults = readPairs "defaults" e
           Checks = readPairs "checks" e }
+
+    let renderNormalisedIndex (n: SchemaDiff.NormalisedIndex) =
+        JObject [ "table", JString n.Table; "index", JString n.Index; "predicate", JString n.Predicate ]
+
+    let readNormalisedIndex (e: JsonElement) : SchemaDiff.NormalisedIndex =
+        { Table = getString "table" e
+          Index = getString "index" e
+          Predicate = getString "predicate" e }
 
     /// A declared domain as the compiling server rendered it.
     ///
@@ -838,6 +902,7 @@ module Artifact =
                   "normalisedViews", renderPairs r.NormalisedViews
                   "normalisedTables", JArray(r.NormalisedTables |> List.map renderNormalisedTable)
                   "normalisedDomains", JArray(r.NormalisedDomains |> List.map renderNormalisedDomain)
+                  "normalisedIndexes", JArray(r.NormalisedIndexes |> List.map renderNormalisedIndex)
                   "policies",
                   JArray(r.Policies |> List.map (fun (t, p) ->
                       JObject [ "table", renderQualifiedName t; "policy", renderPolicy p ]))
@@ -880,6 +945,9 @@ module Artifact =
                   NormalisedViews = readPairs "normalisedViews" root
                   NormalisedTables = items "normalisedTables" root |> List.map readNormalisedTable
                   NormalisedDomains = items "normalisedDomains" root |> List.map readNormalisedDomain
+                  // Absent from an artifact compiled before predicates were
+                  // rendered: its partial indexes are compared by presence.
+                  NormalisedIndexes = itemsIfPresent "normalisedIndexes" root |> List.map readNormalisedIndex
                   Policies =
                     items "policies" root
                     |> List.map (fun i -> readQualifiedName (prop "table" i), readPolicy (prop "policy" i))

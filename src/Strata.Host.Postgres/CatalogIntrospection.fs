@@ -695,6 +695,55 @@ module CatalogIntrospection =
         with ex ->
             Error ex.Message
 
+    /// Comments on the objects Strata manages.
+    ///
+    /// A `Result` for the reason every other side-read is one: comments that
+    /// could not be read are not absent comments, and reading them as absent
+    /// would propose setting every declared comment again on every run.
+    let readComments (connectionString: string) : Result<Comment list, string> =
+        let relationKind relkind =
+            match relkind with
+            | "v" -> RelationKind.View
+            | "m" -> RelationKind.MaterializedView
+            | "S" -> RelationKind.Sequence
+            | "i"
+            | "I" -> RelationKind.Index
+            | _ -> RelationKind.Table
+
+        let targetOf (r: NpgsqlDataReader) =
+            let name () = qualified (str r "schema_name") (str r "object_name")
+            let memberName () = identifierOf (str r "member_name")
+
+            match str r "kind" with
+            | "schema" -> Some(CommentTarget.Schema(identifierOf (str r "schema_name")))
+            | "relation" -> Some(CommentTarget.Relation(relationKind (str r "relkind"), name ()))
+            | "column" -> Some(CommentTarget.Column(name (), memberName ()))
+            | "routine" ->
+                let ordinal = r.GetOrdinal "argument_types"
+
+                let arguments =
+                    if r.IsDBNull ordinal then [] else r.GetFieldValue<string array> ordinal |> List.ofArray
+
+                Some(CommentTarget.Routine(name (), arguments))
+            | "type" -> Some(CommentTarget.Type(name ()))
+            | "constraint" -> Some(CommentTarget.Constraint(name (), memberName ()))
+            | "trigger" -> Some(CommentTarget.Trigger(name (), memberName ()))
+            | _ -> None
+
+        try
+            use connection = new NpgsqlConnection(connectionString)
+            connection.Open()
+            use command = new NpgsqlCommand(CatalogQueries.comments, connection)
+            use reader = command.ExecuteReader() :?> NpgsqlDataReader
+
+            Ok
+                [ while reader.Read() do
+                    match targetOf reader with
+                    | Some target -> yield { Target = target; Text = str reader "description" }
+                    | None -> () ]
+        with ex ->
+            Error ex.Message
+
     /// Schema names that exist in the database.
     ///
     /// Returned as a `Result` rather than folded into the snapshot, and the

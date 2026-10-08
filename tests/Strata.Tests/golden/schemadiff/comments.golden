@@ -1,0 +1,74 @@
+## statements (8)
+[01] set-comment (SetComment)
+     | COMMENT ON SCHEMA "sales" IS 'Sales, as recorded'
+[02] set-comment (SetComment)
+     | COMMENT ON TABLE "sales"."orders" IS 'One row per order'
+[03] set-comment (SetComment)
+     | COMMENT ON COLUMN "sales"."orders"."email" IS 'Where the receipt goes; it''s optional'
+[04] set-comment (SetComment)
+     | COMMENT ON INDEX "sales"."orders_email" IS 'for receipts'
+[05] set-comment (SetComment)
+     | COMMENT ON ROUTINE "sales"."total"(integer, character varying) IS 'Sums an order'
+[06] set-comment (SetComment)
+     | COMMENT ON CONSTRAINT "orders_pkey" ON "sales"."orders" IS 'the key'
+[07] set-comment (SetComment)
+     | COMMENT ON TRIGGER "orders_touch" ON "sales"."orders" IS 'keeps updated_at'
+[08] remove-comment (RemoveComment)
+     | COMMENT ON COLUMN "sales"."orders"."id" IS NULL
+
+## text
+PLAN: 8 change(s), 3 suppressed  —  gate verdict ALLOW
+
+  set-comment        schema:sales
+  set-comment        relation:sales.orders
+  set-comment        column:sales.orders.email
+  set-comment        relation:sales.orders_email
+  set-comment        routine:sales.total(integer,character varying)
+  set-comment        constraint:sales.orders.orders_pkey
+  set-comment        trigger:sales.orders.orders_touch
+  remove-comment     column:sales.orders.id
+
+NOT PROPOSED — differences Strata saw and will not act on:
+
+  sales.missing                [not-modelled]
+      a comment is declared on relation:sales.missing, which this project does not declare, so it is NOT applied
+  other.legacy                 [outside-managed-schemas]
+      present in the database and absent from desired state, but its schema is not managed by this project
+  sales.total                  [not-compared]
+      function exists on both sides; its definition was NOT compared, so the bodies may differ
+
+  [ALLOW] sets the comment on schema:sales
+         why:  Documentation only. Nothing that runs against the database reads it.
+         next: Proceed.
+
+  [ALLOW] sets the comment on relation:sales.orders
+         why:  Documentation only. Nothing that runs against the database reads it.
+         next: Proceed.
+
+  [ALLOW] sets the comment on column:sales.orders.email
+         why:  Documentation only. Nothing that runs against the database reads it.
+         next: Proceed.
+
+  [ALLOW] sets the comment on relation:sales.orders_email
+         why:  Documentation only. Nothing that runs against the database reads it.
+         next: Proceed.
+
+  [ALLOW] sets the comment on routine:sales.total(integer,character varying)
+         why:  Documentation only. Nothing that runs against the database reads it.
+         next: Proceed.
+
+  [ALLOW] sets the comment on constraint:sales.orders.orders_pkey
+         why:  Documentation only. Nothing that runs against the database reads it.
+         next: Proceed.
+
+  [ALLOW] sets the comment on trigger:sales.orders.orders_touch
+         why:  Documentation only. Nothing that runs against the database reads it.
+         next: Proceed.
+
+  [ALLOW] removes the comment on column:sales.orders.id
+         why:  Documentation only. Nothing that runs against the database reads it.
+         next: Proceed.
+
+
+## json
+{"verdict":"allow","exitCode":0,"desiredStateComplete":true,"changeCount":8,"changes":["set-comment        schema:sales","set-comment        relation:sales.orders","set-comment        column:sales.orders.email","set-comment        relation:sales.orders_email","set-comment        routine:sales.total(integer,character varying)","set-comment        constraint:sales.orders.orders_pkey","set-comment        trigger:sales.orders.orders_touch","remove-comment     column:sales.orders.id"],"findings":[{"verdict":"allow","change":"set-comment        schema:sales","detected":"sets the comment on schema:sales","rationale":"Documentation only. Nothing that runs against the database reads it.","affectedSources":[],"nextSafeMove":"Proceed."},{"verdict":"allow","change":"set-comment        relation:sales.orders","detected":"sets the comment on relation:sales.orders","rationale":"Documentation only. Nothing that runs against the database reads it.","affectedSources":[],"nextSafeMove":"Proceed."},{"verdict":"allow","change":"set-comment        column:sales.orders.email","detected":"sets the comment on column:sales.orders.email","rationale":"Documentation only. Nothing that runs against the database reads it.","affectedSources":[],"nextSafeMove":"Proceed."},{"verdict":"allow","change":"set-comment        relation:sales.orders_email","detected":"sets the comment on relation:sales.orders_email","rationale":"Documentation only. Nothing that runs against the database reads it.","affectedSources":[],"nextSafeMove":"Proceed."},{"verdict":"allow","change":"set-comment        routine:sales.total(integer,character varying)","detected":"sets the comment on routine:sales.total(integer,character varying)","rationale":"Documentation only. Nothing that runs against the database reads it.","affectedSources":[],"nextSafeMove":"Proceed."},{"verdict":"allow","change":"set-comment        constraint:sales.orders.orders_pkey","detected":"sets the comment on constraint:sales.orders.orders_pkey","rationale":"Documentation only. Nothing that runs against the database reads it.","affectedSources":[],"nextSafeMove":"Proceed."},{"verdict":"allow","change":"set-comment        trigger:sales.orders.orders_touch","detected":"sets the comment on trigger:sales.orders.orders_touch","rationale":"Documentation only. Nothing that runs against the database reads it.","affectedSources":[],"nextSafeMove":"Proceed."},{"verdict":"allow","change":"remove-comment     column:sales.orders.id","detected":"removes the comment on column:sales.orders.id","rationale":"Documentation only. Nothing that runs against the database reads it.","affectedSources":[],"nextSafeMove":"Proceed."}],"suppressed":[{"object":"sales.missing","reason":"not-modelled","detail":"a comment is declared on relation:sales.missing, which this project does not declare, so it is NOT applied"},{"object":"other.legacy","reason":"outside-managed-schemas","detail":"present in the database and absent from desired state, but its schema is not managed by this project"},{"object":"sales.total","reason":"not-compared","detail":"function exists on both sides; its definition was NOT compared, so the bodies may differ"}],"scope":{"liveDatabaseInspected":false,"schemaCompleteness":{"categories":[],"fullyComplete":true},"corpus":{"sourceCount":0,"sourceRoots":[],"indexedSources":[],"indexedSourcesTruncated":false,"parseFailures":0,"extractionGaps":0},"dialectCompatibility":{"state":"no-parsing-performed","parserMajor":null,"serverMajor":null},"parseImpliesTargetAccepts":false,"runtimeQueriesIndexed":false,"externalConsumersIndexed":false,"ormMetadataIndexed":false,"supportsAbsenceClaim":false}}

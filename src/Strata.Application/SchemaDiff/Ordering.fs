@@ -69,6 +69,9 @@ type Phase =
     /// granted, and the re-plan did not converge.
     | Revocations
     | Grants
+    /// After every object a comment can be on exists, and before any drop:
+    /// `COMMENT ON` fails on an object that is not there.
+    | Comments
     /// After the table, its columns and its constraints exist, and after
     /// triggers: a trigger on a reference table should see the rows arrive the
     /// same way it would see any other write.
@@ -135,6 +138,8 @@ module Ordering =
         | ReplacePolicy _ -> Phase.Policies
         | RevokePrivileges _ -> Phase.Revocations
         | GrantPrivileges _ -> Phase.Grants
+        | SetComment _
+        | RemoveComment _ -> Phase.Comments
         | InsertRow _
         | UpdateRow _ -> Phase.ReferenceRows
         | EnableRowLevelSecurity _

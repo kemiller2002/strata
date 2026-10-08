@@ -109,6 +109,8 @@ module Render =
             sprintf "grant              %s on %s to %s" (String.concat "," p) (describeGrantTarget t) g
         | RevokePrivileges (t, g, p) ->
             sprintf "revoke             %s on %s from %s" (String.concat "," p) (describeGrantTarget t) g
+        | SetComment (t, _) -> sprintf "set-comment        %s" (CommentTarget.key t)
+        | RemoveComment t -> sprintf "remove-comment     %s" (CommentTarget.key t)
         | DropSequence n -> sprintf "drop-sequence      %s" (QualifiedName.display n)
         | AlterSequence n -> sprintf "alter-sequence     %s" (QualifiedName.display n)
         | CreateTable table -> sprintf "create-table       %s" (QualifiedName.display table)
