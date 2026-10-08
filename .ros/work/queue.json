@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 113,
+  "nextSeq": 114,
   "items": [
     {
       "id": "WI-0001",
@@ -1912,6 +1912,27 @@
       "attachments": [],
       "createdAt": "2026-10-08T06:48:57.228Z",
       "updatedAt": "2026-10-08T07:12:08.000Z",
+      "createdBy": "unknown",
+      "createdByActor": {
+        "kind": "agent",
+        "id": "anthropic/claude-code",
+        "provider": "anthropic",
+        "model": "unknown",
+        "runtime": "claude-code"
+      },
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0113",
+      "title": "Move strata to Ordo 1.5.0 via echelon-current 1.3.0 (conditor upgrade --current)",
+      "description": null,
+      "tags": [],
+      "priority": "medium",
+      "status": "complete",
+      "attachments": [],
+      "createdAt": "2026-10-08T08:14:19.252Z",
+      "updatedAt": "2026-10-08T08:15:17.563Z",
       "createdBy": "unknown",
       "createdByActor": {
         "kind": "agent",

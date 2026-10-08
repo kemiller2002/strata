@@ -1,14 +1,14 @@
 {
   "schemaVersion": 4,
   "project": "strata",
-  "manifestSha256": "aa1ffa41d0b2d4c4181c6d3b15df50870c02f78d51fe1f7103a3b12578520b1f",
+  "manifestSha256": "2bd1a283083f5f42126f34f5404c137488396a619d67fd1214e6879dc3ecea74",
   "manifest": {
     "schemaVersion": 1,
     "name": "strata",
     "registryAuthority": {
       "kind": "resolved-release-set",
       "path": ".conditor/authority/resolved-release-set.json",
-      "sha256": "cd8d8d0482c5c4750f4bb31d28bc79e9597d3be4f6264955691e3aebd86cb6d2"
+      "sha256": "f917318c6113caad2290b855e9b93a72077fd8183c90debd20fb7d7549100d48"
     },
     "components": [
       {
@@ -18,7 +18,7 @@
       },
       {
         "id": "ordo",
-        "version": "1.4.2",
+        "version": "1.5.0",
         "required": true
       },
       {
@@ -44,12 +44,12 @@
     },
     {
       "id": "ordo",
-      "version": "1.4.2",
+      "version": "1.5.0",
       "distribution": "host-tool",
       "package": "ordo",
-      "descriptorSha256": "ee057aa4a0c4cd5180269fd262e5570ff6146035e52fd6d17a0baede0df21f5c",
+      "descriptorSha256": "cac222af525161218391dade23d2a583c29315e8df255ffb9f11f0f2bb4eaf3a",
       "authority": "embedded-component-descriptor",
-      "sourceReference": "host:ordo@1.4.2"
+      "sourceReference": "host:ordo@1.5.0"
     },
     {
       "id": "praxis",
@@ -68,105 +68,112 @@
       "code": "SDE-STRUCT-001",
       "band": "justification-required",
       "path": "tests/Strata.Tests/SchemaDiffTests.fs",
-      "lineCount": 2957
+      "lineCount": 3323
     },
     {
       "component": "ordo",
       "code": "SDE-STRUCT-001",
       "band": "justification-required",
       "path": "src/Strata.Host.PgParser/PgParserAdapter.fs",
-      "lineCount": 2005
+      "lineCount": 2181
     },
     {
       "component": "ordo",
       "code": "SDE-STRUCT-001",
       "band": "strong-review",
       "path": "tests/Strata.Tests/DesiredStateTests.fs",
-      "lineCount": 1031
+      "lineCount": 1227
     },
     {
       "component": "ordo",
       "code": "SDE-STRUCT-001",
-      "band": "review",
-      "path": "src/Strata.Application/DeploymentGate.fs",
-      "lineCount": 970
-    },
-    {
-      "component": "ordo",
-      "code": "SDE-STRUCT-001",
-      "band": "review",
+      "band": "strong-review",
       "path": "src/Strata.Host.Postgres/ShadowNormalisation.fs",
-      "lineCount": 958
+      "lineCount": 1096
+    },
+    {
+      "component": "ordo",
+      "code": "SDE-STRUCT-001",
+      "band": "strong-review",
+      "path": "src/Strata.Application/DeploymentGate.fs",
+      "lineCount": 1027
     },
     {
       "component": "ordo",
       "code": "SDE-STRUCT-001",
       "band": "review",
       "path": "src/Strata.Cli/Program.fs",
-      "lineCount": 939
+      "lineCount": 975
     },
     {
       "component": "ordo",
       "code": "SDE-STRUCT-001",
       "band": "review",
       "path": "src/Strata.Host.Files/Artifact.fs",
-      "lineCount": 880
+      "lineCount": 964
     },
     {
       "component": "ordo",
       "code": "SDE-STRUCT-001",
       "band": "review",
       "path": "tests/Strata.Tests/SchemaDiffGoldenTests.fs",
-      "lineCount": 818
+      "lineCount": 890
     },
     {
       "component": "ordo",
       "code": "SDE-STRUCT-001",
       "band": "review",
       "path": "tests/Strata.Tests/ArtifactTests.fs",
-      "lineCount": 804
+      "lineCount": 822
     },
     {
       "component": "ordo",
       "code": "SDE-STRUCT-001",
       "band": "review",
       "path": "src/Strata.Host.Postgres/CatalogIntrospection.fs",
-      "lineCount": 766
+      "lineCount": 816
+    },
+    {
+      "component": "ordo",
+      "code": "SDE-STRUCT-001",
+      "band": "review",
+      "path": "tests/Strata.Tests/CliTests.fs",
+      "lineCount": 741
     },
     {
       "component": "ordo",
       "code": "SDE-STRUCT-001",
       "band": "review",
       "path": "src/Strata.Host.Postgres/CatalogQueries.fs",
-      "lineCount": 621
+      "lineCount": 726
     },
     {
       "component": "ordo",
       "code": "SDE-STRUCT-001",
       "band": "review",
       "path": "src/Strata.Semantic/Schema.fs",
-      "lineCount": 607
+      "lineCount": 697
     },
     {
       "component": "ordo",
       "code": "SDE-STRUCT-001",
       "band": "review",
       "path": "src/Strata.Analysis/ProposedChange.fs",
-      "lineCount": 590
+      "lineCount": 633
     },
     {
       "component": "ordo",
       "code": "SDE-STRUCT-001",
       "band": "review",
       "path": "src/Strata.Application/DesiredState.fs",
-      "lineCount": 511
+      "lineCount": 588
     },
     {
       "component": "ordo",
       "code": "SDE-STRUCT-001",
       "band": "review",
       "path": "src/Strata.Application/SchemaDiff/PostgresDdl.fs",
-      "lineCount": 509
+      "lineCount": 522
     },
     {
       "component": "ordo",
