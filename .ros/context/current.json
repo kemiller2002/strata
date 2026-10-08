@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "anthropic/claude-code",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-10-08T01:11:32.000Z",
+  "updatedAt": "2026-10-08T01:26:53.000Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -2807,10 +2807,31 @@
     {
       "id": "WI-0110",
       "type": "task",
-      "state": "active",
-      "semanticState": "active",
-      "evidence": [],
-      "updatedAt": "2026-10-08T01:11:32.000Z",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Application/SchemaDiff/Comments.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Host.Postgres/ShadowNormalisation.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/SchemaDiffTests.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/awkward/converges/object-comments/01-account.sql"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/awkward/converges/partial-index-shapes/01-ticket.sql"
+        }
+      ],
+      "updatedAt": "2026-10-08T01:26:53.000Z",
       "telemetryExecutionIds": [
         "EXE-20261008T011133197Z-0bc353ec"
       ],
@@ -2833,7 +2854,8 @@
           "status": "verified",
           "mechanism": "git-remote-observation"
         }
-      }
+      },
+      "completedAt": "2026-10-08T01:26:53.000Z"
     }
   ]
 }
