@@ -1,0 +1,50 @@
+{
+  "schema": "echelon.release-input/v1",
+  "systemId": "strata",
+  "distributionClass": "self-contained-native-cli",
+  "executable": "strata",
+  "compatibilityAliases": [],
+  "provides": [
+    {
+      "id": "echelon.repository-lifecycle",
+      "contractVersion": 1
+    }
+  ],
+  "distribution": {
+    "mechanism": "github-release",
+    "package": null,
+    "url": null
+  },
+  "artifacts": [
+    {
+      "name": "strata-linux-x64.tar.gz",
+      "purpose": "executable",
+      "platform": "linux-x64",
+      "mediaType": "application/gzip"
+    },
+    {
+      "name": "strata-osx-x64.tar.gz",
+      "purpose": "executable",
+      "platform": "osx-x64",
+      "mediaType": "application/gzip"
+    },
+    {
+      "name": "strata-osx-arm64.tar.gz",
+      "purpose": "executable",
+      "platform": "osx-arm64",
+      "mediaType": "application/gzip"
+    },
+    {
+      "name": "strata-win-x64.zip",
+      "purpose": "executable",
+      "platform": "win-x64",
+      "mediaType": "application/zip"
+    },
+    {
+      "name": "native-checksums.txt",
+      "purpose": "checksums",
+      "platform": null,
+      "mediaType": "text/plain"
+    }
+  ]
+}

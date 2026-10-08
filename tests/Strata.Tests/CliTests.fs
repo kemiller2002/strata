@@ -570,3 +570,64 @@ let ``a database failure no adapter translated is an Aegis fault with the query'
     Assert.Equal(1, outcome.ExitCode)
     Assert.Contains("\"code\":\"STRATA.POSTGRES.FAILURE\"", outcome.Stderr)
     Assert.Matches(@"error: Strata could not answer the query\. PostgreSQL.*\[AG-[0-9A-Z]{5}\]", outcome.Stderr)
+
+// ---- the Echelon repository lifecycle contract ------------------------------
+//
+// A Registry-driven installer (Conditor) knows only these invocations and their
+// exit codes. Each property it relies on is exercised through the real binary.
+
+let private lifecycleJson (outcome: Cli.Outcome) =
+    // Exactly one JSON document on stdout.
+    use document = System.Text.Json.JsonDocument.Parse outcome.Stdout
+    document.RootElement.Clone()
+
+[<RequiresCli>]
+let ``version reports the contract identity as one JSON document`` () =
+    let outcome = Cli.run [ "version" ]
+    Assert.Equal(0, outcome.ExitCode)
+    let identity = lifecycleJson outcome
+    Assert.Equal("strata", identity.GetProperty("systemId").GetString())
+    Assert.Equal("kemiller2002/strata", identity.GetProperty("repository").GetString())
+    Assert.Equal("strata", identity.GetProperty("executable").GetString())
+    Assert.Matches(@"^\d+\.\d+\.\d+", identity.GetProperty("releaseVersion").GetString())
+
+[<RequiresCli>]
+let ``init, verify, status, doctor and upgrade follow the contract and a second application changes nothing`` () =
+    project [] (fun root ->
+        let pin = Path.Combine(root, ".echelon", "strata.json")
+
+        let missing = Cli.run [ "verify"; "--root"; root ]
+        Assert.Equal(3, missing.ExitCode)
+        Assert.False((lifecycleJson missing).GetProperty("healthy").GetBoolean())
+
+        let init = Cli.run [ "init"; "--root"; root ]
+        Assert.Equal(0, init.ExitCode)
+        Assert.Equal("created", (lifecycleJson init).GetProperty("files").[0].GetProperty("outcome").GetString())
+        let written = File.ReadAllText pin
+
+        for operation in [ "verify"; "status"; "doctor" ] do
+            let outcome = Cli.run [ operation; "--root"; root ]
+            Assert.Equal(0, outcome.ExitCode)
+            Assert.True((lifecycleJson outcome).GetProperty("healthy").GetBoolean())
+
+        for operation in [ "init"; "upgrade" ] do
+            let again = Cli.run [ operation; "--root"; root ]
+            Assert.Equal(0, again.ExitCode)
+            Assert.Equal("unchanged", (lifecycleJson again).GetProperty("files").[0].GetProperty("outcome").GetString())
+
+        Assert.Equal(written, File.ReadAllText pin)
+        // The project command's manifest is a different file and was not touched.
+        Assert.False(File.Exists(Path.Combine(root, "strata.json"))))
+
+[<RequiresCli>]
+let ``a pin for another release fails verify with 3 and init refuses to move it`` () =
+    project [ ".echelon/strata.json", """{"schemaVersion":1,"tool":"strata","installedVersion":"0.0.1","sourceCommit":null}""" ] (fun root ->
+        Assert.Equal(3, (Cli.run [ "verify"; "--root"; root ]).ExitCode)
+        Assert.Equal(3, (Cli.run [ "init"; "--root"; root ]).ExitCode)
+        Assert.Contains("0.0.1", File.ReadAllText(Path.Combine(root, ".echelon", "strata.json"))))
+
+[<RequiresCli>]
+let ``a lifecycle invocation without an existing --root exits 2`` () =
+    Assert.Equal(2, (Cli.run [ "verify" ]).ExitCode)
+    let absent = Path.Combine(Path.GetTempPath(), "strata-cli-" + Guid.NewGuid().ToString("N"))
+    Assert.Equal(2, (Cli.run [ "status"; "--root"; absent ]).ExitCode)

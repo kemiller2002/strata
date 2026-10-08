@@ -66,6 +66,45 @@ footnote is the product.
 
 ## Install and build
 
+### Install a release
+
+Releases are self-contained `strata` executables for linux-x64, osx-x64,
+osx-arm64 and win-x64: no .NET runtime is needed. Each release on
+[GitHub Releases](https://github.com/kemiller2002/strata/releases) carries
+`native-checksums.txt` (SHA-256), Sigstore-backed build-provenance
+attestations (check one with GitHub's `gh attestation verify`), and
+`echelon-release.json`, the manifest the Echelon Registry records. There is no
+linux-arm64 build: the PostgreSQL parser Strata uses ships no native library
+for it.
+
+In an Echelon repository, let Conditor install the release the Registry's
+`echelon-current` channel selects; it verifies the archive digest and the
+executable's identity before anything runs. By hand:
+
+```bash
+curl -fsSLO https://github.com/kemiller2002/strata/releases/download/v0.1.0/strata-linux-x64.tar.gz
+curl -fsSLO https://github.com/kemiller2002/strata/releases/download/v0.1.0/native-checksums.txt
+grep ' strata-linux-x64.tar.gz$' native-checksums.txt | sha256sum -c
+tar -xzf strata-linux-x64.tar.gz      # a single `strata` executable
+```
+
+Strata implements the Echelon repository lifecycle contract (v1), so a
+repository can pin the release it uses and check it before compiling or
+deploying anything:
+
+```bash
+strata version                       # release identity, as JSON
+strata init --root .                 # writes .echelon/strata.json
+strata verify --root .               # exit 0 only for exactly the pinned release
+```
+
+`.echelon/strata.json` is the one file this manages; `strata.json` and the
+schema tree stay yours. Releases are cut only by the `Native Strata release`
+workflow: a change to `<Version>` in `Directory.Build.props` merged to main
+publishes `v<Version>`, and a published version is never replaced.
+
+### Build from source
+
 Requires **.NET 8** and, for anything touching a database, **PostgreSQL 16**.
 
 ```bash

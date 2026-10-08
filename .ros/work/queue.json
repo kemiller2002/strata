@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 111,
+  "nextSeq": 112,
   "items": [
     {
       "id": "WI-0001",
@@ -1868,6 +1868,27 @@
       "attachments": [],
       "createdAt": "2026-10-08T01:07:53.961Z",
       "updatedAt": "2026-10-08T01:26:53.000Z",
+      "createdBy": "unknown",
+      "createdByActor": {
+        "kind": "agent",
+        "id": "anthropic/claude-code",
+        "provider": "anthropic",
+        "model": "unknown",
+        "runtime": "claude-code"
+      },
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0111",
+      "title": "Release Strata 0.1.0 as a self-contained native CLI through the Echelon Registry",
+      "description": null,
+      "tags": [],
+      "priority": "medium",
+      "status": "complete",
+      "attachments": [],
+      "createdAt": "2026-10-08T01:29:55.956Z",
+      "updatedAt": "2026-10-08T01:32:17.000Z",
       "createdBy": "unknown",
       "createdByActor": {
         "kind": "agent",

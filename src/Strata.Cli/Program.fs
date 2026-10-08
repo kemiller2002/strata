@@ -312,6 +312,27 @@ PROJECT LAYOUT
   not declare is reported and never deleted, `--allow-drops` included: user
   data may reference it.
 
+REPOSITORY LIFECYCLE (Echelon repository lifecycle contract v1)
+  These need no database. They manage the one file Strata owns in a consumer
+  repository, .echelon/strata.json, which pins the Strata release the
+  repository uses. Output is one JSON document on stdout; exit 0 success,
+  2 invalid invocation, 3 the desired state is not satisfied.
+
+  version                          Print this executable's release identity
+                                   (system id, repository, release version,
+                                   source commit).
+  init --root <repository>         Pin this release in the repository. Leaves
+                                   an equal pin alone; never moves another one.
+  upgrade --root <repository>      Move an existing pin to this release. Never
+                                   installs, never downgrades.
+  verify --root <repository>       Exit 0 only when the repository pins exactly
+                                   this release. Read-only.
+  status --root <repository>       The same check, as a status report.
+  doctor --root <repository>       The same check plus advisories, such as a
+                                   development build with no source commit.
+
+  `init` without --root is the project command above.
+
 NOTES
   Every answer carries its analysis scope. A result is bounded by what was
   actually inspected; "no readers" is not the same claim as "nothing reads it".
@@ -355,6 +376,15 @@ let private announceBuildConfiguration () =
     ()
 #endif
 
+/// This executable's release identity, stamped at build time into the
+/// informational version as `<Version>+<source commit>`.
+let private releaseIdentity () =
+    let assembly = Reflection.Assembly.GetExecutingAssembly()
+
+    match Reflection.CustomAttributeExtensions.GetCustomAttribute<Reflection.AssemblyInformationalVersionAttribute> assembly with
+    | null -> Lifecycle.releaseOf (string (assembly.GetName().Version))
+    | attribute -> Lifecycle.releaseOf attribute.InformationalVersion
+
 /// Aegis for this process. Faults go to standard error; nothing is persisted
 /// (aegis-boundaries.json).
 let private aegis = Boundary.configure [ Sinks.standardError ]
@@ -367,6 +397,12 @@ let private run argv =
         printfn "%s" usage
         0
     else
+
+    // The Echelon repository lifecycle contract (Lifecycle.fs) needs no
+    // database and no project, so it is dispatched before either is looked for.
+    match Lifecycle.tryParse args with
+    | Some request -> Lifecycle.execute (releaseIdentity ()) request
+    | None ->
 
     let connection =
         match valueOf "--connection" args with

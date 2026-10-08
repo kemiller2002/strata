@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "anthropic/claude-code",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-10-08T01:26:53.000Z",
+  "updatedAt": "2026-10-08T01:32:17.000Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -2856,6 +2856,55 @@
         }
       },
       "completedAt": "2026-10-08T01:26:53.000Z"
+    },
+    {
+      "id": "WI-0111",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": ".github/workflows/release.yml"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Cli/Lifecycle.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/LifecycleTests.fs"
+        },
+        {
+          "type": "tests",
+          "path": "scripts/smoke-native-release.sh"
+        }
+      ],
+      "updatedAt": "2026-10-08T01:32:17.000Z",
+      "telemetryExecutionIds": [
+        "EXE-20261008T013001100Z-99055ca6"
+      ],
+      "latestCheckpoint": {
+        "id": "79f12c9b04db7cc422d05b5d",
+        "recordedAt": "2026-10-08T01:32:06.000Z",
+        "executionId": "EXE-20261008T013001100Z-99055ca6",
+        "repository": "strata",
+        "branch": "feat/native-release-0.1.0",
+        "commit": "ce14a413f8b9b4da06cc26a0d9e53f8ae700295b",
+        "remote": {
+          "name": "origin",
+          "url": "https://github.com/kemiller2002/strata"
+        },
+        "remoteBranch": "feat/native-release-0.1.0",
+        "remoteCommit": "ce14a413f8b9b4da06cc26a0d9e53f8ae700295b",
+        "summary": "native release workflow ported onto main and aligned with Ordo/Praxis; 807 tests pass; pushed",
+        "nextAction": "PR, merge when green; merge publishes v0.1.0",
+        "verification": {
+          "status": "verified",
+          "mechanism": "git-remote-observation"
+        }
+      },
+      "completedAt": "2026-10-08T01:32:17.000Z"
     }
   ]
 }
