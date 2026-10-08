@@ -82,8 +82,8 @@ In an Echelon repository, let Conditor install the release the Registry's
 executable's identity before anything runs. By hand:
 
 ```bash
-curl -fsSLO https://github.com/kemiller2002/strata/releases/download/v0.1.0/strata-linux-x64.tar.gz
-curl -fsSLO https://github.com/kemiller2002/strata/releases/download/v0.1.0/native-checksums.txt
+curl -fsSLO https://github.com/kemiller2002/strata/releases/download/v0.1.1/strata-linux-x64.tar.gz
+curl -fsSLO https://github.com/kemiller2002/strata/releases/download/v0.1.1/native-checksums.txt
 grep ' strata-linux-x64.tar.gz$' native-checksums.txt | sha256sum -c
 tar -xzf strata-linux-x64.tar.gz      # a single `strata` executable
 ```
@@ -529,10 +529,10 @@ This table is the honest map of coverage. Measured, not aspirational.
 | Object | Created | Compared for drift | Notes |
 |---|---|---|---|
 | Tables, columns | ✅ | ✅ | Defaults and checks via shadow normalisation |
-| Constraints | ✅ | ✅ | Unnamed ones matched by **definition**, never a fabricated name |
+| Constraints | ✅ | ✅ | Unnamed ones matched by **definition**, never a fabricated name. A named CHECK whose expression changed is replaced in place — see below |
 | Views | ✅ | ✅ | Declared DDL round-tripped through the server |
 | **Materialized views** | ✅ | ❌ | **Presence only** — disclosed as not-compared |
-| Functions, procedures | ✅ | ✅ | Body text vs `prosrc`, when both sides hold text |
+| Functions, procedures | ✅ | ✅ | Body text vs `prosrc`, when both sides hold text. Redefined with `CREATE OR REPLACE` where the server accepts it, otherwise dropped and re-created under `--allow-drops` — see below |
 | `BEGIN ATOMIC` / C routines | ✅ | ❌ | No body text to compare — disclosed |
 | Indexes | ✅ | ✅ | Created from the declaring file's own text. A partial index's `WHERE` predicate is rendered by the server and compared by **content**; a different predicate under the same name is reported, not rebuilt. A sort order, expression, access method, `INCLUDE`, operator class, collation or storage option is compared by **presence** — one side having one the other lacks is a difference; both having one is disclosed as not-compared |
 | Triggers, sequences | ✅ | ✅ | |
@@ -554,6 +554,46 @@ Two things follow from PostgreSQL's own limits rather than from Strata's:
   difference stops *every other comparison* on that domain, because a domain's
   default and predicates are rendered **through** the base type — while the base
   types differ the two sides can never agree on any of them.
+
+### Redefining what a database already holds
+
+A deploy into an empty database creates everything from its file. An existing
+database needs the object changed in place, and two ordinary changes were
+refused by 0.1.0 ([#28](https://github.com/kemiller2002/strata/issues/28)):
+
+- **A CHECK whose expression changed** is dropped and added back under its name
+  in one `ALTER TABLE`, `NOT VALID`, then `VALIDATE`d. Widening always passes. A
+  narrowing that a stored row violates fails the `VALIDATE`, and the whole plan
+  rolls back with it. A check the file itself declares `NOT VALID` is added as
+  declared and not validated.
+- **A routine whose body changed** is written from its file as `CREATE OR
+  REPLACE`, whether the file says `CREATE` or `CREATE OR REPLACE` and whatever
+  comments come first. Before planning, Strata tries that statement in a
+  transaction it always rolls back. If the server refuses it in place (a
+  changed return type, parameter names or defaults), the routine is dropped by
+  its signature and created again from its file. That drop is a removal: it
+  needs `--allow-drops`, and it is never proposed while anything in the
+  database depends on the routine (a view, a trigger, a default, another
+  routine). The plan names what depends on it instead. A routine absent from
+  desired state is dropped under the same rules.
+
+```
+  replace-check      rp.event kind_check CHECK ((kind = ANY (ARRAY['a'::text, 'b'::text, 'c'::text])))
+  replace-routine    rp.kinds
+```
+
+```
+  rp.label                     [drops-not-enabled]
+      routine:rp.label(integer) cannot be replaced in place (cannot change return type of existing function); dropping and re-creating it needs --allow-drops
+```
+
+```
+  rp.label                     [has-dependents]
+      routine:rp.label(integer) cannot be dropped while these depend on it: rule _RETURN on view rp.labelled
+```
+
+A routine whose body is unchanged is not compared on its return type or
+parameter names, so a signature edit that leaves the body alone is not seen.
 
 ---
 

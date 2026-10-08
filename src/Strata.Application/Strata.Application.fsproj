@@ -45,12 +45,14 @@
     <Compile Include="SchemaDiff/TableIndexes.fs" />
     <Compile Include="SchemaDiff/TableTriggers.fs" />
     <Compile Include="SchemaDiff/TableConstraints.fs" />
+    <Compile Include="SchemaDiff/Routines.fs" />
     <Compile Include="SchemaDiff/Objects.fs" />
     <Compile Include="SchemaDiff/ReferenceRows.fs" />
     <Compile Include="SchemaDiff/ObjectDependencies.fs" />
     <Compile Include="SchemaDiff/Ordering.fs" />
     <Compile Include="SchemaDiff/PostgresSql.fs" />
     <Compile Include="SchemaDiff/CommentSql.fs" />
+    <Compile Include="SchemaDiff/RedefinitionSql.fs" />
     <Compile Include="SchemaDiff/PostgresDdl.fs" />
     <Compile Include="SchemaDiff/Plan.fs" />
     <Compile Include="SchemaDiff/Render.fs" />

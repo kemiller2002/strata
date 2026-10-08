@@ -83,21 +83,6 @@ module PostgresSql =
             (QualifiedName.display column.Type.TypeName)
             (if column.Type.IsNullable then "" else " NOT NULL")
 
-    /// Rewrite a leading `CREATE X` into `CREATE OR REPLACE X`.
-    ///
-    /// Only the keyword is touched, so the author's body stays byte-for-byte —
-    /// which is the whole reason the declaring file is used rather than a
-    /// reconstruction. A shape this does not recognise (a materialized view,
-    /// which cannot be replaced in place) yields None and stops the apply
-    /// rather than guessing.
-    let replaceKeyword (keyword: string) (text: string) =
-        let trimmed = text.TrimStart()
-
-        if trimmed.StartsWith(keyword, StringComparison.OrdinalIgnoreCase) then
-            Some("CREATE OR REPLACE" + trimmed.Substring("CREATE".Length))
-        else
-            None
-
     /// A grantee as it appears in `GRANT ... TO` and `REVOKE ... FROM`.
     ///
     /// PUBLIC is a keyword, not a role name, so it is never quoted — quoting

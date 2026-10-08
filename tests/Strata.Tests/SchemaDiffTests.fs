@@ -734,6 +734,108 @@ let ``a routine whose body differs is redefined`` () =
 
     Assert.Contains(result.Changes, fun c -> c = ReplaceRoutine(qn "sales" "f"))
 
+// ---- redefining in place (strata#28) ----------------------------------------
+
+/// A routine redefined, with what the server said about replacing it and what
+/// depends on it, as `Deployment` reads them.
+let private redefine allowDrops rejections dependents declaration =
+    Plan.run
+        { Inputs.between
+              (complete [ routineWithBody "f" [ "bigint" ] (Some " SELECT 2; ") ])
+              (complete [ routineWithBody "f" [ "bigint" ] (Some " SELECT 1; ") ]) with
+            AllowDrops = allowDrops
+            ManagedSchemas = managed
+            ExistingSchemas = Some managed
+            Declarations = [ qn "sales" "f", declaration ]
+            RoutineRejections = rejections
+            RoutineDependents = dependents }
+
+let private fDeclared =
+    "-- documentation kept above the routine\nCREATE OR REPLACE FUNCTION sales.f(p bigint) RETURNS bigint LANGUAGE sql AS $$ SELECT 2; $$;"
+
+let private fKey = "routine:sales.f(bigint)"
+
+[<Fact>]
+let ``a redefined routine written CREATE OR REPLACE under a comment is replaced from its file`` () =
+    // The 0.1.0 refusal: the file's leading words were not exactly `CREATE
+    // FUNCTION`, so the statement was None and apply refused the whole plan.
+    let result = redefine false [] (Some [ fKey, [] ]) fDeclared
+
+    Assert.Equal<Change list>([ ReplaceRoutine(qn "sales" "f") ], result.Changes)
+    Assert.Equal(Some fDeclared, (List.exactlyOne result.Statements).Sql)
+
+[<Theory>]
+[<InlineData("CREATE FUNCTION sales.f() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$", "CREATE OR REPLACE FUNCTION sales.f() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$")>]
+[<InlineData("  create\n  /* a /* nested */ note */ procedure sales.p() LANGUAGE sql AS $$ SELECT 1 $$", "  CREATE OR REPLACE procedure sales.p() LANGUAGE sql AS $$ SELECT 1 $$")>]
+[<InlineData("create or replace function sales.f() returns int as 'select 1' language sql", "CREATE OR REPLACE function sales.f() returns int as 'select 1' language sql")>]
+let ``CREATE OR REPLACE is written for every way a routine file opens`` (declared: string, expected: string) =
+    Assert.Equal(Some expected, RedefinitionSql.orReplace [ "FUNCTION"; "PROCEDURE" ] declared)
+
+[<Theory>]
+[<InlineData("CREATE MATERIALIZED VIEW sales.v AS SELECT 1")>]
+[<InlineData("-- CREATE VIEW sales.v AS SELECT 1")>]
+[<InlineData("SELECT 1")>]
+let ``a text that does not open with a replaceable CREATE is refused, not guessed at`` (declared: string) =
+    Assert.Equal(None, RedefinitionSql.orReplace [ "VIEW" ] declared)
+
+[<Fact>]
+let ``a redefinition the server refuses in place needs --allow-drops, and says why`` () =
+    let result = redefine false [ fKey, "cannot change return type of existing function" ] (Some [ fKey, [] ]) fDeclared
+
+    Assert.Empty result.Changes
+    let refused = Assert.Single(result.Suppressed |> List.filter (fun s -> s.Object = qn "sales" "f"))
+    Assert.Equal(DropsNotEnabled, refused.Reason)
+    Assert.Contains("cannot change return type", refused.Detail)
+
+[<Fact>]
+let ``with --allow-drops it is dropped by signature first and created from its file`` () =
+    let result = redefine true [ fKey, "cannot change return type of existing function" ] (Some [ fKey, [] ]) fDeclared
+
+    Assert.Equal<string option list>(
+        [ Some "DROP ROUTINE \"sales\".\"f\"(bigint)"; Some fDeclared ],
+        result.Statements |> List.map (fun s -> s.Sql))
+
+[<Fact>]
+let ``a routine something in the database depends on is never dropped`` () =
+    let dependedOn = redefine true [ fKey, "cannot change return type" ] (Some [ fKey, [ "rule _RETURN on view sales.v" ] ]) fDeclared
+    let unread = redefine true [ fKey, "cannot change return type" ] None fDeclared
+
+    for result in [ dependedOn; unread ] do
+        Assert.Empty result.Changes
+        Assert.Contains(result.Suppressed, fun s -> s.Reason = HasDependents)
+
+    Assert.Contains(dependedOn.Suppressed, fun s -> s.Detail.Contains "rule _RETURN on view sales.v")
+
+[<Fact>]
+let ``a routine absent from desired state is dropped by signature only with --allow-drops and no dependents`` () =
+    let removing allowDrops dependents =
+        Plan.run
+            { Inputs.between (complete []) (complete [ routineWithBody "gone" [ "text"; "integer" ] (Some "select 1") ]) with
+                AllowDrops = allowDrops
+                ManagedSchemas = managed
+                ExistingSchemas = Some managed
+                RoutineDependents = dependents }
+
+    Assert.Equal<Change list>(
+        [ DropRoutine(qn "sales" "gone", [ "text"; "integer" ]) ],
+        (removing true (Some [ "routine:sales.gone(text,integer)", [] ])).Changes)
+
+    Assert.Empty (removing false (Some [ "routine:sales.gone(text,integer)", [] ])).Changes
+    Assert.Empty (removing true (Some [ "routine:sales.gone(text,integer)", [ "trigger t on table sales.orders" ] ])).Changes
+    Assert.Empty (removing true None).Changes
+
+[<Fact>]
+let ``a check declared NOT VALID is re-added as declared and not validated`` () =
+    Assert.Equal(
+        "ALTER TABLE \"sales\".\"t\" DROP CONSTRAINT \"ck\", ADD CONSTRAINT \"ck\" CHECK ((c > 0)) NOT VALID",
+        RedefinitionSql.replaceCheck (qn "sales" "t") (id' "ck") "CHECK ((c > 0)) NOT VALID")
+
+[<Fact>]
+let ``a routine drop releases the name before routines are created`` () =
+    Assert.True(Ordering.phase (DropRoutine(qn "sales" "f", [])) < Ordering.phase (CreateRoutine(qn "sales" "f")))
+    Assert.True(Change.isPotentiallyDestructive (DropRoutine(qn "sales" "f", [])))
+    Assert.True(Change.isPotentiallyDestructive (ReplaceCheckConstraint(qn "sales" "t", id' "ck", "CHECK (true)")))
+
 [<Fact>]
 let ``a routine body differing only in surrounding whitespace is not a change`` () =
     // The file ends with a newline before the closing $$; prosrc keeps it.
@@ -846,7 +948,7 @@ let ``a sequence default is excluded from comparison and disclosed instead`` () 
     Assert.Contains(result.Suppressed, fun s -> s.Reason = NotCompared)
 
 [<Fact>]
-let ``a check whose rendered definition differs is reported`` () =
+let ``a check whose rendered definition differs is replaced under its name`` () =
     let withCheck expression =
         TableObject
             { Name = qn "sales" "t"
@@ -865,10 +967,17 @@ let ``a check whose rendered definition differs is reported`` () =
             (complete [ withCheck "" ])
             (complete [ withCheck "CHECK ((balance >= (0)::numeric))" ])
 
-    Assert.Contains(result.Changes, fun c ->
-        match c with
-        | UnclassifiedChange d -> d.Contains "check constraint 'ck'" && d.Contains "balance > "
-        | _ -> false)
+    // strata#28: this was an UnclassifiedChange, which `apply` refused as
+    // "cannot be written as DDL". The server's rendering of the declared
+    // clause is what is added back.
+    Assert.Equal<Change list>(
+        [ ReplaceCheckConstraint(qn "sales" "t", id' "ck", "CHECK ((balance > (0)::numeric))") ],
+        result.Changes)
+
+    Assert.Equal(
+        Some
+            "ALTER TABLE \"sales\".\"t\" DROP CONSTRAINT \"ck\", ADD CONSTRAINT \"ck\" CHECK ((balance > (0)::numeric)) NOT VALID;\nALTER TABLE \"sales\".\"t\" VALIDATE CONSTRAINT \"ck\"",
+        result.Statements |> List.exactlyOne |> fun s -> s.Sql)
 
 [<Fact>]
 let ``a table that could not be normalised keeps its disclosure`` () =

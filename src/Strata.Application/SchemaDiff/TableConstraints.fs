@@ -326,33 +326,24 @@ module TableConstraints =
                     else
                         None))
 
+        // Same name, a different expression: the constraint is dropped and
+        // added again under its name, which `ReplaceCheckConstraint` writes as
+        // one statement. Not a removal — the name and a guarantee stay, and a
+        // stored row the new expression excludes fails the plan (strata#28).
         let checkRedefinitions =
             match rendered with
             | None -> []
             | Some n ->
                 actual.CheckConstraints
                 |> List.choose (fun a ->
-                    n.Checks
-                    |> List.tryPick (fun (name, definition) ->
-                        match a.ConstraintName with
-                        | Some actualName when named (Identifier.unquoted name) = named actualName ->
-                            Some definition
-                        | _ -> None)
-                    |> Option.bind (fun declared ->
-                        if declared.Trim() <> a.Expression.Trim() then
-                            Some(
-                                Ok(
-                                    UnclassifiedChange(
-                                        sprintf
-                                            "%s: check constraint '%s' is %s in desired state and %s in the database"
-                                            (QualifiedName.display desired.Name)
-                                            (match a.ConstraintName with
-                                             | Some n -> n.Text
-                                             | None -> "(unnamed)")
-                                            declared
-                                            a.Expression)))
-                        else
-                            None))
+                    a.ConstraintName
+                    |> Option.bind (fun actualName ->
+                        n.Checks
+                        |> List.tryPick (fun (name, definition) ->
+                            if named (Identifier.unquoted name) = named actualName then Some definition else None)
+                        |> Option.filter (fun declared -> declared.Trim() <> a.Expression.Trim())
+                        |> Option.map (fun declared ->
+                            Ok(ReplaceCheckConstraint(desired.Name, actualName, declared.Trim())))))
 
         let indexChanges, indexDisclosure = TableIndexes.indexes policy indexesDeclared desired actual
 

@@ -36,6 +36,7 @@
     <Compile Include="CatalogIntrospection.fs" />
     <Compile Include="Execution.fs" />
     <Compile Include="ShadowNormalisation.fs" />
+    <Compile Include="RoutineProbe.fs" />
     <Compile Include="TypeCheck.fs" />
     <Compile Include="ReferenceData.fs" />
   </ItemGroup>

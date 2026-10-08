@@ -509,6 +509,7 @@ let private objectsFixture () =
                 routine Managed "new_fn" Function [ "integer" ] (Some "select 1")
                 routine Managed "changed_fn" Function [ "integer" ] (Some "select 2")
                 routine Managed "changed_proc" Procedure [] (Some "begin end")
+                routine Managed "retyped_fn" Function [ "integer" ] (Some "select 2::bigint")
                 routine Managed "atomic_fn" Function [] None ])
           (complete
               [ view Observed "changed_view" false " SELECT 1 AS x;"
@@ -520,13 +521,22 @@ let private objectsFixture () =
                 routine Observed "changed_fn" Function [ "integer" ] (Some "select 1")
                 routine Observed "changed_proc" Procedure [] (Some "begin null; end")
                 routine Observed "atomic_fn" Function [] (Some "select 3")
-                routine Observed "stale_fn" Function [ "text" ] (Some "select 'x'") ]) with
+                routine Observed "retyped_fn" Function [ "integer" ] (Some "select 1")
+                routine Observed "stale_fn" Function [ "text" ] (Some "select 'x'")
+                routine Observed "called_fn" Function [] (Some "select 4") ]) with
         Declarations =
           [ qn "sales" "new_view", "CREATE VIEW sales.new_view AS SELECT 1 AS x;"
             qn "sales" "changed_view", "  create view sales.changed_view AS SELECT 10 AS x;"
             qn "sales" "new_fn", "CREATE FUNCTION sales.new_fn(integer) RETURNS integer LANGUAGE sql AS $$select 1$$;"
             qn "sales" "changed_fn", "CREATE FUNCTION sales.changed_fn(integer) RETURNS integer LANGUAGE sql AS $$select 2$$;"
-            qn "sales" "changed_proc", "CREATE PROCEDURE sales.changed_proc() LANGUAGE plpgsql AS $$begin end$$;" ]
+            qn "sales" "changed_proc", "-- a comment first\nCREATE OR REPLACE\n PROCEDURE sales.changed_proc() LANGUAGE plpgsql AS $$begin end$$;"
+            qn "sales" "retyped_fn", "CREATE FUNCTION sales.retyped_fn(integer) RETURNS bigint LANGUAGE sql AS $$select 2::bigint$$;" ]
+        RoutineRejections = [ "routine:sales.retyped_fn(integer)", "cannot change return type of existing function" ]
+        RoutineDependents =
+          Some
+            [ "routine:sales.stale_fn(text)", []
+              "routine:sales.retyped_fn(integer)", []
+              "routine:sales.called_fn()", [ "rule _RETURN on view sales.reader" ] ]
         NormalisedViews =
           [ "sales.changed_view", " SELECT 10 AS x;"
             "sales.same_view", " SELECT 2 AS y;"
@@ -805,7 +815,8 @@ let removalCases =
           "DropDomainConstraint"
           "DropIndex"
           "DropTrigger"
-          "DropConstraint" ]
+          "DropConstraint"
+          "DropRoutine" ]
 
 /// Cases whose names read like a removal but are not one, each with the reason.
 /// Adding a case here is a claim that it may be proposed without `--allow-drops`.

@@ -368,6 +368,114 @@ let ``declared comments are deployed, converge, and a change to one is planned a
             Assert.True((replanned.ExitCode = 0), replanned.Output)
             Assert.Contains("PLAN: 0 change(s)", replanned.Stdout)))
 
+// ---- redefining what an existing database already holds (strata#28) ---------
+
+/// A table with a named CHECK over `kinds`, a routine whose file opens with a
+/// comment and says CREATE OR REPLACE, as Helix writes them, and optionally a
+/// view that calls the routine.
+let private redefinable (kinds: string list) (body: string) (returns: string) (withView: bool) =
+    let files =
+        [ "schema/cli/tables/event.sql",
+          sprintf
+              "CREATE TABLE cli.event (id bigint PRIMARY KEY, kind text NOT NULL, CONSTRAINT kind_check CHECK (kind IN (%s)));"
+              (kinds |> List.map (sprintf "'%s'") |> String.concat ", ")
+          "schema/cli/routines/describe.sql",
+          sprintf
+              "-- Catalog comment kept as a SQL comment.\nCREATE OR REPLACE FUNCTION cli.describe(p_id bigint)\n RETURNS %s\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    RETURN %s;\nEND;\n$function$;"
+              returns
+              body ]
+        @ (if withView then [ "schema/cli/views/described.sql", "CREATE VIEW cli.described AS SELECT id, cli.describe(id) AS d FROM cli.event;" ] else [])
+
+    ("strata.json", manifest (files |> List.map fst)) :: files
+
+[<RequiresCliAndPostgres>]
+let ``a widened CHECK and a redefined routine apply to an existing database and converge`` () =
+    database (fun connection ->
+        use c = new NpgsqlConnection(connection)
+
+        let scalar (sql: string) =
+            if c.State <> Data.ConnectionState.Open then c.Open()
+            use command = new NpgsqlCommand(sql, c)
+            command.ExecuteScalar() |> string
+
+        let applyAndConverge root (extra: string list) =
+            let applied = Cli.run ([ "apply"; "--project"; root; "--connection"; connection; "--confirm"; "--approve" ] @ extra)
+            Assert.True((applied.ExitCode = 0), applied.Output)
+            let replanned = Cli.run ([ "plan"; "--project"; root; "--connection"; connection ] @ extra)
+            Assert.True((replanned.ExitCode = 0), replanned.Output)
+            Assert.Contains("PLAN: 0 change(s)", replanned.Stdout)
+            applied
+
+        project (redefinable [ "login"; "logout" ] "'v1 ' || p_id" "text" false) (fun root ->
+            applyAndConverge root [] |> ignore
+            scalar "INSERT INTO cli.event VALUES (1, 'login'), (2, 'logout') RETURNING 0" |> ignore)
+
+        // Both changes Strata 0.1.0 refused on this database.
+        project (redefinable [ "login"; "logout"; "export" ] "'v2 ' || p_id" "text" false) (fun root ->
+            let planned = Cli.run [ "plan"; "--project"; root; "--connection"; connection ]
+            Assert.Contains("replace-check      cli.event kind_check", planned.Stdout)
+            Assert.Contains("replace-routine    cli.describe", planned.Stdout)
+            Assert.DoesNotContain("unclassified", planned.Stdout)
+
+            let applied = applyAndConverge root []
+            Assert.Contains("NOT VALID", applied.Stdout)
+            Assert.Contains("VALIDATE CONSTRAINT", applied.Stdout)
+            Assert.Equal("v2 1", scalar "SELECT cli.describe(1)")
+            Assert.Equal("3", scalar "INSERT INTO cli.event VALUES (3, 'export') RETURNING id"))
+
+        // A narrowing that a stored row violates fails VALIDATE, and the plan
+        // rolls back whole: the constraint the database had is still there.
+        project (redefinable [ "login"; "export" ] "'v2 ' || p_id" "text" false) (fun root ->
+            let applied = Cli.run [ "apply"; "--project"; root; "--connection"; connection; "--confirm"; "--approve" ]
+            Assert.Equal(1, applied.ExitCode)
+            Assert.Contains("ROLLED BACK", applied.Stdout)
+            Assert.Contains("'logout'", scalar "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid = 'cli.event'::regclass AND conname = 'kind_check'")))
+
+[<RequiresCliAndPostgres>]
+let ``a routine whose return type changed is dropped and created only with --allow-drops and nothing depending on it`` () =
+    database (fun connection ->
+        use c = new NpgsqlConnection(connection)
+
+        let scalar (sql: string) =
+            if c.State <> Data.ConnectionState.Open then c.Open()
+            use command = new NpgsqlCommand(sql, c)
+            command.ExecuteScalar() |> string
+
+        let kinds = [ "login" ]
+
+        project (redefinable kinds "p_id::text" "text" false) (fun root ->
+            let applied = Cli.run [ "apply"; "--project"; root; "--connection"; connection; "--confirm"; "--approve" ]
+            Assert.True((applied.ExitCode = 0), applied.Output))
+
+        project (redefinable kinds "p_id * 2" "bigint" false) (fun root ->
+            // The server refuses CREATE OR REPLACE for a new return type, and
+            // the plan says so instead of proposing a statement that fails.
+            let planned = Cli.run [ "plan"; "--project"; root; "--connection"; connection ]
+            Assert.Contains("cannot change return type of existing function", planned.Stdout)
+            Assert.Contains("needs --allow-drops", planned.Stdout)
+
+            let applied = Cli.run [ "apply"; "--project"; root; "--connection"; connection; "--confirm"; "--approve"; "--allow-drops" ]
+            Assert.True((applied.ExitCode = 0), applied.Output)
+            Assert.Contains("DROP ROUTINE \"cli\".\"describe\"(bigint)", applied.Stdout)
+            Assert.Equal("bigint", scalar "SELECT pg_typeof(cli.describe(21))::text")
+            Assert.Equal("42", scalar "SELECT cli.describe(21)")
+
+            let replanned = Cli.run [ "plan"; "--project"; root; "--connection"; connection; "--allow-drops" ]
+            Assert.True((replanned.ExitCode = 0), replanned.Output)
+            Assert.Contains("PLAN: 0 change(s)", replanned.Stdout))
+
+        // A view now calls it. Dropping the routine would take the view with
+        // it or fail, so the drop is not proposed, and the view is named.
+        project (redefinable kinds "p_id * 2" "bigint" true) (fun root ->
+            let applied = Cli.run [ "apply"; "--project"; root; "--connection"; connection; "--confirm"; "--approve" ]
+            Assert.True((applied.ExitCode = 0), applied.Output))
+
+        project (redefinable kinds "p_id::numeric" "numeric" true) (fun root ->
+            let planned = Cli.run [ "plan"; "--project"; root; "--connection"; connection; "--allow-drops" ]
+            Assert.Contains("[has-dependents]", planned.Stdout)
+            Assert.Contains("view cli.described", planned.Stdout)
+            Assert.DoesNotContain("DROP ROUTINE", planned.Stdout)))
+
 /// One table and one partial index on it, with the predicate given.
 let private partiallyIndexed (predicate: string) =
     [ "strata.json", manifest [ "schema/cli/tables/ticket.sql"; "schema/cli/indexes/open_ticket.sql" ]

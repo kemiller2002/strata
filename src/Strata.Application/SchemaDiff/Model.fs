@@ -1,6 +1,5 @@
 namespace Strata.Application.SchemaDiff
 
-
 open Strata.Semantic.Identity
 open Strata.Semantic.Schema
 open Strata.Semantic.AnalysisScope
@@ -16,6 +15,8 @@ type SuppressionReason =
     /// The difference is real and Strata would act on it, but removals were
     /// not enabled for this run.
     | DropsNotEnabled
+    /// Removing it would break objects in the database that depend on it.
+    | HasDependents
     /// Strata holds both sides but cannot compare them faithfully, so it
     /// reports that rather than implying they match. This is the reason
     /// that must exist for the diff to be honest: without it, a property
@@ -33,6 +34,7 @@ module SuppressionReason =
         | ExtensionOwnedObject -> "extension-owned"
         | NotModelled -> "not-modelled"
         | DropsNotEnabled -> "drops-not-enabled"
+        | HasDependents -> "has-dependents"
         | NotCompared -> "not-compared"
 
 type Suppression =
@@ -157,6 +159,12 @@ type Inputs =
       /// survived the parser, so there is nothing to compare it with.
       NormalisedDomains: NormalisedDomain list
       Renames: DeclaredRename list
+      /// Redefined routines, by `Objects.routineIdentity`, that the server
+      /// refused to `CREATE OR REPLACE`, with its reason. Absent means in place.
+      RoutineRejections: (string * string) list
+      /// Catalog objects depending on each deployed routine, by identity;
+      /// `None` when not read, which refuses every routine drop.
+      RoutineDependents: (string * string list) list option
       Desired: SchemaSnapshot
       Actual: SchemaSnapshot }
 
@@ -193,6 +201,8 @@ module Inputs =
           NormalisedIndexes = []
           NormalisedDomains = []
           Renames = []
+          RoutineRejections = []
+          RoutineDependents = None
           Desired = desired
           Actual = actual }
 
