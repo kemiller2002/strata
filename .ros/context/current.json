@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "anthropic/claude-code",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-10-08T01:30:00.000Z",
+  "updatedAt": "2026-10-08T01:32:17.000Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -2860,10 +2860,27 @@
     {
       "id": "WI-0111",
       "type": "task",
-      "state": "active",
-      "semanticState": "active",
-      "evidence": [],
-      "updatedAt": "2026-10-08T01:30:00.000Z",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": ".github/workflows/release.yml"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Cli/Lifecycle.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/LifecycleTests.fs"
+        },
+        {
+          "type": "tests",
+          "path": "scripts/smoke-native-release.sh"
+        }
+      ],
+      "updatedAt": "2026-10-08T01:32:17.000Z",
       "telemetryExecutionIds": [
         "EXE-20261008T013001100Z-99055ca6"
       ],
@@ -2886,7 +2903,8 @@
           "status": "verified",
           "mechanism": "git-remote-observation"
         }
-      }
+      },
+      "completedAt": "2026-10-08T01:32:17.000Z"
     }
   ]
 }
