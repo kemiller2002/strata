@@ -1908,10 +1908,10 @@
         "deploy,correctness"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-10-08T06:48:57.228Z",
-      "updatedAt": "2026-10-08T06:49:01.000Z",
+      "updatedAt": "2026-10-08T07:12:08.000Z",
       "createdBy": "unknown",
       "createdByActor": {
         "kind": "agent",
