@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <Compile Include="Boundary.fs" />
+    <Compile Include="Lifecycle.fs" />
     <Compile Include="Resolution.fs" />
     <Compile Include="ProjectCommands.fs" />
     <Compile Include="Compile.fs" />

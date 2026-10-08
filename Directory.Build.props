@@ -23,6 +23,17 @@
     <Configuration>Release</Configuration>
   </PropertyGroup>
 
+  <!--
+    The release version: the single version source for every assembly and for
+    the release workflow, which refuses a dispatch whose requested version is
+    not this one. The build stamps it, plus the source commit
+    (SourceRevisionId), into the informational version that `strata version`
+    reports under the Echelon repository lifecycle contract.
+  -->
+  <PropertyGroup>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+
   <PropertyGroup>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <WarningLevel>5</WarningLevel>
