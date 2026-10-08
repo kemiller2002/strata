@@ -365,6 +365,85 @@ module Schema =
           /// SELECT and can pass it on" are different states).
           Grantable: string list }
 
+    /// The kind of relation a comment is on.
+    ///
+    /// Carried because `COMMENT ON TABLE` naming a view is an error, not a
+    /// synonym: the statement that sets a comment has to say what the object
+    /// IS. It is not part of a comment's identity — `pg_description` keys a
+    /// relation's comment by its oid alone — so a declaration and a deployment
+    /// that disagree about the kind still describe the same comment.
+    [<RequireQualifiedAccess>]
+    type RelationKind =
+        | Table
+        | View
+        | MaterializedView
+        | Sequence
+        | Index
+
+    /// What a `COMMENT ON` statement documents.
+    ///
+    /// The cases are the objects Strata manages, and a comment's identity is
+    /// the identity of its object: a routine by its name AND argument types, a
+    /// column, constraint or trigger by its relation and its own name.
+    ///
+    /// A type and a domain share one case. Both are `pg_type` rows, `COMMENT
+    /// ON TYPE` works on either, and a file may spell a domain's comment with
+    /// either keyword — so splitting them would make two spellings of one
+    /// comment two different comments. Functions and procedures share `Routine`
+    /// for the same reason, with `COMMENT ON ROUTINE` covering both.
+    [<RequireQualifiedAccess>]
+    type CommentTarget =
+        | Schema of Identifier
+        | Relation of kind: RelationKind * name: QualifiedName
+        | Column of relation: QualifiedName * column: Identifier
+        | Routine of name: QualifiedName * argumentTypes: string list
+        | Type of QualifiedName
+        | Constraint of table: QualifiedName * name: Identifier
+        | Trigger of table: QualifiedName * name: Identifier
+
+    [<RequireQualifiedAccess>]
+    module CommentTarget =
+
+        /// The name to REPORT a comment against: the object, or the relation
+        /// that holds it. Lossy, and for display only.
+        let name (t: CommentTarget) =
+            match t with
+            | CommentTarget.Schema s -> QualifiedName.unqualified s
+            | CommentTarget.Relation (_, n)
+            | CommentTarget.Column (n, _)
+            | CommentTarget.Routine (n, _)
+            | CommentTarget.Type n
+            | CommentTarget.Constraint (n, _)
+            | CommentTarget.Trigger (n, _) -> n
+
+        /// The schema the commented object lives in.
+        let schema (t: CommentTarget) =
+            match t with
+            | CommentTarget.Schema s -> Some s
+            | other -> (name other).Schema
+
+        /// A stable key for matching a declared comment to a deployed one. The
+        /// relation kind is deliberately absent: see `RelationKind`.
+        let key (t: CommentTarget) =
+            let display = QualifiedName.display
+
+            match t with
+            | CommentTarget.Schema s -> sprintf "schema:%s" (Identifier.folded s)
+            | CommentTarget.Relation (_, n) -> sprintf "relation:%s" (display n)
+            | CommentTarget.Column (n, c) -> sprintf "column:%s.%s" (display n) (Identifier.folded c)
+            | CommentTarget.Routine (n, args) -> sprintf "routine:%s(%s)" (display n) (String.concat "," args)
+            | CommentTarget.Type n -> sprintf "type:%s" (display n)
+            | CommentTarget.Constraint (n, c) -> sprintf "constraint:%s.%s" (display n) (Identifier.folded c)
+            | CommentTarget.Trigger (n, t) -> sprintf "trigger:%s.%s" (display n) (Identifier.folded t)
+
+    /// Documentation the database holds for one object: `COMMENT ON ... IS`,
+    /// stored in `pg_description`.
+    ///
+    /// The text is never empty. PostgreSQL treats `IS ''` exactly as `IS NULL`
+    /// — it removes the comment — so an empty comment is not a state the
+    /// catalog can hold, and a file asking for one is refused rather than read.
+    type Comment = { Target: CommentTarget; Text: string }
+
     /// An extension, as a file declares it or the catalog reports it.
     ///
     /// Strata creates one and updates its version. It NEVER drops one, and the

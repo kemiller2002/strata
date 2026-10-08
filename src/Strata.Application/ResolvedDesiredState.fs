@@ -51,6 +51,10 @@ type ResolvedDesiredState =
       /// Defaults and check expressions, rendered.
       NormalisedTables: SchemaDiff.NormalisedTable list
 
+      /// Partial-index WHERE predicates, rendered. An index absent here was not
+      /// rendered, and its predicate is compared by presence only and disclosed.
+      NormalisedIndexes: SchemaDiff.NormalisedIndex list
+
       /// Declared domains, with their base type, default and check predicates
       /// as the server renders them. A domain that is ABSENT here was not
       /// rendered, and its default and constraints are then disclosed as

@@ -127,6 +127,10 @@ type Inputs =
       /// Privileges the database holds, or `None` when they could not be
       /// read.
       ActualGrants: Grant list option
+      /// Comments the project declares, and those the database holds —
+      /// `None` when they could not be read, which is not "there are none".
+      DeclaredComments: Comment list
+      ActualComments: Comment list option
       /// Row-level security the database holds. Reported, never changed:
       /// Strata does not model policies as desired state yet, and says so
       /// rather than staying silent.
@@ -146,6 +150,8 @@ type Inputs =
       DataFailures: DataFailure list
       NormalisedViews: (string * string) list
       NormalisedTables: NormalisedTable list
+      /// Declared partial-index predicates as the server renders them.
+      NormalisedIndexes: NormalisedIndex list
       /// Declared domains as the server renders them. A domain missing from
       /// here is DISCLOSED rather than compared — its predicates never
       /// survived the parser, so there is nothing to compare it with.
@@ -177,11 +183,14 @@ module Inputs =
           ExistingSchemas = None
           DeclaredGrants = []
           ActualGrants = None
+          DeclaredComments = []
+          ActualComments = None
           ActualRowLevelSecurity = None
           Data = []
           DataFailures = []
           NormalisedViews = []
           NormalisedTables = []
+          NormalisedIndexes = []
           NormalisedDomains = []
           Renames = []
           Desired = desired

@@ -24,6 +24,13 @@ module DialectPort =
           Offset: int
           Length: int }
 
+    /// A stretch of source text, in CHARACTERS rather than bytes.
+    ///
+    /// libpg_query reports UTF-8 byte offsets; a span that is used to cut a
+    /// .NET string has to be converted first, or a comment containing `é`
+    /// shifts every cut after it.
+    type TextSpan = { Start: int; Length: int }
+
     /// A parse failure, carrying enough to locate it.
     ///
     /// Modelled as data, not an exception. The selected wrapper already returns
@@ -132,6 +139,14 @@ module DialectPort =
         /// Privileges a file grants. One per object/grantee pair, so
         /// `GRANT ... ON a, b TO x, y` yields four.
         | DeclaredGrant of grant: Grant
+        /// A `COMMENT ON` statement: documentation for an object.
+        ///
+        /// Carries where the statement sits in the file so the loader can take
+        /// it OUT of the text that creates the object. A table's declaring text
+        /// is executed verbatim and reshaped by shadow normalisation, and a
+        /// trailing `COMMENT ON` would ride along into both; the comment is the
+        /// diff's to apply, once the object exists.
+        | DeclaredComment of comment: Comment * span: TextSpan
         | Unmodelled of detail: string
         | DeclarationFailed of ParseError
 

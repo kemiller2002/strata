@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "anthropic/claude-code",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-10-07T21:25:30.000Z",
+  "updatedAt": "2026-10-08T01:26:53.000Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -2803,6 +2803,59 @@
       },
       "completedAt": "2026-10-07T21:25:30.000Z",
       "conclusion": "Four deploy defects fixed; 766 tests pass on PostgreSQL 16 locally and build-and-test is green on PR #25."
+    },
+    {
+      "id": "WI-0110",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Application/SchemaDiff/Comments.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "src/Strata.Host.Postgres/ShadowNormalisation.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/SchemaDiffTests.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/awkward/converges/object-comments/01-account.sql"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/awkward/converges/partial-index-shapes/01-ticket.sql"
+        }
+      ],
+      "updatedAt": "2026-10-08T01:26:53.000Z",
+      "telemetryExecutionIds": [
+        "EXE-20261008T011133197Z-0bc353ec"
+      ],
+      "latestCheckpoint": {
+        "id": "f778766f76bcfe14d18cf149",
+        "recordedAt": "2026-10-08T01:26:46.000Z",
+        "executionId": "EXE-20261008T011133197Z-0bc353ec",
+        "repository": "strata",
+        "branch": "feat/comments-and-partial-predicates",
+        "commit": "4b9803e3dd62b1376295b871f69d2b21d589d7b9",
+        "remote": {
+          "name": "origin",
+          "url": "https://github.com/kemiller2002/strata"
+        },
+        "remoteBranch": "feat/comments-and-partial-predicates",
+        "remoteCommit": "4b9803e3dd62b1376295b871f69d2b21d589d7b9",
+        "summary": "COMMENT ON modelled, diffed and deployed; partial-index predicates compared by rendered content; 790 tests pass live, pushed",
+        "nextAction": "record completion, open PR, merge when green",
+        "verification": {
+          "status": "verified",
+          "mechanism": "git-remote-observation"
+        }
+      },
+      "completedAt": "2026-10-08T01:26:53.000Z"
     }
   ]
 }

@@ -1095,3 +1095,133 @@ let ``with no directory context, nothing is checked`` () =
 
     Assert.Empty loaded.Failures
     Assert.Single loaded.Snapshot.Objects |> ignore
+
+// ---- comments ----------------------------------------------------------------
+
+let private commentsOf (loaded: DesiredState.Loaded) =
+    loaded.Comments |> List.map (fun c -> CommentTarget.key c.Target, c.Text)
+
+[<Fact>]
+let ``every modelled COMMENT ON form is read as a comment on that object`` () =
+    let loaded =
+        load
+            [ "comments.sql",
+              """
+COMMENT ON SCHEMA sales IS 'schema';
+COMMENT ON TABLE sales.orders IS 'table';
+COMMENT ON VIEW sales.open_orders IS 'view';
+COMMENT ON MATERIALIZED VIEW sales.totals IS 'matview';
+COMMENT ON SEQUENCE sales.order_seq IS 'sequence';
+COMMENT ON INDEX sales.orders_status IS 'index';
+COMMENT ON COLUMN sales.orders.status IS 'column';
+COMMENT ON FUNCTION sales.total(integer, varchar(20)) IS 'function';
+COMMENT ON PROCEDURE sales.rebuild() IS 'procedure';
+COMMENT ON TYPE sales.status IS 'type';
+COMMENT ON DOMAIN sales.email IS 'domain';
+COMMENT ON CONSTRAINT ck_total ON sales.orders IS 'constraint';
+COMMENT ON TRIGGER orders_touch ON sales.orders IS 'trigger';
+""" ]
+
+    Assert.Empty loaded.Failures
+
+    Assert.Equal<(string * string) list>(
+        [ "schema:sales", "schema"
+          "relation:sales.orders", "table"
+          "relation:sales.open_orders", "view"
+          "relation:sales.totals", "matview"
+          "relation:sales.order_seq", "sequence"
+          "relation:sales.orders_status", "index"
+          "column:sales.orders.status", "column"
+          // Argument types spelled as a routine's own are: canonical names, no
+          // modifiers. Otherwise the comment could never meet its routine.
+          "routine:sales.total(integer,character varying)", "function"
+          "routine:sales.rebuild()", "procedure"
+          "type:sales.status", "type"
+          "type:sales.email", "domain"
+          "constraint:sales.orders.ck_total", "constraint"
+          "trigger:sales.orders.orders_touch", "trigger" ],
+        commentsOf loaded)
+
+    // The relation's KIND is kept for the statement that sets it.
+    Assert.Contains(
+        loaded.Comments,
+        fun c -> c.Target = CommentTarget.Relation(RelationKind.MaterializedView, qn "sales" "totals"))
+
+[<Fact>]
+let ``a comment in an object's file is taken out of the text that creates the object`` () =
+    // The text is executed to create the table and reshaped by shadow
+    // normalisation; a COMMENT carried along would do neither correctly. The
+    // non-ASCII characters BEFORE the comments are the trap: libpg_query
+    // reports byte offsets, and cutting a .NET string by them would shift.
+    let sql =
+        "-- café: the café's tables\n"
+        + "-- strata:renamed_from (sales.old_orders)\n"
+        + "CREATE TABLE sales.orders (id bigint PRIMARY KEY, label text DEFAULT 'naïve');\n"
+        + "COMMENT ON TABLE sales.orders IS 'One row per order — always';\n"
+        + "-- a note between them stays\n"
+        + "COMMENT ON COLUMN sales.orders.label IS 'It''s shown';\n"
+
+    let loaded = load [ "orders.sql", sql ]
+
+    Assert.Empty loaded.Failures
+    Assert.Equal(2, List.length loaded.Comments)
+
+    let text = loaded.Declarations |> List.exactlyOne |> snd
+
+    Assert.DoesNotContain("COMMENT ON", text)
+    Assert.Contains("CREATE TABLE sales.orders (id bigint PRIMARY KEY, label text DEFAULT 'naïve');", text)
+    Assert.Contains("-- strata:renamed_from (sales.old_orders)", text)
+    Assert.Contains("-- a note between them stays", text)
+    Assert.Equal<(string * string) list>(
+        [ "relation:sales.orders", "One row per order — always"; "column:sales.orders.label", "It's shown" ],
+        commentsOf loaded)
+
+[<Fact>]
+let ``a comment does not stop a file's index or view text being recorded`` () =
+    let loaded =
+        load
+            [ "orders.sql", "CREATE TABLE sales.orders (id bigint PRIMARY KEY, status text);"
+              "orders_open.sql",
+              "CREATE INDEX orders_open ON sales.orders (id) WHERE status = 'open';\nCOMMENT ON INDEX sales.orders_open IS 'open ones';"
+              "open_orders.sql",
+              "CREATE VIEW sales.open_orders AS SELECT id FROM sales.orders;\nCOMMENT ON VIEW sales.open_orders IS 'open';" ]
+
+    Assert.Empty loaded.Failures
+
+    let indexText = loaded.IndexDeclarations |> List.exactlyOne |> snd
+    Assert.DoesNotContain("COMMENT", indexText)
+
+    let viewText =
+        loaded.Declarations
+        |> List.find (fun (n, _) -> QualifiedName.display n = "sales.open_orders")
+        |> snd
+
+    Assert.Equal("CREATE VIEW sales.open_orders AS SELECT id FROM sales.orders;\n", viewText)
+
+[<Fact>]
+let ``a comment that removes, or names an unmodelled kind, is refused out loud`` () =
+    for sql in
+        [ "COMMENT ON TABLE sales.orders IS NULL;"
+          "COMMENT ON TABLE sales.orders IS '';"
+          "COMMENT ON EXTENSION citext IS 'x';"
+          "COMMENT ON FUNCTION sales.total IS 'which overload?';" ] do
+        let loaded = load [ "c.sql", sql ]
+        Assert.Empty loaded.Comments
+        Assert.NotEmpty loaded.Failures
+
+[<Fact>]
+let ``two comments on the same object are a load failure, not a race`` () =
+    let loaded =
+        load
+            [ "a.sql", "COMMENT ON TABLE sales.orders IS 'one';"
+              "b.sql", "COMMENT ON TABLE sales.orders IS 'two';" ]
+
+    Assert.Contains(loaded.Failures, fun f -> f.Reason.Contains "comment declared 2 times")
+
+[<Fact>]
+let ``declaring a comment claims the comments category; declaring none does not`` () =
+    let none = load [ "orders.sql", "CREATE TABLE sales.orders (id bigint);" ]
+    let some = load [ "orders.sql", "CREATE TABLE sales.orders (id bigint);\nCOMMENT ON TABLE sales.orders IS 'x';" ]
+
+    Assert.Equal(NotRequested, Completeness.stateOf "comments" none.Snapshot.Completeness)
+    Assert.Equal(Complete, Completeness.stateOf "comments" some.Snapshot.Completeness)

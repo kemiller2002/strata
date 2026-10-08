@@ -5,7 +5,7 @@
      | )
 
 ## text
-PLAN: 1 change(s), 4 suppressed  —  gate verdict ALLOW
+PLAN: 1 change(s), 5 suppressed  —  gate verdict ALLOW
 
   create-table       sales.orders
 
@@ -15,6 +15,8 @@ NOT PROPOSED — differences Strata saw and will not act on:
       the database's schema list could not be read, so whether the declared schemas exist was NOT checked
   (grants)                     [not-compared]
       the database's privileges could not be read, so declared grants were NOT compared
+  (comments)                   [not-compared]
+      the database's comments could not be read, so declared comments were NOT compared
   (row level security)         [not-compared]
       the database's row-level security state could not be read (permission denied for pg_policy), so nothing is known about which rows any role can see
   (extensions)                 [not-compared]
@@ -26,4 +28,4 @@ NOT PROPOSED — differences Strata saw and will not act on:
 
 
 ## json
-{"verdict":"allow","exitCode":0,"desiredStateComplete":true,"changeCount":1,"changes":["create-table       sales.orders"],"findings":[{"verdict":"allow","change":"create-table       sales.orders","detected":"creates sales.orders","rationale":"Additive. Creates a new object.","affectedSources":[],"nextSafeMove":"Proceed."}],"suppressed":[{"object":"(schemas)","reason":"not-compared","detail":"the database's schema list could not be read, so whether the declared schemas exist was NOT checked"},{"object":"(grants)","reason":"not-compared","detail":"the database's privileges could not be read, so declared grants were NOT compared"},{"object":"(row level security)","reason":"not-compared","detail":"the database's row-level security state could not be read (permission denied for pg_policy), so nothing is known about which rows any role can see"},{"object":"(extensions)","reason":"not-compared","detail":"the database's installed extensions could not be read (permission denied for pg_extension), so declared extensions were NOT compared"}],"scope":{"liveDatabaseInspected":false,"schemaCompleteness":{"categories":[],"fullyComplete":true},"corpus":{"sourceCount":0,"sourceRoots":[],"indexedSources":[],"indexedSourcesTruncated":false,"parseFailures":0,"extractionGaps":0},"dialectCompatibility":{"state":"no-parsing-performed","parserMajor":null,"serverMajor":null},"parseImpliesTargetAccepts":false,"runtimeQueriesIndexed":false,"externalConsumersIndexed":false,"ormMetadataIndexed":false,"supportsAbsenceClaim":false}}
+{"verdict":"allow","exitCode":0,"desiredStateComplete":true,"changeCount":1,"changes":["create-table       sales.orders"],"findings":[{"verdict":"allow","change":"create-table       sales.orders","detected":"creates sales.orders","rationale":"Additive. Creates a new object.","affectedSources":[],"nextSafeMove":"Proceed."}],"suppressed":[{"object":"(schemas)","reason":"not-compared","detail":"the database's schema list could not be read, so whether the declared schemas exist was NOT checked"},{"object":"(grants)","reason":"not-compared","detail":"the database's privileges could not be read, so declared grants were NOT compared"},{"object":"(comments)","reason":"not-compared","detail":"the database's comments could not be read, so declared comments were NOT compared"},{"object":"(row level security)","reason":"not-compared","detail":"the database's row-level security state could not be read (permission denied for pg_policy), so nothing is known about which rows any role can see"},{"object":"(extensions)","reason":"not-compared","detail":"the database's installed extensions could not be read (permission denied for pg_extension), so declared extensions were NOT compared"}],"scope":{"liveDatabaseInspected":false,"schemaCompleteness":{"categories":[],"fullyComplete":true},"corpus":{"sourceCount":0,"sourceRoots":[],"indexedSources":[],"indexedSourcesTruncated":false,"parseFailures":0,"extractionGaps":0},"dialectCompatibility":{"state":"no-parsing-performed","parserMajor":null,"serverMajor":null},"parseImpliesTargetAccepts":false,"runtimeQueriesIndexed":false,"externalConsumersIndexed":false,"ormMetadataIndexed":false,"supportsAbsenceClaim":false}}

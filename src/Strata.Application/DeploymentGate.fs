@@ -487,6 +487,23 @@ module DeploymentGate =
               AffectedSources = []
               NextSafeMove = "Confirm nothing runs as this grantee against this object, then approve explicitly." }
 
+        | SetComment (target, _)
+        | RemoveComment target ->
+            // Documentation. No query, write or privilege reads
+            // `pg_description`, so there is no breakage to look for.
+            { Change = change
+              Verdict = Allow
+              Detected =
+                sprintf
+                    "%s the comment on %s"
+                    (match change with
+                     | RemoveComment _ -> "removes"
+                     | _ -> "sets")
+                    (CommentTarget.key target)
+              Rationale = "Documentation only. Nothing that runs against the database reads it."
+              AffectedSources = []
+              NextSafeMove = "Proceed." }
+
         | CreateEnumType name ->
             { Change = change
               Verdict = Allow

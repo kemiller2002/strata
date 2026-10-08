@@ -94,6 +94,52 @@ let private renderTables connectionString (declared: DesiredState.Loaded) =
                   "could not normalise declared tables (%s); defaults and check expressions will be reported as not-compared."
                   message ]
 
+/// Declared partial-index predicates, rendered by the server.
+///
+/// Only indexes that HAVE a predicate are sent: the rest have nothing to
+/// render, and building them would only cost the shadow time. Each goes with
+/// its table's own declaring text, because the index has to be built on
+/// something.
+let private renderIndexPredicates connectionString (declared: DesiredState.Loaded) =
+    let partial =
+        declared.Snapshot.Objects
+        |> List.choose (function
+            | TableObject t -> Some t
+            | _ -> None)
+        |> List.choose (fun t ->
+            let indexes =
+                t.Indexes
+                |> List.filter (fun i -> i.Unmodelled |> List.contains "a predicate")
+                |> List.choose (fun i ->
+                    declared.IndexDeclarations
+                    |> List.tryPick (fun ((table, name), text) ->
+                        if QualifiedName.display table = QualifiedName.display t.Name
+                           && Identifier.folded name = Identifier.folded i.Name then
+                            Some(i.Name.Text, text)
+                        else
+                            None))
+
+            match declarationOf declared t.Name, indexes with
+            | Some tableDdl, _ :: _ -> Some(QualifiedName.display t.Name, tableDdl, indexes)
+            | _ -> None)
+
+    match ShadowNormalisation.normaliseIndexPredicates connectionString partial with
+    | Ok normalised ->
+        normalised
+        |> List.map (fun n ->
+            ({ Table = n.Table
+               Index = n.Index
+               Predicate = n.Predicate }: SchemaDiff.NormalisedIndex)),
+        []
+    | Microsoft.FSharp.Core.Error message ->
+        [],
+        if List.isEmpty partial then
+            []
+        else
+            [ sprintf
+                  "could not normalise declared partial-index predicates (%s); they will be compared by presence only."
+                  message ]
+
 /// Every enum type the project declares, as `(qualified name, values)`.
 ///
 /// Passed to the parts of resolution that BUILD something in the shadow — a
@@ -260,6 +306,7 @@ let resolveData connectionString (declared: DesiredState.Loaded) =
 let resolve (connectionString: string) (declared: DesiredState.Loaded) : ResolvedDesiredState =
     let views, viewWarnings = renderViews connectionString declared
     let tables, tableWarnings = renderTables connectionString declared
+    let indexes, indexWarnings = renderIndexPredicates connectionString declared
     let domains, domainWarnings = renderDomains connectionString declared
     let policies, policyWarnings = renderPolicies connectionString declared
     let (data, dataFailures), dataWarnings = resolveData connectionString declared
@@ -279,6 +326,7 @@ let resolve (connectionString: string) (declared: DesiredState.Loaded) : Resolve
     { Declared = declared
       NormalisedViews = views
       NormalisedTables = tables
+      NormalisedIndexes = indexes
       NormalisedDomains = domains
       Policies = policies
       RowSecurity = declared.RowSecurity
@@ -288,6 +336,7 @@ let resolve (connectionString: string) (declared: DesiredState.Loaded) : Resolve
         List.concat
             [ viewWarnings
               tableWarnings
+              indexWarnings
               domainWarnings
               policyWarnings
               dataWarnings

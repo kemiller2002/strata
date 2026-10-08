@@ -1120,6 +1120,67 @@ let ``a predicate on both sides is disclosed as not compared rather than reporte
     Assert.Empty result.Changes
     Assert.Contains(result.Suppressed, fun s -> s.Reason = NotCompared && s.Detail.Contains "one_owner")
 
+/// A plan whose declared partial index has its predicate rendered by the
+/// server as `rendered`, against a deployed one rendered as `deployed`.
+let private predicatePlan (rendered: string option) (deployed: string) =
+    Strata.Application.SchemaDiff.Plan.run
+        { Strata.Application.SchemaDiff.Inputs.between
+            (declaringIndexes [ tableWithIndexes "orders" orders [ shaped "one_owner" [ "id" ] true [ "a predicate" ] ] ])
+            (deployedWithIndexes [ { shaped "one_owner" [ "id" ] true [ "a predicate" ] with Predicate = Some deployed } ]) with
+            AllowDrops = true
+            ManagedSchemas = managed
+            ExistingSchemas = Some managed
+            NormalisedIndexes =
+              rendered
+              |> Option.map (fun p -> [ ({ Table = "sales.orders"; Index = "one_owner"; Predicate = p }: Strata.Application.SchemaDiff.NormalisedIndex) ])
+              |> Option.defaultValue [] }
+
+[<Fact>]
+let ``partial-index predicates both rendered are compared by content`` () =
+    // Two different predicates on an index of the same name and columns. By
+    // presence they match; by content they do not, and this says so with both.
+    let result = predicatePlan (Some "(total > (0)::numeric)") "(total > (100)::numeric)"
+
+    Assert.Contains(result.Changes, fun c ->
+        match c with
+        | UnclassifiedChange d ->
+            d.Contains "'one_owner'"
+            && d.Contains "where (total > (0)::numeric) in desired state"
+            && d.Contains "where (total > (100)::numeric) in the database"
+        | _ -> false)
+
+[<Fact>]
+let ``equal rendered predicates converge with nothing left undisclosed`` () =
+    let result = predicatePlan (Some "(total > (0)::numeric)") "(total > (0)::numeric)"
+
+    Assert.Empty result.Changes
+    Assert.DoesNotContain(result.Suppressed, fun s -> s.Detail.Contains "one_owner")
+
+[<Fact>]
+let ``a predicate the server did not render is still disclosed, never assumed equal`` () =
+    let result = predicatePlan None "(total > (100)::numeric)"
+
+    Assert.Empty result.Changes
+    Assert.Contains(result.Suppressed, fun s -> s.Reason = NotCompared && s.Detail.Contains "one_owner")
+
+[<Fact>]
+let ``a rendered predicate does not hide another unmodelled shape on the same index`` () =
+    // The predicate is read; the sort order is not. One compared property
+    // must not stand in for the other.
+    let declared = shaped "one_owner" [ "id" ] true [ "a predicate"; "a sort order" ]
+
+    let result =
+        Strata.Application.SchemaDiff.Plan.run
+            { Strata.Application.SchemaDiff.Inputs.between
+                (declaringIndexes [ tableWithIndexes "orders" orders [ declared ] ])
+                (deployedWithIndexes [ { declared with Predicate = Some "(total > (0)::numeric)" } ]) with
+                ManagedSchemas = managed
+                ExistingSchemas = Some managed
+                NormalisedIndexes = [ { Table = "sales.orders"; Index = "one_owner"; Predicate = "(total > (0)::numeric)" } ] }
+
+    Assert.Empty result.Changes
+    Assert.Contains(result.Suppressed, fun s -> s.Reason = NotCompared && s.Detail.Contains "one_owner")
+
 [<Fact>]
 let ``an index is created from its declaring text, predicate and all`` () =
     let text = "CREATE UNIQUE INDEX one_owner ON sales.orders (id) WHERE total > 0;"
@@ -3075,3 +3136,79 @@ let ``a domain is created before a table that uses it`` () =
     let tableAt = result.Changes |> List.findIndex (fun c -> c = CreateTable(qn "sales" "account"))
 
     Assert.True(domainAt < tableAt, "a column cannot be declared of a type that does not exist yet")
+
+// ---- comments ----------------------------------------------------------------
+
+let private comment target text : Comment = { Target = target; Text = text }
+let private ordersComment = CommentTarget.Relation(RelationKind.Table, qn "sales" "orders")
+
+let private commentPlan allowDrops desiredState declared deployed =
+    Strata.Application.SchemaDiff.Plan.run
+        { Strata.Application.SchemaDiff.Inputs.between desiredState (complete [ tbl Observed "sales" "orders" orders ]) with
+            AllowDrops = allowDrops
+            ManagedSchemas = managed
+            ExistingSchemas = Some managed
+            DeclaredComments = declared
+            ActualComments = deployed }
+
+[<Fact>]
+let ``a declared comment that differs is set, and an equal one is left alone`` () =
+    let result =
+        commentPlan
+            false
+            (complete [ tbl Managed "sales" "orders" orders ])
+            [ comment ordersComment "new"; comment (CommentTarget.Column(qn "sales" "orders", id' "total")) "same" ]
+            (Some [ comment ordersComment "old"; comment (CommentTarget.Column(qn "sales" "orders", id' "total")) "same" ])
+
+    Assert.Equal<Change list>([ SetComment(ordersComment, "new") ], result.Changes)
+    Assert.Equal(Some "COMMENT ON TABLE \"sales\".\"orders\" IS 'new'", sqlFor result (fun c -> c = SetComment(ordersComment, "new")))
+
+[<Fact>]
+let ``an undeclared comment on a declared object is removed only with --allow-drops`` () =
+    let stale = CommentTarget.Column(qn "sales" "orders", id' "total")
+    let declared = [ comment ordersComment "kept" ]
+    let deployed = Some [ comment ordersComment "kept"; comment stale "stale" ]
+    let desired = complete [ tbl Managed "sales" "orders" orders ]
+
+    Assert.Empty (commentPlan false desired declared deployed).Changes
+    Assert.Contains((commentPlan false desired declared deployed).Suppressed, fun s -> s.Reason = DropsNotEnabled)
+    Assert.Equal<Change list>([ RemoveComment stale ], (commentPlan true desired declared deployed).Changes)
+    // And never on a partial desired state, drops or no drops.
+    Assert.Empty (commentPlan true (partial' [ tbl Managed "sales" "orders" orders ]) declared deployed).Changes
+
+[<Fact>]
+let ``a project that declares no comment leaves the database's alone and says so`` () =
+    let result =
+        commentPlan true (complete [ tbl Managed "sales" "orders" orders ]) [] (Some [ comment ordersComment "theirs" ])
+
+    Assert.Empty result.Changes
+    Assert.Contains(result.Suppressed, fun s -> s.Reason = NotModelled && s.Detail.Contains "declares none")
+
+[<Fact>]
+let ``a comment on an object the project does not declare is never set or removed`` () =
+    let elsewhere = CommentTarget.Relation(RelationKind.Table, qn "sales" "legacy")
+
+    let result =
+        commentPlan
+            true
+            (complete [ tbl Managed "sales" "orders" orders ])
+            [ comment ordersComment "x"; comment (CommentTarget.Relation(RelationKind.View, qn "sales" "nowhere")) "y" ]
+            (Some [ comment elsewhere "not ours" ])
+
+    Assert.Equal<Change list>([ SetComment(ordersComment, "x") ], result.Changes)
+    Assert.Contains(result.Suppressed, fun s -> s.Reason = NotModelled && s.Detail.Contains "sales.nowhere")
+
+[<Fact>]
+let ``comments that could not be read are not compared, rather than set again`` () =
+    let result =
+        commentPlan true (complete [ tbl Managed "sales" "orders" orders ]) [ comment ordersComment "x" ] None
+
+    Assert.Empty result.Changes
+    Assert.Contains(result.Suppressed, fun s -> s.Reason = NotCompared && s.Detail.Contains "comments could not be read")
+
+[<Fact>]
+let ``comments are applied after the objects they document, and are not destructive`` () =
+    Assert.True(Ordering.phase (SetComment(ordersComment, "x")) > Ordering.phase (CreateView(qn "sales" "v")))
+    Assert.True(Ordering.phase (RemoveComment ordersComment) < Ordering.phase (DropTable(qn "sales" "orders")))
+    Assert.False(Change.isPotentiallyDestructive (SetComment(ordersComment, "x")))
+    Assert.False(Change.isPotentiallyDestructive (RemoveComment ordersComment))

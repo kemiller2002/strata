@@ -639,6 +639,88 @@ module CatalogQueries =
         ORDER BY e.extname
         """
 
+    /// Comments on the objects Strata manages, one row per `pg_description`
+    /// entry.
+    ///
+    /// One branch per catalog a commented object lives in, each yielding the
+    /// same columns: the object's kind, its schema, its name, the member the
+    /// comment is on (a column, constraint or trigger), a routine's argument
+    /// types, and the relation's `relkind`. Argument types go through
+    /// `format_type(typid, NULL)`, exactly as `routineGrants` renders them, so
+    /// a comment and the routine it documents are keyed alike.
+    ///
+    /// Objects an extension owns are excluded, as everywhere else: their
+    /// comments are the extension's, and `CREATE EXTENSION` puts them back.
+    let comments =
+        """
+        WITH described AS (
+            SELECT objoid, classoid, objsubid, description FROM pg_catalog.pg_description
+        ),
+        extension_owned AS (
+            SELECT classid, objid FROM pg_catalog.pg_depend WHERE deptype = 'e'
+        )
+        SELECT * FROM (
+        SELECT 'schema' AS kind, n.nspname AS schema_name, NULL::text AS object_name,
+               NULL::text AS member_name, NULL::text[] AS argument_types, NULL::text AS relkind,
+               d.description
+        FROM described d
+        JOIN pg_catalog.pg_namespace n ON d.classoid = 'pg_namespace'::regclass AND n.oid = d.objoid
+        -- `public` arrives with a comment of its own ("standard public
+        -- schema") that no project wrote, and is never compared.
+        WHERE n.nspname <> 'public'
+        UNION ALL
+        SELECT CASE WHEN d.objsubid = 0 THEN 'relation' ELSE 'column' END,
+               n.nspname, c.relname,
+               CASE WHEN d.objsubid = 0 THEN NULL ELSE a.attname::text END,
+               NULL, c.relkind::text, d.description
+        FROM described d
+        JOIN pg_catalog.pg_class c ON d.classoid = 'pg_class'::regclass AND c.oid = d.objoid
+        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+        LEFT JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid AND a.attnum = d.objsubid AND d.objsubid > 0
+        WHERE c.relkind IN ('r', 'p', 'v', 'm', 'S', 'i', 'I')
+          AND (d.objsubid = 0 OR a.attname IS NOT NULL)
+          AND NOT EXISTS (SELECT 1 FROM extension_owned x
+                          WHERE x.classid = 'pg_class'::regclass AND x.objid = c.oid)
+        UNION ALL
+        SELECT 'routine', n.nspname, p.proname, NULL,
+               COALESCE(
+                 (SELECT array_agg(pg_catalog.format_type(k.typid, NULL) ORDER BY k.ord)
+                  FROM unnest(p.proargtypes) WITH ORDINALITY AS k(typid, ord)),
+                 '{}'),
+               NULL, d.description
+        FROM described d
+        JOIN pg_catalog.pg_proc p ON d.classoid = 'pg_proc'::regclass AND p.oid = d.objoid
+        JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+        WHERE p.prokind IN ('f', 'p')
+          AND NOT EXISTS (SELECT 1 FROM extension_owned x
+                          WHERE x.classid = 'pg_proc'::regclass AND x.objid = p.oid)
+        UNION ALL
+        SELECT 'type', n.nspname, t.typname, NULL, NULL, NULL, d.description
+        FROM described d
+        JOIN pg_catalog.pg_type t ON d.classoid = 'pg_type'::regclass AND t.oid = d.objoid
+        JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
+        WHERE t.typtype IN ('e', 'd')
+          AND NOT EXISTS (SELECT 1 FROM extension_owned x
+                          WHERE x.classid = 'pg_type'::regclass AND x.objid = t.oid)
+        UNION ALL
+        SELECT 'constraint', n.nspname, c.relname, con.conname, NULL, NULL, d.description
+        FROM described d
+        JOIN pg_catalog.pg_constraint con ON d.classoid = 'pg_constraint'::regclass AND con.oid = d.objoid
+        JOIN pg_catalog.pg_class c ON c.oid = con.conrelid
+        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+        UNION ALL
+        SELECT 'trigger', n.nspname, c.relname, tg.tgname, NULL, NULL, d.description
+        FROM described d
+        JOIN pg_catalog.pg_trigger tg ON d.classoid = 'pg_trigger'::regclass AND tg.oid = d.objoid
+        JOIN pg_catalog.pg_class c ON c.oid = tg.tgrelid
+        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+        WHERE NOT tg.tgisinternal
+        ) commented
+        WHERE commented.schema_name NOT IN ('pg_catalog', 'information_schema')
+          AND left(commented.schema_name, 3) <> 'pg_'
+        ORDER BY 1, 2, 3, 4
+        """
+
     let serverVersion = "SELECT current_setting('server_version')"
 
     let searchPath = "SELECT current_setting('search_path')"
