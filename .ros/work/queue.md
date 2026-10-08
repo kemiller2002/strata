@@ -121,3 +121,4 @@
 | WI-0110 | Model database object comments (COMMENT ON) and compare partial-index WHERE predicates by normalized content | complete |  | medium |
 | WI-0111 | Release Strata 0.1.0 as a self-contained native CLI through the Echelon Registry | complete |  | medium |
 | WI-0112 | Plan and apply in-place CHECK widening and routine redefinition on an existing database (strata#28) | complete | deploy,correctness | high |
+| WI-0113 | Move strata to Ordo 1.5.0 via echelon-current 1.3.0 (conditor upgrade --current) | ready |  | medium |
