@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 109,
+  "nextSeq": 111,
   "items": [
     {
       "id": "WI-0001",
@@ -1847,6 +1847,27 @@
       "attachments": [],
       "createdAt": "2026-10-07T21:21:13.000Z",
       "updatedAt": "2026-10-07T21:25:30.000Z",
+      "createdBy": "unknown",
+      "createdByActor": {
+        "kind": "agent",
+        "id": "anthropic/claude-code",
+        "provider": "anthropic",
+        "model": "unknown",
+        "runtime": "claude-code"
+      },
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0110",
+      "title": "Model database object comments (COMMENT ON) and compare partial-index WHERE predicates by normalized content",
+      "description": null,
+      "tags": [],
+      "priority": "medium",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-10-08T01:07:53.961Z",
+      "updatedAt": "2026-10-08T01:11:32.000Z",
       "createdBy": "unknown",
       "createdByActor": {
         "kind": "agent",
