@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "tool": "limen",
   "package": "@echelon-foundry/limen",
-  "installedVersion": "0.7.1",
+  "installedVersion": "0.9.0",
   "configurationVersion": 1,
   "managedArtifacts": [
     {
