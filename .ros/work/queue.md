@@ -122,3 +122,4 @@
 | WI-0111 | Release Strata 0.1.0 as a self-contained native CLI through the Echelon Registry | complete |  | medium |
 | WI-0112 | Plan and apply in-place CHECK widening and routine redefinition on an existing database (strata#28) | complete | deploy,correctness | high |
 | WI-0113 | Move strata to Ordo 1.5.0 via echelon-current 1.3.0 (conditor upgrade --current) | complete |  | medium |
+| WI-0114 | Upgrade Limen from 0.7.1 to 0.9.0 (echelon-current) | complete |  | medium |
