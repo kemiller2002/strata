@@ -762,3 +762,9 @@ scripts/check-docs-match-cli.sh    # commands, flags and links must exist
 > **Pilot rule.** The operating system is itself under evaluation. Do not infer
 > that Strata is a validated method or product merely because the repository
 > follows a rigorous process.
+
+## License
+
+Source available under PolyForm Noncommercial 1.0.0 for permitted noncommercial uses. Commercial use requires a separate license from Echelon Foundry. Previously distributed versions remain subject to the licenses under which they were released.
+
+Commercial licensing information is forthcoming.
