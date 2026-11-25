@@ -28,7 +28,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="EchelonFoundry.Aegis.Core" Version="1.0.0" />
+    <PackageReference Include="EchelonFoundry.Aegis.Core" Version="2.0.0" />
   </ItemGroup>
 
   <ItemGroup>
