@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "anthropic/claude-code",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-11-25T15:53:29Z",
+  "updatedAt": "2026-11-25T15:55:44Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -3125,13 +3125,43 @@
     {
       "id": "WI-0116",
       "type": "task",
-      "state": "active",
-      "semanticState": "active",
-      "evidence": [],
-      "updatedAt": "2026-11-25T15:53:29Z",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Cli/Strata.Cli.fsproj"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/FoundationsConformanceTests.fs"
+        }
+      ],
+      "updatedAt": "2026-11-25T15:55:44Z",
       "telemetryExecutionIds": [
         "EXE-20261125T155330576Z-bf702679"
-      ]
+      ],
+      "latestCheckpoint": {
+        "id": "1685be47455a079f5a02ff07",
+        "recordedAt": "2026-11-25T15:55:42Z",
+        "executionId": "EXE-20261125T155330576Z-bf702679",
+        "repository": "strata",
+        "branch": "claude/vigila-implementation-jdeps1",
+        "commit": "0ce347ca5f8315211b70a0ed9e0b3846a7f43cae",
+        "remote": {
+          "name": "origin",
+          "url": "https://github.com/kemiller2002/strata"
+        },
+        "remoteBranch": "claude/vigila-implementation-jdeps1",
+        "remoteCommit": "0ce347ca5f8315211b70a0ed9e0b3846a7f43cae",
+        "summary": "Aegis pinned to 2.0.2 in the CLI, foundations.json, conformance tests and docs; build, checks, 822 tests (live PostgreSQL) and foundations verify pass",
+        "nextAction": "Complete WI-0116, rebuild registry, validate, push Praxis state",
+        "verification": {
+          "status": "verified",
+          "mechanism": "git-remote-observation"
+        }
+      },
+      "completedAt": "2026-11-25T15:55:44Z"
     }
   ]
 }

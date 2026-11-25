@@ -124,4 +124,4 @@
 | WI-0113 | Move strata to Ordo 1.5.0 via echelon-current 1.3.0 (conditor upgrade --current) | complete |  | medium |
 | WI-0114 | Upgrade Limen from 0.7.1 to 0.9.0 (echelon-current) | complete |  | medium |
 | WI-0115 | Upgrade Aegis 1.0.0 -> 2.0.0 (echelon-current 1.40.0) | complete |  | medium |
-| WI-0116 | Upgrade Aegis 2.0.1 -> 2.0.2 (detached capture no longer blocks) | ready |  | medium |
+| WI-0116 | Upgrade Aegis 2.0.1 -> 2.0.2 (detached capture no longer blocks) | complete |  | medium |

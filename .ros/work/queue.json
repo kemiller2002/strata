@@ -1992,10 +1992,10 @@
       "description": null,
       "tags": [],
       "priority": "medium",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-11-25T15:53:15.254Z",
-      "updatedAt": "2026-11-25T15:53:29Z",
+      "updatedAt": "2026-11-25T15:55:44Z",
       "createdBy": "unknown",
       "createdByActor": {
         "kind": "agent",
