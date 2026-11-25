@@ -1971,10 +1971,10 @@
       "description": null,
       "tags": [],
       "priority": "medium",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-11-25T12:17:26.492Z",
-      "updatedAt": "2026-11-25T12:17:29.000Z",
+      "updatedAt": "2026-11-25T12:56:04.000Z",
       "createdBy": "unknown",
       "createdByActor": {
         "kind": "agent",
