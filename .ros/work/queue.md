@@ -125,4 +125,4 @@
 | WI-0114 | Upgrade Limen from 0.7.1 to 0.9.0 (echelon-current) | complete |  | medium |
 | WI-0115 | Upgrade Aegis 1.0.0 -> 2.0.0 (echelon-current 1.40.0) | complete |  | medium |
 | WI-0116 | Upgrade Aegis 2.0.1 -> 2.0.2 (detached capture no longer blocks) | complete |  | medium |
-| WI-0117 | Upgrade to echelon-current 1.42.0 (Praxis 3.25.0, Ordo 1.20.0) | ready |  | medium |
+| WI-0117 | Upgrade to echelon-current 1.42.0 (Praxis 3.25.0, Ordo 1.20.0) | complete |  | medium |
