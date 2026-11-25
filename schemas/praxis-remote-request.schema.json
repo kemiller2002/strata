@@ -901,8 +901,44 @@
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$"
     },
     "workItemId": {
-      "type": "string",
-      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+      "description": "A bare repository-local work-item ID (the executing repository), or from protocol 1.4 a structured canonical reference {repositoryId, repository, localId} that must name the executing repository (PRX-REMOTE-047). A display string such as owner/repo:ID is not a reference.",
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "localId"
+          ],
+          "properties": {
+            "repositoryId": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[a-z][a-z0-9-]{0,31}:[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+            },
+            "repository": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$"
+            },
+            "provider": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,31}$"
+            },
+            "localId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+            }
+          }
+        }
+      ]
     },
     "token": {
       "type": "string",

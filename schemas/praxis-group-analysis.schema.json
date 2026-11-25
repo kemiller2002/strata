@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://repository-operating-system.local/schemas/praxis-group-analysis.schema.json",
+  "title": "praxis.group-analysis/1",
+  "description": "The machine-checkable group analysis of a grouped execution (PRX-GRP-040, PRX-GRP-133): the member table with each member's enumerated acceptance criteria, the reuse inventory established by search, and every new abstraction with the existing element it considered. Committed before any member's first change and supplied as `work complete --evidence group-analysis=PATH`. The Markdown template (docs/group-analysis-template.md) stays the human-readable form.",
+  "type": "object",
+  "required": ["schema", "groupId", "groupExecutionId", "members", "reuseInventory", "searches", "newAbstractions"],
+  "properties": {
+    "schema": { "const": "praxis.group-analysis/1" },
+    "groupId": { "type": "string", "pattern": "^GROUP-[A-Z0-9]+(-[A-Z0-9]+)*$" },
+    "groupExecutionId": {
+      "description": "The group execution (GEX-...) the analysis serves; the gate requires it to name the member's own group execution.",
+      "type": ["string", "null"]
+    },
+    "repository": { "type": ["string", "null"] },
+    "baseCommit": { "type": ["string", "null"] },
+    "members": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["workItemId", "acceptanceCriteria"],
+        "properties": {
+          "workItemId": { "type": "string", "minLength": 1 },
+          "repository": { "type": ["string", "null"], "description": "owner/repo for a member of another repository (PRX-GRP-107); null for the home." },
+          "obligation": { "type": "string" },
+          "dependsOn": { "type": "array", "items": { "type": "string" } },
+          "acceptanceCriteria": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+        }
+      }
+    },
+    "order": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["consumer", "producer", "milestone"],
+        "properties": {
+          "consumer": { "type": "string" },
+          "producer": { "type": "string" },
+          "milestone": { "type": "string", "pattern": "^(complete|merged|released:.+)$" }
+        }
+      }
+    },
+    "reuseInventory": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["element", "location", "disposition", "reason"],
+        "properties": {
+          "element": { "type": "string", "minLength": 1 },
+          "location": { "type": "string", "minLength": 1, "description": "path:line" },
+          "disposition": { "enum": ["reused", "extended", "not-reused"] },
+          "reason": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "searches": {
+      "description": "The searches that established the inventory; required (non-empty) when the inventory is empty.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["command", "finding"],
+        "properties": { "command": { "type": "string", "minLength": 1 }, "finding": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "newAbstractions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "consideredExisting", "whyNotReused"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "consideredExisting": { "type": "string", "minLength": 1 },
+          "whyNotReused": { "type": "string" }
+        }
+      }
+    },
+    "decisions": { "type": "array", "items": { "type": "string" } }
+  }
+}

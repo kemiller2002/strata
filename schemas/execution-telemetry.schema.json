@@ -10,6 +10,15 @@
     "workItemId": {"type": "string", "minLength": 1},
     "instanceId": {"type": ["string", "null"], "description": "Locally authoritative Praxis instance identity when available."},
     "status": {"enum": ["active", "finalized"]},
+    "provider": {
+      "type": "object",
+      "description": "Interface I7 (PRAXIS-REL-010): the provider session (CLAUDE_CODE_SESSION_ID) and agent instance (PRAXIS_AGENT_INSTANCE_ID) when the host sets them; absent otherwise.",
+      "properties": {
+        "sessionId": {"type": ["string", "null"]},
+        "agentInstanceId": {"type": ["string", "null"]}
+      },
+      "additionalProperties": true
+    },
     "startedAt": {"type": "string", "format": "date-time"},
     "finalizedAt": {"type": ["string", "null"], "format": "date-time"},
     "identity": {
@@ -30,6 +39,20 @@
         "actorKind": {"description": "Kind of actor that performed this execution (RQ-ROS-2026-A002); absent on records written before actor attribution, which are projected from provenance.sources.", "type": "string", "pattern": "^(agent|human|automation|unknown|x-[a-z0-9][a-z0-9-]*)$"},
         "orchestration": {"type": "object", "additionalProperties": true},
         "assurance": {"description": "How the identity was obtained. Present only as 'asserted-by-request' on executions created for a praxis.remote request (DF-ROS-2026-A041); absent means self-reported by the local process.", "const": "asserted-by-request"}
+      },
+      "additionalProperties": true
+    },
+    "authorityContract": {
+      "description": "VAC-002-P3-01 R-PRAX-1 (OD-6): the authority contract the implementation brief (AGENTS.md) carried when the execution started. `present` names the SHA-256 of the contract text actually found; `absent` names why and never carries a digest. Missing on executions started before it was recorded: unknown, not absent.",
+      "type": "object",
+      "required": ["status", "source"],
+      "properties": {
+        "status": {"enum": ["present", "absent"]},
+        "source": {"type": "string", "minLength": 1},
+        "sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+        "frozenVersion": {"type": "string"},
+        "matchesFrozen": {"type": "boolean"},
+        "reason": {"type": "string"}
       },
       "additionalProperties": true
     },

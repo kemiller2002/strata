@@ -354,10 +354,36 @@ integration boundaries.
 | Malformed `actor` on an event | error |
 | Contribution names an execution with no local record (imported, pruned, or mistyped) | warning |
 | Enforced policy: new non-requirement artifact without a `created` contribution | warning |
+| `origin-unrecorded` without a reason, combined with another operation, or alongside a `created` contribution | error |
+| Artifact whose origin is acknowledged as unrecorded (DF-ROS-2026-A055): satisfies the creation rules; printed by `validate` as a `NOTE` and by `audit` as `provenance.origin` | info |
 | Legacy artifact updated on or after `requiredFrom` without a recorded contribution | warning |
 | Legacy artifact changed since the base revision without a recorded contribution | warning |
 | Legacy artifact (created before `requiredFrom`) with no provenance, including any self-declared `author_agent`/`created_by_agent`/`owner_agent`/`source_author` | info |
 | Legacy event that records executions but no actor | info |
+
+### Origin unrecorded (DF-ROS-2026-A055)
+
+Some records were created by a process that left no Praxis execution: a
+direct push, an evaluator session run outside Praxis, an import. Their
+creation can never be recorded truthfully by anyone else, and Praxis never
+infers a creator. For such a record, acknowledge the gap instead:
+
+```sh
+./praxis provenance acknowledge-unrecorded --path research/hypotheses/HY-...md \
+  --reason "added by a direct push to main with no Praxis execution"
+```
+
+- The acknowledgement is a contribution with the single operation
+  `origin-unrecorded`, recorded under the **acknowledging** actor's own
+  identity and execution (or `CTB-` key for a human). It names and infers no
+  creator; its actor is who acknowledged the gap, and when.
+- `--reason` is required and must say why the creation was never recorded.
+- It is refused when the record already has a `created` contribution, and a
+  `created` contribution cannot be added after it.
+- `validate` treats an acknowledged record as satisfying the missing-creation
+  rules, and reports it distinctly: a `NOTE origin unrecorded: ...` line naming
+  the acknowledger, time and reason (an informational `provenance.origin`
+  finding in `provenance audit`), never as a creation.
 
 ### Policy and legacy repositories
 
