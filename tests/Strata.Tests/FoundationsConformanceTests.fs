@@ -40,7 +40,7 @@ let ``foundations.json requires Aegis, Ordo and Praxis and keeps current baselin
     for name in [ "aegis"; "ordo"; "praxis" ] do
         Assert.True(required name, $"{name} must be required")
 
-    for name, version in [ "aegis", "2.0.1"; "forma", "0.4.1"; "folio", "0.3.0"; "limen", "0.9.0" ] do
+    for name, version in [ "aegis", "2.0.2"; "forma", "0.4.1"; "folio", "0.3.0"; "limen", "0.9.0" ] do
         Assert.Equal(version, str capabilities.[name].["version"])
 
     Assert.Equal("aegis-boundaries.json", str capabilities.["aegis"].["boundaryManifest"])
@@ -65,7 +65,7 @@ let ``a foundation declared not applicable is justified by an accepted decision 
 [<Fact>]
 let ``Aegis is referenced at the pinned version by the composition root`` () =
     Assert.Contains(
-        "<PackageReference Include=\"EchelonFoundry.Aegis.Core\" Version=\"2.0.1\" />",
+        "<PackageReference Include=\"EchelonFoundry.Aegis.Core\" Version=\"2.0.2\" />",
         read "src/Strata.Cli/Strata.Cli.fsproj"
     )
 

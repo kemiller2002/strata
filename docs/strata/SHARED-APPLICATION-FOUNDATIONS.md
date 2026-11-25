@@ -17,7 +17,7 @@ Dependencies MUST be pinned to an explicit released version or immutable artifac
 
 Current baselines:
 
-- `EchelonFoundry.Aegis.Core` **2.0.1**.
+- `EchelonFoundry.Aegis.Core` **2.0.2**.
 - `@echelon-foundry/design-system` (Forma) **0.4.1**, consumed from the
   immutable v0.4.1 release tarball until npm is the selected canonical source.
 - `@echelon-foundry/print-components` (Folio) **0.3.0**, consumed from the
