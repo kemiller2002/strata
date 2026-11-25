@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "anthropic/claude-code",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-11-25T12:17:29.000Z",
+  "updatedAt": "2026-11-25T12:34:10.000Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -3083,13 +3083,34 @@
     {
       "id": "WI-0115",
       "type": "task",
-      "state": "active",
-      "semanticState": "active",
+      "state": "blocked",
+      "semanticState": "blocked",
       "evidence": [],
-      "updatedAt": "2026-11-25T12:17:29.000Z",
+      "updatedAt": "2026-11-25T12:34:10.000Z",
       "telemetryExecutionIds": [
         "EXE-20261125T121730064Z-caca186d"
-      ]
+      ],
+      "latestCheckpoint": {
+        "id": "4c67b39afa68e941929b94a5",
+        "recordedAt": "2026-11-25T12:34:08.000Z",
+        "executionId": "EXE-20261125T121730064Z-caca186d",
+        "repository": "strata",
+        "branch": "claude/vigila-implementation-jdeps1",
+        "commit": "5bea0d5aef649c09d0e6ddef462ce44605f3de0a",
+        "remote": {
+          "name": "origin",
+          "url": "https://github.com/kemiller2002/strata"
+        },
+        "remoteBranch": "claude/vigila-implementation-jdeps1",
+        "remoteCommit": "5bea0d5aef649c09d0e6ddef462ce44605f3de0a",
+        "summary": "Pinned EchelonFoundry.Aegis.Core 2.0.0 and moved foundations.json, conformance test and docs baseline to 2.0.0; restore fails NU1605 on SDK 8 because Aegis 2.0.0 requires FSharp.Core >= 11.0.101 (known packaging defect)",
+        "nextAction": "Retarget the pin to Aegis 2.0.1 (FSharp.Core floor 10.1.400), rebuild, run live-PostgreSQL tests, then complete",
+        "verification": {
+          "status": "verified",
+          "mechanism": "git-remote-observation"
+        }
+      },
+      "blockReason": "Aegis 2.0.0 packaging defect: nuspec requires FSharp.Core >= 11.0.101, so restore fails NU1605 against the FSharp.Core 10.1.400 pin on SDK 8.0.428; waiting for Aegis 2.0.1 to retarget"
     }
   ]
 }
