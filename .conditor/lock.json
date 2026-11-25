@@ -1,14 +1,14 @@
 {
   "schemaVersion": 4,
   "project": "strata",
-  "manifestSha256": "2bd1a283083f5f42126f34f5404c137488396a619d67fd1214e6879dc3ecea74",
+  "manifestSha256": "30a2bb28b233d198cc4acf625625fa2228c69db6e114a33890ef74e250ea6d9d",
   "manifest": {
     "schemaVersion": 1,
     "name": "strata",
     "registryAuthority": {
       "kind": "resolved-release-set",
       "path": ".conditor/authority/resolved-release-set.json",
-      "sha256": "f917318c6113caad2290b855e9b93a72077fd8183c90debd20fb7d7549100d48"
+      "sha256": "6be3bc97fbdd314abc4c712c2b1b47c1a18487995d9e1b9db445b4d141a8ee8a"
     },
     "components": [
       {
@@ -18,12 +18,12 @@
       },
       {
         "id": "ordo",
-        "version": "1.5.0",
+        "version": "1.20.0",
         "required": true
       },
       {
         "id": "praxis",
-        "version": "3.7.2",
+        "version": "3.25.0",
         "required": true
       }
     ],
@@ -44,21 +44,21 @@
     },
     {
       "id": "ordo",
-      "version": "1.5.0",
+      "version": "1.20.0",
       "distribution": "host-tool",
       "package": "ordo",
-      "descriptorSha256": "cac222af525161218391dade23d2a583c29315e8df255ffb9f11f0f2bb4eaf3a",
+      "descriptorSha256": "e0c49f0c717fd5afdd14699c77add4a12f68eded63231b80206cbe6a3cb374e5",
       "authority": "embedded-component-descriptor",
-      "sourceReference": "host:ordo@1.5.0"
+      "sourceReference": "host:ordo@1.20.0"
     },
     {
       "id": "praxis",
-      "version": "3.7.2",
+      "version": "3.25.0",
       "distribution": "host-tool",
       "package": "praxis",
-      "descriptorSha256": "476164cdd93d38e8b7960f37253334f1636204b6950c82e9f993605b269f0d45",
+      "descriptorSha256": "a6a854d426d865133e7d1440e2ca80245dbf425aecdf1aafdb7ffddf5bd4487a",
       "authority": "embedded-component-descriptor",
-      "sourceReference": "host:praxis@3.7.2"
+      "sourceReference": "host:praxis@3.25.0"
     }
   ],
   "requirements": [],

@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://repository-operating-system.local/schemas/praxis-group-verification.schema.json",
+  "title": "praxis.group-verification/1",
+  "description": "The per-member, per-criterion verification pass of a grouped execution (PRX-GRP-045, PRX-GRP-134), supplied as `work complete --evidence group-verification=PATH`. One row per acceptance criterion the group analysis enumerates for the member; a row that is not `met` names, in `deferredTo`, a recorded non-terminal work item that takes the criterion over. Evidence is an attestation checked for presence and consistency, not proof.",
+  "type": "object",
+  "required": ["schema", "groupId", "groupExecutionId", "rows"],
+  "properties": {
+    "schema": { "const": "praxis.group-verification/1" },
+    "groupId": { "type": "string" },
+    "groupExecutionId": { "type": ["string", "null"] },
+    "member": { "type": "string" },
+    "rows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["member", "criterion", "status", "evidence"],
+        "properties": {
+          "member": { "type": "string", "minLength": 1 },
+          "criterion": { "type": "string", "minLength": 1 },
+          "status": { "enum": ["met", "partially-met", "not-met", "unknown"] },
+          "evidence": {
+            "type": "object",
+            "required": ["kind", "reference"],
+            "properties": {
+              "kind": { "enum": ["test", "command", "location"] },
+              "reference": { "type": "string", "minLength": 1, "description": "A test name, a command, or path[:line] that must exist at the completion commit." },
+              "result": { "type": "string" }
+            }
+          },
+          "deferredTo": { "type": ["string", "null"] }
+        }
+      }
+    }
+  }
+}

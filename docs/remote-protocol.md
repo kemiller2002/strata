@@ -1,18 +1,18 @@
-# Praxis remote protocol (`praxis.remote` 1.3)
+# Praxis remote protocol (`praxis.remote` 1.4)
 
 This page specifies the typed request/response contract that lets an agent
 with **no local .NET or Praxis runtime** ask a trusted executor to run an
 explicit Praxis operation.
 
-- **Why:** [`RQ-ROS-2026-A021`](https://github.com/kemiller2002/praxis/blob/v3.7.2/research/requirements/RQ-ROS-2026-A021--remote-execution-first-class-capability.md),
+- **Why:** [`RQ-ROS-2026-A021`](https://github.com/kemiller2002/praxis/blob/v3.25.0/research/requirements/RQ-ROS-2026-A021--remote-execution-first-class-capability.md),
   which adopts issue #90.
-- **How it was designed:** [`DF-ROS-2026-A041`](https://github.com/kemiller2002/praxis/blob/v3.7.2/research/decisions/DF-ROS-2026-A041--remote-execution-protocol-and-adapter-architecture.md).
+- **How it was designed:** [`DF-ROS-2026-A041`](https://github.com/kemiller2002/praxis/blob/v3.25.0/research/decisions/DF-ROS-2026-A041--remote-execution-protocol-and-adapter-architecture.md).
 - **Schemas:** [`schemas/praxis-remote-request.schema.json`](../schemas/praxis-remote-request.schema.json)
   and [`schemas/praxis-remote-response.schema.json`](../schemas/praxis-remote-response.schema.json).
 - **Typed model:** `Praxis.Domain.Remote` (`src/Praxis.Domain/Remote/Protocol.fs`).
 - **JSON contract:** `Praxis.Contracts.Remote.RemoteJson`.
 - **Operating it** (installation, permissions, upgrades, troubleshooting):
-  [`remote-execution-operations.md`](https://github.com/kemiller2002/praxis/blob/v3.7.2/docs/remote-execution-operations.md).
+  [`remote-execution-operations.md`](https://github.com/kemiller2002/praxis/blob/v3.25.0/docs/remote-execution-operations.md).
 
 > **Status.**
 >
@@ -165,7 +165,7 @@ start-ups without weakening any guarantee.
     not succeed.
 
 **Durable checkpoints (version 1.3,
-[`DF-ROS-2026-A042`](https://github.com/kemiller2002/praxis/blob/v3.7.2/research/decisions/DF-ROS-2026-A042--durable-work-checkpoints-and-executor-continuation.md)).**
+[`DF-ROS-2026-A042`](https://github.com/kemiller2002/praxis/blob/v3.25.0/research/decisions/DF-ROS-2026-A042--durable-work-checkpoints-and-executor-continuation.md)).**
 
 - **`work.checkpoint`** is recorded in the requester's own execution. The
   request never asserts a commit: the executor is checked out at
@@ -183,6 +183,35 @@ start-ups without weakening any guarantee.
 - **Reading state.** `work.context` returns the `continuity` block. A remote
   reader sees the historical checkpoint and its current recoverability
   separately.
+
+**Structured work-item references (version 1.4, PRX-REMOTE-047).**
+
+- Wherever a request takes `workItemId` or `workItemIds` (including inside
+  batch constituents), a 1.4 request may send the canonical reference
+  `{"repositoryId": "github:1309152643", "repository": "kemiller2002/praxis", "localId": "WI-0042"}`
+  instead of a bare ID. A reference without `repositoryId` must name its
+  `provider` and is a legacy, locator-only reference. See
+  [`identity.md`](https://github.com/kemiller2002/praxis/blob/v3.25.0/docs/identity.md).
+- A bare ID still means the executing repository, so 1.0-1.3 requests behave
+  exactly as before and fingerprint byte-for-byte as before: every journalled
+  request still replays. A structured reference adds its repository to the
+  fingerprint.
+- The reference must name the repository the executor governs (its
+  `ros.json` `repository.identity`, verified against `GITHUB_REPOSITORY_ID`).
+  Another repository, an unverifiable legacy locator, or an executor whose
+  repository identity is not established, is refused with `invalid-request`
+  before anything runs. Remote requests never act across repositories.
+- A display string such as `owner/repo:WI-0042` is not a reference; it fails
+  the work-item ID rule.
+- **Old peers.** A structured reference in a 1.0-1.3 request is
+  `invalid-request` and names 1.4. A 1.4 request to a 1.3 executor is
+  `unsupported-protocol` under the version rule below, so it never
+  half-runs.
+- **Responses** to 1.4 requests add `repository.identity` and a top-level
+  `workItems` array with the canonical reference of every work item the
+  request named. Responses to earlier versions keep their exact shape.
+- **Discovery.** `praxis.describe` publishes `repositoryIdentity` and
+  `workItemReference` (shape, fields, rule, `introducedIn`).
 
 The `admin` capability is reserved.
 
@@ -341,13 +370,21 @@ unchanged. A `requestId` that fails validation is never echoed back.
 
 | `failure.code` | `decidedBy` | `outcome` | `retry` |
 |---|---|---|---|
-| `invalid-request`, `secret-detected`, `unsupported-operation`, `unsupported-protocol`, `unauthorized`, `idempotency-conflict`, `domain-rejected` | praxis | rejected | `never` |
+| `invalid-request`, `secret-detected`, `unsupported-operation`, `unsupported-protocol`, `unauthorized`, `idempotency-conflict`, `domain-rejected`, `incompatible-state` | praxis | rejected | `never` |
 | `stale-ref` | praxis | rejected | `after-refresh` |
 | `validation-failed` | praxis | failed | `never` |
 | `internal` | praxis | failed | `same-request` |
 | `concurrency-conflict` | executor | failed | `after-refresh` |
 | `bootstrap-failed` | executor | failed | `same-request` |
 | `repository-write-failed`, `transport-failed`, `rate-limited`, `timeout`, `cancelled` | executor | unknown | `same-request` |
+
+`incompatible-state` (PRX-QUAL-010) is decided before a mutation: the
+executor reads the schema version of each gating state document
+(`.ros/work/queue.json`, `.ros/context/current.json`, `.ros/work/groups.json`,
+`.ros/events/events.jsonl`) and refuses when it does not read one of them.
+Each release declares the versions it reads and writes in its `release.json`
+(`compatibility.stateSchemas`, with `compatibility.remoteProtocol`). Reads are
+not gated.
 
 The retry values mean:
 
@@ -442,9 +479,9 @@ repository, never from guessing.
 
 The adapter is made of three files:
 
-- [`.github/workflows/praxis-remote.yml`](https://github.com/kemiller2002/praxis/blob/v3.7.2/.github/workflows/praxis-remote.yml)
-- [`.github/actions/praxis-remote`](https://github.com/kemiller2002/praxis/blob/v3.7.2/.github/actions/praxis-remote/action.yml)
-- [`.github/actions/praxis-setup`](https://github.com/kemiller2002/praxis/blob/v3.7.2/.github/actions/praxis-setup/action.yml)
+- [`.github/workflows/praxis-remote.yml`](https://github.com/kemiller2002/praxis/blob/v3.25.0/.github/workflows/praxis-remote.yml)
+- [`.github/actions/praxis-remote`](https://github.com/kemiller2002/praxis/blob/v3.25.0/.github/actions/praxis-remote/action.yml)
+- [`.github/actions/praxis-setup`](https://github.com/kemiller2002/praxis/blob/v3.25.0/.github/actions/praxis-setup/action.yml)
 
 Together they form a thin host. They bootstrap the pinned, verified Praxis
 release, let Praxis decide, and persist exactly what Praxis reports. They

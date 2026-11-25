@@ -118,6 +118,11 @@ it.
 
 ## 5. Continue someone else's work, and what to do when you cannot reach Praxis
 
+- **Name work items unambiguously (protocol 1.4).** A bare work-item ID
+  means this repository. To be explicit, send
+  `{"repositoryId": "...", "repository": "OWNER/REPO", "localId": "ID"}`
+  (copy `repositoryIdentity` from `praxis.describe`). A reference to any
+  other repository is refused; there are no cross-repository remote requests.
 - **Make your work durable (protocol 1.3).** Push your commits through
   GitHub, then send `work.checkpoint` with `{workItemId, summary,
   nextAction, stepId?}` and your own `execution.id`. Praxis verifies that

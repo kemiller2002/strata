@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "anthropic/claude-code",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-11-25T15:55:44Z",
+  "updatedAt": "2026-11-25T17:54:32.000Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -3162,6 +3162,47 @@
         }
       },
       "completedAt": "2026-11-25T15:55:44Z"
+    },
+    {
+      "id": "WI-0117",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "conditor.json"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/FoundationsConformanceTests.fs"
+        }
+      ],
+      "updatedAt": "2026-11-25T17:54:32.000Z",
+      "telemetryExecutionIds": [
+        "EXE-20261125T175008953Z-3365cc92"
+      ],
+      "latestCheckpoint": {
+        "id": "910314964d38c641f68fdef3",
+        "recordedAt": "2026-11-25T17:54:30.000Z",
+        "executionId": "EXE-20261125T175008953Z-3365cc92",
+        "repository": "strata",
+        "branch": "claude/vigila-implementation-jdeps1",
+        "commit": "83d81e86458b68d2a5d1094a253ab41f783c525a",
+        "remote": {
+          "name": "origin",
+          "url": "https://github.com/kemiller2002/strata"
+        },
+        "remoteBranch": "claude/vigila-implementation-jdeps1",
+        "remoteCommit": "83d81e86458b68d2a5d1094a253ab41f783c525a",
+        "summary": "Upgraded to echelon-current 1.42.0: Praxis 3.25.0, Ordo 1.20.0, Limen 0.9.1, foundation baselines; build and 822 tests pass",
+        "nextAction": "Open a draft PR and watch CI",
+        "verification": {
+          "status": "verified",
+          "mechanism": "git-remote-observation"
+        }
+      },
+      "completedAt": "2026-11-25T17:54:32.000Z"
     }
   ]
 }

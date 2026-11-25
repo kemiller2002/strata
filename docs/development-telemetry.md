@@ -36,7 +36,7 @@ planned -> active -> completed
    \----------+-----------> abandoned
 ```
 
-Illegal and repeated transitions are rejected. Without a parallel-step protocol, active steps form one ancestor path: an active parent may have one active nested child, but unrelated active siblings cannot coexist. Nested parents are grouping steps; normalized usage and cumulative checkpoints belong to leaves, so parent and child intervals cannot both enter execution totals. A measured step cannot later acquire children. A parent cannot finish while a descendant is unresolved, and an execution cannot finalize while any step is planned, active, or blocked. After a crash, the unresolved step remains visible and must be resumed, completed, blocked, or abandoned explicitly.
+Illegal and repeated transitions are rejected. Without a parallel-step protocol, active steps form one ancestor path: an active parent may have one active nested child, but unrelated active siblings cannot coexist. Nested parents are grouping steps; normalized usage and cumulative checkpoints belong to leaves, so parent and child intervals cannot both enter execution totals. A measured step cannot later acquire children. A parent cannot finish while a descendant is unresolved, and an execution cannot finalize while any step is planned, active, or blocked. After a crash, the unresolved step remains visible and must be resumed, completed, blocked, or abandoned explicitly. The one exception is an execution a successor took over with `work continue`: its owner is gone, so work completion finalizes it with the unresolved steps recorded as interrupted (observed by the successor) instead of resolving them on the owner's behalf; see "Durable checkpoints and continuity" in `work-protocol.md`.
 
 ```bash
 ./praxis step begin --name "Inspect implementation" \
@@ -196,12 +196,16 @@ Lines, `~/.claude/projects/*/SESSION.jsonl`). Derivation is deterministic
 | `context.compactions` | observed | compaction system entries and compact summaries |
 | `context.repeated_file_reads` (new) | derived | reads beyond the first of each file: context re-acquired in the session |
 | `context.governance_reads` (new) | derived | reads of `AGENTS.md`, `CLAUDE.md`, `docs/00-governance/`, the work-protocol, planning, CLI, telemetry and provenance guides and `requirements/PLANNING-WORK-GROUPS.md` |
+| `context.repeated_file_reads_distinct` | derived | distinct files read more than once (PRX-GRP-151) |
+| `context.peak_tokens` | observed | the largest context one request carried: its input plus cache-read and cache-creation tokens (PRX-GRP-151) |
 | `time.first_code_change_ms` (new) | derived | first transcript entry to the first change under `src/` or `tests/`: the session's cold start |
+| `time.first_productive_change_ms` | derived | first transcript entry to the first change under the repository's configured meaningful paths (`workProtocol.meaningfulPaths`/`ignoredPaths`) (PRX-GRP-151) |
 | `time.active_ms` | derived | sum of gaps between consecutive entries, leaving out gaps over 15 minutes (idle: waiting on a person, a permission prompt or an orchestrator) |
 | `cost.session_cumulative` | estimated | the runtime's own `cost-state` estimate, USD, confidence `medium` |
 
 A metric the transcript does not carry is `supported-unavailable`, never
-zero. The raw snapshot is a content-free summary (session ID, models, span,
+zero; `context.window_tokens` (the model's context window) is not in a
+transcript, so this adapter declares it `unsupported`. The raw snapshot is a content-free summary (session ID, models, span,
 per-file repeated and governance read counts, per-tool call counts), never
 the transcript: prompts, messages, tool input and output, commands and the
 working directory are not stored. Because a transcript is far larger than a
@@ -211,8 +215,36 @@ adapter keeps the configured raw-payload budget.
 The snapshot ID is `claude-session-SESSION_ID`, so a session is ingested into
 an execution once and its sums are never counted twice: ingest it when the
 session's work on the item is done, before `work complete`. A session that
-worked on several items should be ingested into one of their executions, not
-all of them. Platform-reported cost is not in the transcript: record it with
+worked on several items of one **group execution** (`plan execute-group`) is
+ingested once into the group execution: `telemetry ingest GEX-ID --input FILE
+--adapter NAME` (PRX-GRP-153). It keeps only content-free metric values there,
+never a raw payload; a snapshot a member execution already holds is refused,
+and a snapshot a group execution holds is refused by member ingestion, so it
+is never counted twice. `work group cost GROUP-ID [--json]` apportions each
+group execution's shared total (PRX-GRP-154): each member's own
+`cost.execution_total` is its direct usage, the remainder is `group-shared`,
+and per-member totals add an `equal-share` of it, labelled `allocated` and
+never reported as observed; allocations plus the rounding residue (kept on the
+group-shared line) sum exactly to the total, and an unknown total leaves every
+allocation unknown. Completing a member of a group execution without
+`cost.execution_total` and without a capability state explaining why prints a
+warning (PRX-GRP-152). A session that worked on several unrelated items
+should be ingested into one of their executions, not all of them.
+
+**Context metric capabilities** (PRX-GRP-150). The context-overhead metric
+IDs are provider-neutral; every adapter declares, for each, whether it can
+observe it (`Praxis.Domain.Telemetry.ContextMetrics`):
+
+| Adapter | Observes |
+| --- | --- |
+| `anthropic-claude-session` | every context metric except `context.window_tokens` |
+| `generic` | any registry metric its input names |
+| `anthropic-claude-otel`, `google-gemini-otel`, `github-copilot-otel`, `otel-json` | `tokens.cache_read`, `tokens.cache_write`, `model.requests`, `context.compactions`, `tool.file_reads`, `tool.searches` |
+| `anthropic-claude-hook`, `google-gemini-hook`, `github-copilot-hook` | `context.compactions` |
+| `openai-codex`, `anthropic-claude-statusline` | none of them (unsupported) |
+
+A metric an adapter cannot observe is `unsupported`, one it could observe but
+did not see is `supported-unavailable`; neither is ever `0`. Platform-reported cost is not in the transcript: record it with
 `telemetry record --metric cost.execution_total --quality observed` (above).
 `./praxis plan` reads these metrics: `time.active_ms` corrects productive time,
 `time.first_code_change_ms` and the read counts price the cold starts
@@ -258,9 +290,38 @@ Cross-provider comparisons must account for semantic differences. Providers may 
 
 Step-attributed observations participate in execution and work-item aggregation because they are canonical execution metrics carrying `stepId`, not copied rollups. Parent grouping steps never carry or implicitly include child measurements. `telemetry summary` adds an exact `stepCount` when matching executions contain steps; token and cost totals remain grouped by metric/unit/currency/quality semantics rather than collapsed into a misleading scalar. Step views retain per-measurement quality and availability, so future analysis can derive tokens or cost per completed step, accepted requirement, defect, successful test, or transition, and can compare rework/implementation/testing shares without storing those ratios prematurely.
 
+## Authority contract version (VAC-002-P3-01 R-PRAX-1)
+
+Owner decision OD-6 adds the frozen four-sentence authority contract of
+VAC-002 P3 to the `## Authority` section of `AGENTS.md`, the brief every
+implementation agent reads at work start, and to the construction handoff
+brief (`handoffMarkdown`). It states existing policy (cohort-based-engineering
+principle 3, `VAC-CBE-001-R2`); it is not a demonstrated reliability control
+(P3: 3/18 versus 7/18 unauthorized decisions, p = 0.125, inconclusive).
+
+Every execution record created by `work begin`, `work continue` or
+`telemetry start` carries `authorityContract`, observed from the repository's
+`AGENTS.md` (`Praxis.Domain.Work.AuthorityContract`):
+
+| Field | Meaning |
+| --- | --- |
+| `authorityContract.status` | `present` or `absent` |
+| `authorityContract.source` | the brief read: `AGENTS.md` |
+| `authorityContract.sha256` | SHA-256 (UTF-8, no trailing newline) of the first block quote in the brief's `## Authority` section; `null` when absent, never a placeholder |
+| `authorityContract.matchesFrozen` | whether that digest is the frozen `2af405073b299f562a8321feac875d2b9a9ae6d94171475a59a60a416784862d` |
+| `authorityContract.reason` | when absent: `brief-missing` or `no-authority-contract` |
+
+A different wording is recorded as `present` with its own digest and
+`matchesFrozen: false`, so a paraphrase stays visible. A record started before
+this field existed has no `authorityContract`: that is unknown, not absent.
+The construction prepared artifact records the same digest as
+`authorityContract.sha256` beside `handoffMarkdown`.
+
 ## Fallback execution
 
-The approved `protocol/praxis-envelope-v1.schema.json` fallback remains a second entry path into the same model, not a second authority. Its optional `execution.steps` records preserve identity, order, nesting, transitions, measurement availability, raw provider objects, and evidence. Old envelopes without `execution` remain valid. Reconciliation validates boundaries, sequence, timestamps, availability/value consistency, duplicate measurement identity, work-item/execution identity, and optional `praxisInstanceId` before dispatch. If a locally authoritative instance identity exists, a conflicting claim is rejected.
+New execution records carry `workItem`, the canonical work-item reference `{repositoryId, repository, localId}` (`repositoryId: null` while the repository identity is not established), beside the legacy `workItemId` ([`identity.md`](https://github.com/kemiller2002/praxis/blob/v3.25.0/docs/identity.md)).
+
+The approved `protocol/praxis-envelope-v1.schema.json` fallback remains a second entry path into the same model, not a second authority. Its optional `execution.steps` records preserve identity, order, nesting, transitions, measurement availability, raw provider objects, and evidence. Old envelopes without `execution` remain valid. Reconciliation validates boundaries, sequence, timestamps, availability/value consistency, duplicate measurement identity, work-item/execution identity, and optional `praxisInstanceId` before dispatch. The locally authoritative instance identity is `.praxis/instance.json`, which `init`, `upgrade` and `praxis instance init` create; a claim that conflicts with it, or that cannot be verified against it, is rejected, and accepted history without a claim is stamped with it. New native executions record the same `instanceId`, never a foreign one ([`identity.md`](https://github.com/kemiller2002/praxis/blob/v3.25.0/docs/identity.md)).
 
 `./praxis reconcile --envelope FILE` maps `work.start|begin`, `work.block`, `work.resume`, and `work.complete` requests through the native work planner and completion-evidence checks. It first renders the complete result in isolation. A replayable journal then commits context, events, completion queue projection when applicable, the optional canonical execution/steps, and the applied receipt as one exact Git path set; the deterministic `praxis-reconcile/<transaction-id>` tag is the completion checkpoint. A killed process resumes that journal before reading another envelope, so it never dispatches a transition twice. Accepted input is removed only after the checkpoint exists; rejected input is quarantined with diagnostics and cannot partially mutate canonical state. Raw fallback payloads pass through the same sensitive-field redaction and size validation as native ingestion.
 
@@ -337,7 +398,8 @@ type that only Praxis can observe.
 **Usage report.**
 
 ```
-praxis telemetry usage [WORKITEM] --by work-item|execution|step|provider|model|day
+praxis telemetry usage [WORKITEM] --by work-item|execution|execution-tree|step|provider|model|day
+                       [--price-table FILE] [--format json|text]
 ```
 
 The report sums the registry's additive (`sum`) metrics for each group and
@@ -346,13 +408,118 @@ says what backs each total:
 - the number of measurements;
 - how many have each evidence quality;
 - which executions reported the metric;
-- which executions in the group reported nothing (`unavailableExecutions`).
+- which executions in the group reported nothing (`unavailableExecutions`),
+  and the capability status and reason each one's record gives
+  (`unavailableReasons`).
 
-A group whose executions reported nothing has a `total` of `null`, not `0`.
-A total with any unavailable executions is marked `complete: false`, which
-means it is a lower bound.
+A group whose executions reported nothing has a `total` of `null` and a
+`status` of `unknown`, not `0`. A total with any unavailable executions is
+marked `complete: false`, which means it is a lower bound. The usage metrics
+below are always listed for every group, measured or not, so an unknown
+value is printed as unknown instead of disappearing. `--format text` prints
+the same groups as a table (`unknown`, or `(lower bound)`); the default JSON
+(`schema: praxis.telemetry-usage`, `schemaVersion: 2`) is the CI format.
 
 The existing `telemetry summary` is unchanged.
+
+## Cumulative usage and cost attribution (CONSTRUCT-010 Phase 6)
+
+A provider's per-message `usage` block reports one request: its uncached
+input, its output, and the prompt-cache tokens it read and wrote. The
+cumulative consumption of a run is the sum over its requests, which is
+typically ten to twenty times the final request's context. The
+`anthropic-claude-session` adapter computes it from a Claude Code transcript
+(the deduplication of the CONSTRUCT-008 harness script `usage.py`, now in
+Praxis) and the usage report attributes it across executions.
+
+**Per execution (and per step with `telemetry ingest ... --step STEP-ID`).**
+
+| Metric | Source |
+| --- | --- |
+| `model.requests` | distinct provider requests (message ID) |
+| `tokens.input` | summed per request |
+| `tokens.output` | summed per request; a **lower bound** (`dimensions.bound: lower`, report `bound: lower`): Claude Code transcripts and `list_events` record output at streaming start, not the provider's final count |
+| `tokens.cache_read`, `tokens.cache_write` | their own buckets, never added into input |
+| `tokens.cache_write_5m`, `tokens.cache_write_1h` | the TTL split of cache write, when the provider reports it; a partition of `tokens.cache_write`, never added to it |
+| `tokens.reasoning` | `output_tokens_details.thinking_tokens` when exposed; a subset of output, and a lower bound like it |
+| `tool.calls` | distinct `tool_use` block IDs |
+| `model.request_failures`, `agent.retries` | `api_error` system entries; unknown when none are recorded, since absence is not proof of zero |
+| `time.agent_wall_ms` | first to last transcript entry: agent time, separate from `time.wall_ms` (the Praxis execution) |
+| `host.compile_ms`, `host.verify_ms`, `host.prepare_apply_ms` | host compute, recorded by the host with `telemetry record`; a transcript never carries it (declared `unsupported`) |
+| `acceptance.first_pass`, `acceptance.repaired`, `acceptance.repair_cycles` | recorded by verification; the report derives one outcome per execution |
+| `cost.session_cumulative` | the runtime's own estimate, priced with the runtime's built-in table (named, date unknown) |
+
+Model, provider, and parent and child execution identity come from the
+execution record; the raw snapshot adds the subagent ID and whether the
+transcript is a subagent (sidechain) transcript. A subagent transcript's
+snapshot ID is `claude-session-SESSION-agent-AGENT`, so it never collides
+with its parent session's.
+
+**Accounting rules.**
+
+1. *Each provider request counts once.* A transcript repeats an assistant
+   message once per content block while streaming; usage is deduplicated by
+   message ID (else request ID), and a tool call by its `tool_use` ID.
+2. *Cached tokens are never counted twice.* Cache read and cache write are
+   separate buckets from input. The TTL split partitions cache write.
+3. *Parent and child aggregates are never summed as independent
+   consumption.* The adapter keeps a content-free **request ledger** in its
+   raw snapshot: one row per request (message ID, model, subagent ID and the
+   usage buckets). The usage report attributes every request to exactly one
+   execution: a request a parent and its descendant both hold is the
+   descendant's; `--by execution-tree` rolls each execution up with its
+   descendants and still counts each request once. A transcript's other
+   metrics follow the same rule by snapshot (`dimensions.snapshot`). A
+   request two unrelated executions hold (a double ingest) is counted once
+   and listed under `requestAttribution.conflicts`. An execution whose
+   ledger was dropped for the raw budget is listed as `unverifiedExecutions`.
+4. *Unavailable is unknown, never zero.* A bucket counts as a total only
+   when every request reported it; otherwise it is `supported-unavailable`
+   with the reason (e.g. "reported on 3 of 40 requests").
+5. *Provider-reported cost and estimated cost are different types.* Each
+   monetary group carries a `costBasis`: `provider-reported` (quality
+   `observed`), `estimated:SOURCE@VERSION/EFFECTIVE-DATE`, or
+   `estimated:price-table-unknown` for older undated records. They are never
+   one total. `telemetry record` refuses an estimated or calculated cost
+   without `--pricing-source`, `--pricing-version` and
+   `--pricing-effective-at`. `telemetry usage --price-table FILE` prices the
+   request ledger with an operator-supplied table (Praxis ships no prices):
+
+   ```json
+   { "source": "provider-list-prices", "version": "2026-10", "effectiveDate": "2026-10-01",
+     "currency": "USD", "unit": "per-million-tokens",
+     "models": { "MODEL": { "input": 0, "output": 0, "cacheRead": 0,
+                            "cacheWrite": 0, "cacheWrite5m": 0, "cacheWrite1h": 0 } } }
+   ```
+
+   A request whose model, bucket or TTL split the table cannot price makes
+   that execution's estimate unknown, with the reason; it is never a
+   partial sum.
+6. *Agent time and host time are separate.* A measurement whose source type
+   is `host` (for example the construct prepare/apply stopwatch) is its own
+   group (`origin: host`) and is never added to the agent's.
+7. *First-pass and repaired acceptance are distinct, and repairs are
+   counted.* The report's `acceptance` list gives each execution's outcome
+   (`first-pass`, `repaired` with its repair cycles, `not-accepted`,
+   `unknown`), or `contradictory` with the finding.
+
+Malformed transcript lines (a truncated final write, a corrupted line) are
+skipped and counted in the raw snapshot's `malformedLines`; they never fail
+the ingest. Usage fields the adapter does not normalize (for example
+`server_tool_use.*`, `iterations[]`, `service_tier`) are kept under the raw
+snapshot's `usage.extensions` and `usage.labels`, discovered as `unknown`
+capabilities, never promoted silently.
+
+The adapter also reads the CONSTRUCT-010 form: `list_events` pages of a
+remote session normalized by research-documents
+`CONSTRUCT-010/harness/events-to-transcript.py` (no session ID; the snapshot
+is identified by its content). An estimate priced from transcript output is
+a lower bound too.
+
+Two golden tests check the adapter against `usage.py`: a content-free
+reduction of CONSTRUCT-008 run A1 (13 requests; input 26, cache write
+41,786, cache read 792,100, output 213; cumulative 834,125), and a
+normalized `list_events` page (2 requests; cumulative 680,370).
 
 ## Effective-current step telemetry (PRAXIS-CONT-11)
 
@@ -429,3 +596,215 @@ A checkpoint's summary is agent-reported prose. Test results remain
 telemetry measurements (such as `tests.passed`) with their source and
 quality. `work continue` shows a successor exactly those measurements, so a
 summary is never mistaken for evidence.
+
+## Reliability report: cost per verified requirement (PRX-REL-009)
+
+**Why tokens were missing.** Of 307 execution records in this repository,
+287 declare `tokens.input` `supported-unavailable` ("no observation has been
+ingested"), 18 `unknown`, and 2 carry tokens (both ingested by hand). The
+adapters work (`anthropic-claude-session` deduplicates correctly); nothing
+runs them. `work begin`/`work complete` record the runtime's session ID
+(`CLAUDE_CODE_SESSION_ID`, `CODEX_THREAD_ID`) but never read the transcript
+the runtime writes outside the repository:
+
+| Runtime | Where usage is written | Usage fields |
+| --- | --- | --- |
+| Claude Code | `~/.claude/projects/<cwd-slug>/<SESSION>.jsonl`; subagents in `<SESSION>/subagents/agent-*.jsonl` (same `sessionId`, plus `agentId`, `isSidechain`) | assistant `message.usage` (`input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`, TTL split), `message.id`, `requestId`, `message.model`; one line per content block, so the same message repeats |
+| Codex | `~/.codex/sessions/YYYY/MM/DD/rollout-*-<SESSION>.jsonl` | `session_meta.payload.id`, `turn_context.payload.model`, cumulative `event_msg` `token_count.info.total_token_usage` (`input_tokens` includes `cached_input_tokens`) |
+
+The `openai-codex` adapter reads `codex exec --json` output, not rollout
+files. Remote containers are ephemeral, so transcripts of past sessions are
+gone: historical records cannot be backfilled and remain truthfully
+unavailable.
+
+**Command.** Read-only over its inputs; it never mutates `.ros/`:
+
+```bash
+praxis telemetry reliability-report \
+  [--events .ros/events/events.jsonl] [--executions .ros/telemetry/executions] \
+  [--transcripts FILE|DIR]... [--discover-transcripts] \
+  [--price-table FILE] [--agent-binding FILE] [--work-item ID]... \
+  [--attribution session-window|explicit-only] [--out report.json]
+```
+
+`--discover-transcripts` reads `$CLAUDE_CONFIG_DIR/projects` (else
+`~/.claude/projects`) and `$CODEX_HOME/sessions` (else `~/.codex/sessions`),
+keeping only files of sessions that in-scope execution records name. To keep
+evidence of a run, copy its transcripts next to the run and pass
+`--transcripts`. Only content-free usage facts are read; the report lists
+each transcript by SHA-256, never by path.
+
+**Observations.** Each provider usage observation carries input, output,
+cache-read and cache-write tokens (separate buckets, never folded into
+input), TTL split and reasoning when reported, model, message and request
+IDs, session and agent IDs. Its ID is `anthropic:<message.id>` (else
+`requestId`); a usage line with neither is counted in
+`unidentifiedUsageEntries` and never summed. A Codex cumulative counter
+becomes one observation per distinct total (`openai:<SESSION>:total@<N>`):
+repeated readings add nothing and a decreasing counter is a counted reset.
+For Codex, input is normalized to the uncached part and cache read to
+`cached_input_tokens`; cache write is *not applicable* to that provider (it
+contributes nothing and is priced at nothing), which is different from
+unavailable. A bucket the provider did not report is unavailable: the total
+becomes `partial` (a labelled lower bound), never zero.
+
+**Streamed entries and the output lower bound (PRAXIS-REL-010).** Claude
+Code writes one transcript line per content block of a message, each with
+the usage known when the block started, and does not rewrite them. Duplicate
+entries of one observation are merged bucket by bucket at the *maximum*
+(never "first entry wins"): counters only grow while a message streams.
+Even the maximum is not the final output count: on REL-001 run-01 the last
+message of each of 12 sub-agents read 3-24 `output_tokens` in its
+transcript against 120-761 in the usage the orchestrator received from the
+Agent tool, while input and cache counts matched exactly. Output read from
+Claude Code transcripts (and ledgers built from them) is therefore reported
+`partial` with that reason, and so are totals and estimated costs that
+include it.
+
+**Cost.** `--price-table FILE` takes an operator-supplied table: either the
+legacy table described under "Cumulative usage and cost attribution"
+(source, version, effective date, per-million-token rates by model), still
+read compatibly and applied from its effective date onward, or a versioned
+`praxis.price-table/1` table (PRAXIS-REL-013, F5). Praxis ships no prices;
+tables live with the consumer.
+
+```json
+{ "schema": "praxis.price-table/1", "tableVersion": "2026-10-20",
+  "entries": [ { "provider": "anthropic", "model": "MODEL",
+                 "effectiveFrom": "2026-10-01", "effectiveTo": null,
+                 "currency": "USD", "unit": "per-million-tokens",
+                 "input": 0, "output": 0, "cacheRead": 0,
+                 "cacheWrite5m": 0, "cacheWrite1h": 0,
+                 "source": { "url": "https://...", "retrievedAt": "2026-10-20" } } ] }
+```
+
+Each observation is priced with the one entry of its provider and model
+whose `[effectiveFrom, effectiveTo)` contains the observation's timestamp;
+`effectiveTo: null` is open-ended. An observation outside every range, or
+without a timestamp, is unpriced: its cost is unavailable (or the total a
+labelled lower bound) and its tokens are still reported. A price is never
+applied outside its range, so current prices never price historical runs.
+Cache writes are priced at `cacheWrite5m` / `cacheWrite1h` when the
+observation reports the TTL split (an optional `cacheWrite` rate prices an
+unsplit observation). The table is refused when two entries of one provider
+and model overlap, a range is empty, entries mix currencies, or an entry
+lacks `unit`, `currency` or `source.url`/`source.retrievedAt`. The report
+lists every entry under `inputs.priceTable.entries`. `telemetry usage
+--price-table` keeps reading only the legacy format: its ledger requests
+carry no timestamp, so it refuses a dated table with a clear message.
+Estimated cost is always `estimated`; `billed` is the sum of observed
+(provider/platform-reported) `cost.execution_total`. They are never summed.
+A missing table, model or rate leaves cost unavailable, or `partial` with
+every reason listed, never zero.
+
+**Allocation rules** (also emitted in the report as `allocationRules`):
+
+1. Each observation is counted at most once, by observation ID; excluded
+   duplicates and IDs whose duplicates disagreed are reported.
+2. A request in an ingested execution ledger belongs to that execution.
+   Recorded `tokens.*` metrics without a ledger form one execution-record
+   observation, superseded (and listed) when transcript observations exist
+   for the same session.
+3. Otherwise an observation belongs to the executions of its session and
+   provider whose `[startedAt, finalizedAt]` contains it, narrowed by agent
+   ID when one matches; several candidates split it evenly. No candidate:
+   reported under `usage.unattributed` with a reason, never counted as
+   attributable. `--attribution explicit-only` disables this rule.
+4. An execution named by events of several work items is split evenly among
+   them; otherwise it belongs to its record's work item.
+5. A work item's share is split evenly among the requirement IDs of its
+   `work.completion.verified` events; without verified requirements it stays
+   at work-item level and still counts in the numerator.
+6. Integer tokens split as quotient plus one remainder token each to the
+   ordinally first targets, so shares sum exactly; cost is priced per share.
+7. Cost per verified requirement = total attributable cost of every
+   in-scope execution (rejected and unverified work included) / distinct
+   requirement IDs in `work.completion.verified`. Zero verified requirements
+   leaves the ratio unavailable, never zero or infinite.
+
+**Output** (`schema: praxis.telemetry-reliability-report`, `schemaVersion:
+1`). Every metric is `{availability: available|partial|unavailable, value,
+unit, numerator, denominator, definition, reason}`; an unavailable value is
+`null`. Top-level members: `inputs` (event line counts, executions in scope,
+price table, transcript digests), `usage` (observations, duplicates,
+attribution methods, coverage, `tokens.{input,output,cacheRead,cacheWrite,total}`,
+`cost.{estimated,billed}`, `unattributed`), `verification`
+(`verifiedRequirements`, `firstPassVerificationRate`, `reworkFrequency`,
+`completionRejectionFrequency`, `duplicateOwnershipAttempts` (claim rejected
+`held`), `staleWriteRejections` (claim rejected `stale-*` or `expired` plus
+completion codes containing `STALE` or equal to `PRX.CLAIM.EXPIRED`: a late
+write from an expired owner is stale), `retries`), `perVerifiedRequirement`
+(`estimatedCost`, `billedCost`, `tokensTotal`), `time` (`elapsedMs` claim to
+verification, `activeMs`, `blockedMs`, `wallMs`), `attributedCommits`,
+`agents`, `executions`, `workItems[]`, `requirements[]`, `allocationRules`.
+The event inputs are interface I1 (`work.claim.*`, `work.completion.*`).
+
+**Per-agent attribution (PRAXIS-REL-010, interface I7).** Claude Code
+sub-agents share the orchestrator's `sessionId`; only their transcript lines
+carry `agentId` (and `isSidechain: true`). In REL-001 run-01 every
+sub-agent observation was therefore `no-execution-for-session`. Two inputs
+close the gap:
+
+- Execution records (both the telemetry record and the `ordo.execution/1`
+  envelope) gain an additive `provider` member,
+  `{ "sessionId": $CLAUDE_CODE_SESSION_ID, "agentInstanceId": $PRAXIS_AGENT_INSTANCE_ID }`,
+  written only when the host sets either variable. An orchestrator that
+  launches sub-agents running Praxis gives each its own
+  `PRAXIS_AGENT_INSTANCE_ID`.
+- `--agent-binding FILE` (`praxis.agent-binding/1`) binds provider agent
+  instances to the scope and work items they worked on, for example from
+  the `agentId` the Agent tool returns:
+
+```json
+{ "schema": "praxis.agent-binding/1",
+  "bindings": [ { "agentId": "ab49075431f100bcb", "sessionId": "SESSION",
+                  "scope": "REL-001-D-T1-r1-treatment", "workItems": ["LEDGER-T1"] } ] }
+```
+
+With a binding the report adds `agentAttribution`, over the same
+deduplicated observations, resolved in this order (also emitted as
+`agentAttribution.rules`):
+
+1. a line whose `agentId` matches a binding (and its `sessionId`, when
+   stated) belongs to that agent; an `agentId` no binding names is
+   unattributed (`agent-not-bound`), never reassigned;
+2. a line with `isSidechain: false` and no `agentId` is the session's main
+   thread: reported under `orchestrators`, never as an agent or a
+   requirement's cost;
+3. otherwise, when every execution the observation belongs to (its ledger's
+   execution, else the session-window candidates) records the same bound
+   `provider.agentInstanceId`, that agent;
+4. otherwise, when exactly one bound agent ran in the observation's
+   session, that agent; none or several leave it unattributed
+   (`no-agent-for-session`, `ambiguous-agents`, `no-session-id`), reported
+   and never split.
+
+Observation identity is the provider message ID, else the request ID,
+across every file: sub-agent content echoed into the parent transcript
+(`progress` lines of older Claude Code releases, counted per file as
+`echoedUsageEntries`) is the same observation and keeps the sub-agent's
+`agentId`. The Agent tool result in the parent (`toolUseResult.usage`,
+`<usage>` totals of task notifications) carries no message ID and
+summarizes the sub-agent's last message: it is never read as an
+observation. Current Claude Code releases do not echo sub-agent messages
+into the parent at all (verified on the run-01 session: 0 cross-file
+duplicates). `duplicateEntriesExcluded` and `crossFileDuplicatesExcluded`
+(per observation, distinct files or records minus one) are reported.
+
+`agentAttribution` holds `tokens` (global), `agents[]`, `orchestrators[]`,
+`unattributed` (by reason, with unbound agent IDs) and `requirements[]`
+(an agent's usage split evenly over its bound work items, then over each
+work item's verified requirement IDs), each with tokens by kind (`input`,
+`output`, `cacheRead`, `cacheWrite`, `cacheWrite5m`, `cacheWrite1h`,
+`total`; the TTL split is unavailable when the provider did not report
+`cache_creation.ephemeral_5m/1h_input_tokens`) and `estimatedCost`, each a
+metric with explicit availability. `summaries` gives one compact object per
+agent, per orchestrator and per verified requirement (plain values; an
+incomplete kind is `null`; `lowerBounds` names kinds that are lower
+bounds). `conservation` proves that agents + orchestrators + unattributed
+equal the global deduplicated sum for every kind.
+
+**Determinism.** Keys are sorted ordinally, arrays sorted, numbers use the
+invariant culture, decimals are rounded half-to-even and printed with six
+places, and no wall-clock value is emitted: identical inputs give
+byte-identical output, whatever the input file order.

@@ -40,11 +40,11 @@ let ``foundations.json requires Aegis, Ordo and Praxis and keeps current baselin
     for name in [ "aegis"; "ordo"; "praxis" ] do
         Assert.True(required name, $"{name} must be required")
 
-    for name, version in [ "aegis", "2.0.2"; "forma", "0.4.1"; "folio", "0.3.0"; "limen", "0.9.0" ] do
+    for name, version in [ "aegis", "2.0.2"; "forma", "1.0.1"; "folio", "0.4.1"; "limen", "0.9.1" ] do
         Assert.Equal(version, str capabilities.[name].["version"])
 
     Assert.Equal("aegis-boundaries.json", str capabilities.["aegis"].["boundaryManifest"])
-    // Folio 0.3.0 is a published release now; a source commit is not a pin.
+    // Folio 0.4.1 is a published release now; a source commit is not a pin.
     Assert.Null(capabilities.["folio"].["sourceCommit"])
 
 [<Fact>]
@@ -180,7 +180,8 @@ let ``while Forma or Folio is not applicable no source composes their elements``
 
         for source in sources do
             let text = read source
-            Assert.False(Regex.IsMatch(text, @"<ef-[a-z]"), $"{source} composes a Forma or Folio element")
+            // Forma 1.0 renamed the `ef-` element namespace to `forma-`; either is a composition.
+            Assert.False(Regex.IsMatch(text, @"<(ef|forma)-[a-z]"), $"{source} composes a Forma or Folio element")
             Assert.DoesNotContain("@echelon-foundry/design-system", text)
             Assert.DoesNotContain("@echelon-foundry/print-components", text)
 
@@ -194,5 +195,5 @@ let ``while Limen is not applicable its own configuration says so, with a reason
         Assert.Null(boundary.["kernel"])
 
         // Limen stays installed so `limen verify --strict` re-checks the claim.
-        Assert.Equal("0.9.0", str (json ".echelon/limen.json").["installedVersion"])
+        Assert.Equal("0.9.1", str (json ".echelon/limen.json").["installedVersion"])
         Assert.True(File.Exists(Path.Combine(repoRoot, ".github", "workflows", "limen-verify.yml")))

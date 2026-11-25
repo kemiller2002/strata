@@ -1,0 +1,12 @@
+{
+  "schema": "praxis.instance/1",
+  "instanceId": "pxi-f9488b90ccd8404994bd4f33b6d18965",
+  "createdAt": "2026-11-25T17:50:21.593Z",
+  "createdWith": "3.25.0",
+  "repository": {
+    "provider": "github",
+    "repositoryId": null,
+    "repository": "kemiller2002/strata"
+  },
+  "predecessors": []
+}

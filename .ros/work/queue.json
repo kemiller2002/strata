@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 117,
+  "nextSeq": 118,
   "items": [
     {
       "id": "WI-0001",
@@ -12,10 +12,10 @@
         "methodology"
       ],
       "priority": "medium",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T13:36:49.000Z",
-      "updatedAt": "2026-09-11T13:36:54.000Z",
+      "updatedAt": "2026-09-11T13:37:07.000Z",
       "createdBy": "claude",
       "source": "user-request",
       "sourceReference": null
@@ -30,10 +30,10 @@
         "requirements"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T13:54:23.000Z",
-      "updatedAt": "2026-09-11T13:54:29.000Z",
+      "updatedAt": "2026-09-11T14:01:49.000Z",
       "createdBy": "claude",
       "source": "user-request",
       "sourceReference": null
@@ -47,10 +47,10 @@
         "slice-s1"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T14:01:00.000Z",
-      "updatedAt": "2026-09-11T14:03:53.000Z",
+      "updatedAt": "2026-09-11T14:14:07.000Z",
       "createdBy": "claude",
       "source": "strata-roadmap",
       "sourceReference": null
@@ -64,10 +64,10 @@
         "slice-s1"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T14:01:00.000Z",
-      "updatedAt": "2026-09-11T14:03:53.000Z",
+      "updatedAt": "2026-09-11T14:14:20.000Z",
       "createdBy": "claude",
       "source": "strata-roadmap",
       "sourceReference": null
@@ -81,10 +81,10 @@
         "slice-s1"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T14:01:01.000Z",
-      "updatedAt": "2026-09-11T14:28:35.000Z",
+      "updatedAt": "2026-09-11T14:35:42.000Z",
       "createdBy": "claude",
       "source": "strata-roadmap",
       "sourceReference": null
@@ -98,10 +98,10 @@
         "slice-s1"
       ],
       "priority": "medium",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T14:01:01.000Z",
-      "updatedAt": "2026-09-11T14:24:09.000Z",
+      "updatedAt": "2026-09-11T14:28:12.000Z",
       "createdBy": "claude",
       "source": "strata-roadmap",
       "sourceReference": null
@@ -115,10 +115,10 @@
         "slice-s2"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T14:01:01.000Z",
-      "updatedAt": "2026-09-11T14:03:53.000Z",
+      "updatedAt": "2026-09-11T14:14:20.000Z",
       "createdBy": "claude",
       "source": "strata-roadmap",
       "sourceReference": null
@@ -132,10 +132,10 @@
         "slice-s2"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T14:01:02.000Z",
-      "updatedAt": "2026-09-11T14:03:53.000Z",
+      "updatedAt": "2026-09-11T14:14:30.000Z",
       "createdBy": "claude",
       "source": "strata-roadmap",
       "sourceReference": null
@@ -149,10 +149,10 @@
         "slice-s2"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T14:01:02.000Z",
-      "updatedAt": "2026-09-11T14:37:10.000Z",
+      "updatedAt": "2026-09-11T14:39:00.000Z",
       "createdBy": "claude",
       "source": "strata-roadmap",
       "sourceReference": null
@@ -166,10 +166,10 @@
         "slice-s2"
       ],
       "priority": "medium",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T14:01:02.000Z",
-      "updatedAt": "2026-09-11T14:24:09.000Z",
+      "updatedAt": "2026-09-11T14:28:12.000Z",
       "createdBy": "claude",
       "source": "strata-roadmap",
       "sourceReference": null
@@ -183,10 +183,10 @@
         "slice-s2"
       ],
       "priority": "medium",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T14:01:02.000Z",
-      "updatedAt": "2026-09-11T14:37:10.000Z",
+      "updatedAt": "2026-09-11T14:39:01.000Z",
       "createdBy": "claude",
       "source": "strata-roadmap",
       "sourceReference": null
@@ -200,10 +200,10 @@
         "slice-s3"
       ],
       "priority": "medium",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T14:01:03.000Z",
-      "updatedAt": "2026-09-11T14:39:51.000Z",
+      "updatedAt": "2026-09-11T14:41:14.000Z",
       "createdBy": "claude",
       "source": "strata-roadmap",
       "sourceReference": null
@@ -217,10 +217,10 @@
         "slice-s3"
       ],
       "priority": "medium",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T14:01:03.000Z",
-      "updatedAt": "2026-09-11T14:39:51.000Z",
+      "updatedAt": "2026-09-11T14:45:16.000Z",
       "createdBy": "claude",
       "source": "strata-roadmap",
       "sourceReference": null
@@ -234,10 +234,10 @@
         "spike"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T14:01:03.000Z",
-      "updatedAt": "2026-09-11T14:28:35.000Z",
+      "updatedAt": "2026-09-11T14:30:09.000Z",
       "createdBy": "claude",
       "source": "strata-roadmap",
       "sourceReference": null
@@ -251,7 +251,7 @@
         "documentation"
       ],
       "priority": "medium",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T14:15:20.000Z",
       "updatedAt": "2026-09-11T14:15:21.000Z",
@@ -268,10 +268,10 @@
         "documentation"
       ],
       "priority": "medium",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T14:46:32.000Z",
-      "updatedAt": "2026-09-11T14:46:32.000Z",
+      "updatedAt": "2026-09-11T14:46:33.000Z",
       "createdBy": "claude",
       "source": "strata-roadmap",
       "sourceReference": null
@@ -285,10 +285,10 @@
         "slice-s3"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T15:16:38.000Z",
-      "updatedAt": "2026-09-11T15:16:43.000Z",
+      "updatedAt": "2026-09-11T15:25:35.000Z",
       "createdBy": "claude",
       "source": "user-request",
       "sourceReference": null
@@ -302,10 +302,10 @@
         "honesty"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T15:38:25.000Z",
-      "updatedAt": "2026-09-11T15:38:48.000Z",
+      "updatedAt": "2026-09-11T15:42:12.000Z",
       "createdBy": "claude",
       "source": "user-request",
       "sourceReference": null
@@ -319,10 +319,10 @@
         "honesty"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T15:38:25.000Z",
-      "updatedAt": "2026-09-11T15:38:48.000Z",
+      "updatedAt": "2026-09-11T15:42:12.000Z",
       "createdBy": "claude",
       "source": "user-request",
       "sourceReference": null
@@ -336,10 +336,10 @@
         "spike"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T15:38:26.000Z",
-      "updatedAt": "2026-09-11T15:38:48.000Z",
+      "updatedAt": "2026-09-11T15:45:27.000Z",
       "createdBy": "claude",
       "source": "user-request",
       "sourceReference": null
@@ -353,10 +353,10 @@
         "optimisation"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T15:58:55.000Z",
-      "updatedAt": "2026-09-11T15:59:17.000Z",
+      "updatedAt": "2026-09-11T16:02:22.000Z",
       "createdBy": "claude",
       "source": "user-request",
       "sourceReference": null
@@ -370,10 +370,10 @@
         "spike"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T15:58:56.000Z",
-      "updatedAt": "2026-09-11T15:59:17.000Z",
+      "updatedAt": "2026-09-11T16:05:40.000Z",
       "createdBy": "claude",
       "source": "user-request",
       "sourceReference": null
@@ -387,10 +387,10 @@
         "spike"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T16:17:51.000Z",
-      "updatedAt": "2026-09-11T16:17:51.000Z",
+      "updatedAt": "2026-09-11T16:19:15.000Z",
       "createdBy": "claude",
       "source": "user-request",
       "sourceReference": null
@@ -404,10 +404,10 @@
         "spike"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T16:46:37.000Z",
-      "updatedAt": "2026-09-11T16:46:41.000Z",
+      "updatedAt": "2026-09-11T16:51:51.000Z",
       "createdBy": "claude",
       "source": "user-request",
       "sourceReference": null
@@ -421,10 +421,10 @@
         "slice-s3"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T16:51:52.000Z",
-      "updatedAt": "2026-09-11T16:51:52.000Z",
+      "updatedAt": "2026-09-11T16:57:40.000Z",
       "createdBy": "claude",
       "source": "spike-finding",
       "sourceReference": null
@@ -438,10 +438,10 @@
         "spike"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T17:10:38.000Z",
-      "updatedAt": "2026-09-11T17:10:39.000Z",
+      "updatedAt": "2026-09-11T17:53:50.000Z",
       "createdBy": "claude",
       "source": "user-request",
       "sourceReference": null
@@ -455,10 +455,10 @@
         "documentation"
       ],
       "priority": "low",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T17:55:47.000Z",
-      "updatedAt": "2026-09-11T17:55:47.000Z",
+      "updatedAt": "2026-09-11T17:55:48.000Z",
       "createdBy": "claude",
       "source": "self-correction",
       "sourceReference": null
@@ -472,10 +472,10 @@
         "spike"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T18:22:14.000Z",
-      "updatedAt": "2026-09-11T18:22:16.000Z",
+      "updatedAt": "2026-09-11T18:28:14.000Z",
       "createdBy": "claude",
       "source": "user-request",
       "sourceReference": null
@@ -489,10 +489,10 @@
         "slice-s4"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T18:33:12.000Z",
-      "updatedAt": "2026-09-11T18:33:13.000Z",
+      "updatedAt": "2026-09-11T18:41:39.000Z",
       "createdBy": "claude",
       "source": "user-request",
       "sourceReference": null
@@ -507,10 +507,10 @@
         "profiling"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T20:00:53Z",
-      "updatedAt": "2026-09-11T20:01:01Z",
+      "updatedAt": "2026-09-11T20:01:21Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -525,10 +525,10 @@
         "correctness"
       ],
       "priority": "medium",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T20:20:28Z",
-      "updatedAt": "2026-09-11T20:20:28Z",
+      "updatedAt": "2026-09-11T20:20:37Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -543,7 +543,7 @@
         "decision"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T20:23:35Z",
       "updatedAt": "2026-09-11T20:23:43Z",
@@ -561,7 +561,7 @@
         "fixtures"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T20:36:26Z",
       "updatedAt": "2026-09-11T20:36:26Z",
@@ -577,10 +577,10 @@
         "strata"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T21:16:16Z",
-      "updatedAt": "2026-09-11T21:16:34Z",
+      "updatedAt": "2026-09-11T21:28:25Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -593,7 +593,7 @@
         "strata"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T21:16:16Z",
       "updatedAt": "2026-09-11T21:39:11Z",
@@ -609,7 +609,7 @@
         "strata"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T21:16:16Z",
       "updatedAt": "2026-09-11T21:45:17Z",
@@ -625,7 +625,7 @@
         "strata"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T21:16:16Z",
       "updatedAt": "2026-09-11T22:03:04Z",
@@ -642,7 +642,7 @@
         "requirements"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T21:16:34Z",
       "updatedAt": "2026-09-11T21:16:34Z",
@@ -660,7 +660,7 @@
         "scope"
       ],
       "priority": "medium",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T21:30:30Z",
       "updatedAt": "2026-09-11T21:30:30Z",
@@ -677,7 +677,7 @@
         "project"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T21:50:22Z",
       "updatedAt": "2026-09-11T21:50:22Z",
@@ -694,7 +694,7 @@
         "validation"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T21:56:27Z",
       "updatedAt": "2026-09-11T21:56:27Z",
@@ -712,7 +712,7 @@
         "coverage"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T22:11:49Z",
       "updatedAt": "2026-09-11T22:11:49Z",
@@ -729,7 +729,7 @@
         "diff"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T22:15:32Z",
       "updatedAt": "2026-09-11T22:15:32Z",
@@ -746,7 +746,7 @@
         "deployment"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T22:20:31Z",
       "updatedAt": "2026-09-11T22:20:31Z",
@@ -763,7 +763,7 @@
         "desired-state"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T22:45:50Z",
       "updatedAt": "2026-09-11T22:45:50Z",
@@ -780,7 +780,7 @@
         "diff"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T23:06:59Z",
       "updatedAt": "2026-09-11T23:06:59Z",
@@ -797,7 +797,7 @@
         "diff"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T23:11:53Z",
       "updatedAt": "2026-09-11T23:11:53Z",
@@ -814,7 +814,7 @@
         "diff"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T23:18:26Z",
       "updatedAt": "2026-09-11T23:18:26Z",
@@ -831,7 +831,7 @@
         "rename"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T23:25:19Z",
       "updatedAt": "2026-09-11T23:25:19Z",
@@ -848,7 +848,7 @@
         "desired-state"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T23:31:08Z",
       "updatedAt": "2026-09-11T23:31:08Z",
@@ -865,10 +865,10 @@
         "desired-state"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T23:49:24Z",
-      "updatedAt": "2026-09-11T23:49:33Z",
+      "updatedAt": "2026-09-11T23:51:28Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -882,7 +882,7 @@
         "diff"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T23:51:15Z",
       "updatedAt": "2026-09-11T23:54:32Z",
@@ -899,7 +899,7 @@
         "testing"
       ],
       "priority": "medium",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T23:51:15Z",
       "updatedAt": "2026-09-12T00:43:49Z",
@@ -916,7 +916,7 @@
         "diff"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-11T23:54:47Z",
       "updatedAt": "2026-09-12T00:02:21Z",
@@ -933,7 +933,7 @@
         "deployment"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T00:05:16Z",
       "updatedAt": "2026-09-12T00:05:16Z",
@@ -950,10 +950,10 @@
         "desired-state"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T00:09:47Z",
-      "updatedAt": "2026-09-12T00:09:47Z",
+      "updatedAt": "2026-09-12T00:25:33Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -967,7 +967,7 @@
         "reference-data"
       ],
       "priority": "medium",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T00:22:49Z",
       "updatedAt": "2026-09-12T00:41:22Z",
@@ -984,7 +984,7 @@
         "diff"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T00:34:52Z",
       "updatedAt": "2026-09-12T00:34:52Z",
@@ -1001,7 +1001,7 @@
         "ci"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T00:46:36Z",
       "updatedAt": "2026-09-12T00:46:36Z",
@@ -1018,7 +1018,7 @@
         "ci"
       ],
       "priority": "medium",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T00:54:31Z",
       "updatedAt": "2026-09-12T00:54:41Z",
@@ -1035,10 +1035,10 @@
         "tooling"
       ],
       "priority": "low",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T00:54:31Z",
-      "updatedAt": "2026-09-12T23:46:48Z",
+      "updatedAt": "2026-09-12T23:46:41Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -1052,7 +1052,7 @@
         "docs"
       ],
       "priority": "low",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T00:57:53Z",
       "updatedAt": "2026-09-12T00:57:53Z",
@@ -1069,7 +1069,7 @@
         "metrics"
       ],
       "priority": "medium",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T00:59:34Z",
       "updatedAt": "2026-09-12T00:59:34Z",
@@ -1086,10 +1086,10 @@
         "desired-state"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T01:28:26Z",
-      "updatedAt": "2026-09-12T01:28:26Z",
+      "updatedAt": "2026-09-12T01:34:31Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -1103,7 +1103,7 @@
         "desired-state"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T01:48:31Z",
       "updatedAt": "2026-09-12T01:48:31Z",
@@ -1120,7 +1120,7 @@
         "desired-state"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T02:00:13Z",
       "updatedAt": "2026-09-12T02:00:13Z",
@@ -1137,7 +1137,7 @@
         "security"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T09:19:49Z",
       "updatedAt": "2026-09-12T09:19:49Z",
@@ -1155,10 +1155,10 @@
         "er-008"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T09:32:34Z",
-      "updatedAt": "2026-09-12T09:32:41Z",
+      "updatedAt": "2026-09-12T09:33:46Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -1173,10 +1173,10 @@
         "er-008"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T09:49:02Z",
-      "updatedAt": "2026-09-12T09:49:08Z",
+      "updatedAt": "2026-09-12T09:49:19Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -1190,10 +1190,10 @@
         "process"
       ],
       "priority": "medium",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T09:51:31Z",
-      "updatedAt": "2026-09-12T09:51:36Z",
+      "updatedAt": "2026-09-12T09:51:44Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -1207,7 +1207,7 @@
         "process"
       ],
       "priority": "medium",
-      "status": "ready",
+      "status": "complete",
       "attachments": [
         {
           "id": "ATT-1",
@@ -1229,7 +1229,7 @@
         }
       ],
       "createdAt": "2026-09-12T09:52:34Z",
-      "updatedAt": "2026-09-12T09:53:44Z",
+      "updatedAt": "2026-09-12T09:54:51Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -1243,10 +1243,10 @@
         "ci"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T09:56:02Z",
-      "updatedAt": "2026-09-12T09:56:02Z",
+      "updatedAt": "2026-09-12T09:57:04Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -1261,10 +1261,10 @@
         "er-008"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T10:10:11Z",
-      "updatedAt": "2026-09-12T10:10:20Z",
+      "updatedAt": "2026-09-12T10:10:21Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -1278,10 +1278,10 @@
         "safety"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T10:22:07Z",
-      "updatedAt": "2026-09-12T10:22:08Z",
+      "updatedAt": "2026-09-12T10:22:09Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -1296,10 +1296,10 @@
         "er-008"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T10:28:51Z",
-      "updatedAt": "2026-09-12T10:29:02Z",
+      "updatedAt": "2026-09-12T10:29:03Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -1314,10 +1314,10 @@
         "er-008"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T10:49:40Z",
-      "updatedAt": "2026-09-12T10:49:51Z",
+      "updatedAt": "2026-09-12T10:49:52Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -1331,10 +1331,10 @@
         "er-008"
       ],
       "priority": "medium",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T11:01:40Z",
-      "updatedAt": "2026-09-12T11:01:56Z",
+      "updatedAt": "2026-09-12T11:02:12Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -1347,10 +1347,10 @@
         "strata"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T19:16:35Z",
-      "updatedAt": "2026-09-12T19:58:10Z",
+      "updatedAt": "2026-09-12T20:05:01Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -1363,10 +1363,10 @@
         "strata"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T19:16:35Z",
-      "updatedAt": "2026-09-12T20:11:45Z",
+      "updatedAt": "2026-09-12T20:21:29Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -1379,10 +1379,10 @@
         "strata"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T19:16:35Z",
-      "updatedAt": "2026-09-12T20:11:45Z",
+      "updatedAt": "2026-09-12T20:21:29Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -1395,10 +1395,10 @@
         "strata"
       ],
       "priority": "medium",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T19:16:35Z",
-      "updatedAt": "2026-09-12T23:45:03Z",
+      "updatedAt": "2026-09-12T23:43:42Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -1411,10 +1411,10 @@
         "strata"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T19:16:35Z",
-      "updatedAt": "2026-09-12T21:29:42Z",
+      "updatedAt": "2026-09-12T21:39:40Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -1427,10 +1427,10 @@
         "strata"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T19:16:35Z",
-      "updatedAt": "2026-09-12T22:43:56Z",
+      "updatedAt": "2026-09-12T22:55:31Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -1443,10 +1443,10 @@
         "strata"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T19:16:35Z",
-      "updatedAt": "2026-09-12T22:56:09Z",
+      "updatedAt": "2026-09-12T23:10:31Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -1459,10 +1459,10 @@
         "strata"
       ],
       "priority": "medium",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T19:16:35Z",
-      "updatedAt": "2026-09-12T23:11:08Z",
+      "updatedAt": "2026-09-12T23:15:57Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -1475,10 +1475,10 @@
         "strata"
       ],
       "priority": "low",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T19:16:35Z",
-      "updatedAt": "2026-09-12T23:17:11Z",
+      "updatedAt": "2026-09-12T23:19:52Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -1491,10 +1491,10 @@
         "strata"
       ],
       "priority": "medium",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T19:16:35Z",
-      "updatedAt": "2026-09-12T23:29:11Z",
+      "updatedAt": "2026-09-12T23:32:54Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -1507,10 +1507,10 @@
         "strata"
       ],
       "priority": "low",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T19:16:35Z",
-      "updatedAt": "2026-09-12T23:33:34Z",
+      "updatedAt": "2026-09-12T23:38:02Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -1523,10 +1523,10 @@
         "strata"
       ],
       "priority": "low",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T19:16:35Z",
-      "updatedAt": "2026-09-12T23:20:42Z",
+      "updatedAt": "2026-09-12T23:27:02Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -1540,10 +1540,10 @@
         "decisions"
       ],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T19:17:00Z",
-      "updatedAt": "2026-09-12T19:17:06Z",
+      "updatedAt": "2026-09-12T19:17:20Z",
       "createdBy": "claude",
       "source": "manual",
       "sourceReference": null
@@ -1554,10 +1554,10 @@
       "description": null,
       "tags": [],
       "priority": "medium",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T21:38:38Z",
-      "updatedAt": "2026-09-12T22:14:19Z",
+      "updatedAt": "2026-09-12T22:14:43Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null
@@ -1568,10 +1568,10 @@
       "description": "ShadowNormalisation.normaliseViews locates the view body with ddl.IndexOf(\" AS \"), which requires a SPACE on both sides of the keyword. The ordinary formatting CREATE VIEW x AS<newline>    SELECT ... does not match, so the view is dropped from the result by List.choose and never compared. Reproduced live: the deployed body was changed from status = 'open' to status = 'closed' and the plan proposed ZERO changes. The not-compared disclosure fires, so nothing is claimed falsely, but a declared view can drift with no proposed change. Fix by finding the first AS keyword at nesting depth zero and outside quotes, rather than by a literal substring.",
       "tags": [],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T22:14:06Z",
-      "updatedAt": "2026-09-12T22:15:15Z",
+      "updatedAt": "2026-09-12T22:23:59Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null
@@ -1582,10 +1582,10 @@
       "description": "AwkwardFormsTests asserts only that result.Changes is EMPTY. WI-0092 produced an empty change list precisely BECAUSE the comparison was skipped, so the corpus is blind to the defect class it exists to catch: a false clean and a correct clean look identical to it. Add an assertion that no fixture in awkward/converges produces a not-compared disclosure for the objects it declares, and add fixtures for the formatting shapes that triggered WI-0092 (AS followed by a newline; a leading comment containing a parenthesis).",
       "tags": [],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T22:23:35Z",
-      "updatedAt": "2026-09-12T22:24:38Z",
+      "updatedAt": "2026-09-12T22:37:16Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null
@@ -1596,10 +1596,10 @@
       "description": "ShadowNormalisation.normalisePolicies rewrites a policy's table references with acc.Replace(spelling, target), which is the same lexically-unaware surgery WI-0092 removed from the two body-offset searches. A table name appearing inside a string literal in the policy expression -- USING (note = 'see shop.product') -- is rewritten too, so the shadow policy carries a different literal than the declared one and its rendered expression compares unequal forever. Route it through the scanner added in WI-0092 so replacement happens only in significant text.",
       "tags": [],
       "priority": "medium",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T22:23:36Z",
-      "updatedAt": "2026-09-12T22:39:31Z",
+      "updatedAt": "2026-09-12T22:42:53Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null
@@ -1610,10 +1610,10 @@
       "description": "normaliseViews reconstructs the declaration as CREATE VIEW <shadow> AS <body>, discarding everything between the name and the AS keyword -- including the column-alias list. pg_get_viewdef FOLDS that list into the query it renders: CREATE VIEW v (a, b) AS SELECT id, weight comes back as SELECT id AS a, weight AS b. So the shadow renders without the aliases, the deployed view renders with them, and Strata proposes replace-view on every run forever. Same family as WI-0054, an unnamed constraint never converging. Found by the view-formatting corpus case added in WI-0093, which is the first time the corpus compared a view at all.",
       "tags": [],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T22:34:23Z",
-      "updatedAt": "2026-09-12T22:34:49Z",
+      "updatedAt": "2026-09-12T22:37:16Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null
@@ -1624,10 +1624,10 @@
       "description": "Several commands' contracts ARE their exit codes -- drift returns 0/1/2, compile refuses with 1, deploy refuses a version mismatch with 2 -- and the test project has no way to run strata as a process and assert on them. Each is currently covered by a live check recorded in a work item conclusion, which is evidence that does not re-run. A harness that invokes the built binary against a scratch database would turn those into tests.",
       "tags": [],
       "priority": "medium",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-12T23:19:53Z",
-      "updatedAt": "2026-09-12T23:52:02Z",
+      "updatedAt": "2026-09-12T23:52:01Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null
@@ -1638,7 +1638,7 @@
       "description": "PgParserAdapter reads HasDefault as (ConstrDefault || serial), so a GENERATED ALWAYS AS (...) STORED column reads as having no default. The catalog reads has_default as (atthasdef AND adbin IS NOT NULL), and a generated column's expression LIVES in pg_attrdef, so the deployed side reads true. Every plan then reports 'default absent in desired state and present in the database' as an unclassified change, forever. Reproduced live: deploy a table with a generated column to an empty database, then drift immediately reports 1 difference. Same family as WI-0054 and WI-0095. The fix mirrors the serial case the same line already handles.",
       "tags": [],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-13T00:31:00Z",
       "updatedAt": "2026-09-13T00:35:06Z",
@@ -1652,10 +1652,10 @@
       "description": "SchemaObject models Table, View, Routine and Sequence only. CREATE TYPE ... AS ENUM and CREATE DOMAIN are refused at compile: 'CreateEnumStmt/CreateDomainStmt is not yet read as a desired-state declaration'. The refusal is loud and correct per ER-008, but it means Strata cannot manage a schema containing either -- and an enum is one of the commonest things in a real PostgreSQL schema, so this is the single largest gap between 'works' and 'usable on an existing database'. Needs a SchemaObject case, introspection, diff, and DDL emission; enum value ORDER and ALTER TYPE ... ADD VALUE (which cannot run in a transaction) are the hard parts. Composite types compile but are silently unmodelled, which is worse than refusing and should be made a refusal in the same change.",
       "tags": [],
       "priority": "high",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-13T00:31:00Z",
-      "updatedAt": "2026-09-13T03:08:22Z",
+      "updatedAt": "2026-09-13T03:08:21Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null
@@ -1666,10 +1666,10 @@
       "description": "CREATE DOMAIN is refused with 'CreateDomainStmt is not yet read as a desired-state declaration'. Enums landed in WI-0098 and domains are the next most common user-defined type. A domain is a base type plus constraints plus an optional default and NOT NULL, so it needs its own SchemaObject case, a pg_type/pg_constraint query, and diff rules -- ALTER DOMAIN can add and drop constraints and change the default, which is more than an enum allows and less than a table. Composite types and ranges are refused for the same reason and are separate again.",
       "tags": [],
       "priority": "medium",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-13T03:07:53Z",
-      "updatedAt": "2026-09-13T03:42:59Z",
+      "updatedAt": "2026-09-13T03:42:42Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null
@@ -1680,10 +1680,10 @@
       "description": "SchemaDiff.Inputs is built with a record-update expression at every call site, so a NEW field nobody sets takes its default and compiles. Found while adding domains: Resolution filled NormalisedDomains, Artifact carried it, the diff read it, and Deployment -- the one path 'strata plan' goes through -- never passed it on, so plan reported a domain it had every fact about as one it could not compare. The corpus harness had the same gap. scripts/check-resolved-state-wiring.sh now fails when a field both records share is unset in either consumer, and runs in ros-validate and CI.",
       "tags": [],
       "priority": "medium",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-13T03:40:59Z",
-      "updatedAt": "2026-09-13T03:41:04Z",
+      "updatedAt": "2026-09-13T03:42:52Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null
@@ -1708,10 +1708,10 @@
       "description": "README.md described the ROS pilot scaffolding and said nothing about how to use Strata. There was no agent-facing guide at all, so an agent had to infer the CLI surface, the exit-code semantics and the suppressed-list contract from source. Written: a task-oriented README with worked examples, three mermaid diagrams (compile/deploy split, plan-gate-apply, shadow normalisation) and a coverage table; and docs/strata/AGENT-GUIDE.md with a use-vs-grep decision table, the scope-once/--brief session pattern, exit-code traps and a copy-paste system prompt. Every example was executed against a live PostgreSQL 16.15 and the transcripts corrected where invented output differed from real output.",
       "tags": [],
       "priority": "medium",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-13T11:39:00Z",
-      "updatedAt": "2026-09-13T11:41:22Z",
+      "updatedAt": "2026-09-13T11:41:21Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null
@@ -1722,10 +1722,10 @@
       "description": "WI-0102 produced README.md and docs/strata/AGENT-GUIDE.md under a set of rules that were applied but never recorded: execute every transcript before publishing it, measure a figure rather than recall it, report evidence that contradicts the claim you were asked to make, do not tidy real output, name what is NOT covered as prominently as what is, and tell an agent where the tool is the wrong choice. Three transcripts were wrong until they were run, and one claim about this repository's own state (that WI-0101 had been captured) was asserted without checking and was false. None of that is durable: the next person or agent writing a README has no way to know any of it, and only one of the rules is mechanically enforced. Write them as requirements with the failures that motivated each, a decision record as their authority, and enforcement where enforcement is possible.",
       "tags": [],
       "priority": "medium",
-      "status": "ready",
+      "status": "complete",
       "attachments": [],
       "createdAt": "2026-09-13T11:45:07Z",
-      "updatedAt": "2026-09-13T11:48:25Z",
+      "updatedAt": "2026-09-13T11:48:24Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null
@@ -1996,6 +1996,27 @@
       "attachments": [],
       "createdAt": "2026-11-25T15:53:15.254Z",
       "updatedAt": "2026-11-25T15:55:44Z",
+      "createdBy": "unknown",
+      "createdByActor": {
+        "kind": "agent",
+        "id": "anthropic/claude-code",
+        "provider": "anthropic",
+        "model": "unknown",
+        "runtime": "claude-code"
+      },
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0117",
+      "title": "Upgrade to echelon-current 1.42.0 (Praxis 3.25.0, Ordo 1.20.0)",
+      "description": null,
+      "tags": [],
+      "priority": "medium",
+      "status": "complete",
+      "attachments": [],
+      "createdAt": "2026-11-25T17:50:04.024Z",
+      "updatedAt": "2026-11-25T17:54:32.000Z",
       "createdBy": "unknown",
       "createdByActor": {
         "kind": "agent",

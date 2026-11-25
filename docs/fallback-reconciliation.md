@@ -8,7 +8,7 @@ Use this path only when the repository's Praxis executable cannot run. The JSON 
 2. Record the full 40-character base commit observed before the proposed work.
 3. Use a globally unique, stable `transactionId`. Reuse it for every retry.
 4. Record ordered timeline/request pairs. Supported request types are `work.start` (or `work.begin`), `work.block`, `work.resume`, and `work.complete`.
-5. Include `praxisInstanceId` only when it is actually available. Do not invent provider, model, runtime, session, token, or cost data.
+5. Include `praxisInstanceId` only when it is actually available: it is the `instanceId` in the repository's committed `.praxis/instance.json`. A claimed ID that differs from that file, names an instance the repository does not have, or cannot be verified because the local record is foreign or unreadable is rejected (`instance-identity-mismatch`, `instance-identity-unestablished`, `instance-identity-unverifiable`). When you omit it, accepted history is stamped with the local instance. See [`identity.md`](https://github.com/kemiller2002/praxis/blob/v3.25.0/docs/identity.md). Do not invent provider, model, runtime, session, token, or cost data.
 6. Put the envelope under `.praxis/outbox/events/` for CI discovery, or pass its path directly to `./praxis reconcile --envelope FILE` once Praxis is available.
 
 Minimal start envelope:
@@ -49,7 +49,7 @@ Replace every example identity, commit, ID, and timestamp with an observation fr
 }
 ```
 
-The optional `execution.steps` shape is defined by [`protocol/praxis-envelope-v1.schema.json`](https://github.com/kemiller2002/praxis/blob/v3.7.2/protocol/praxis-envelope-v1.schema.json). Step names/descriptions, nesting, transitions, evidence references, measurement availability, and sanitized raw provider objects are preserved. Normalized `metricId` values and units must exist in the receiving repository's metric registry; an unmapped provider value belongs only in `rawTelemetry`. Registry aggregation is retained, so cumulative session counters are never rewritten as additive step deltas. A numeric zero is a value. `unavailable`, `unsupported`, and `unknown` measurements omit `value`; they are never encoded as zero. Calculated cost requires versioned pricing provenance. Estimated values require explicit confidence and remain estimated rather than appearing provider-reported.
+The optional `execution.steps` shape is defined by [`protocol/praxis-envelope-v1.schema.json`](https://github.com/kemiller2002/praxis/blob/v3.25.0/protocol/praxis-envelope-v1.schema.json). Step names/descriptions, nesting, transitions, evidence references, measurement availability, and sanitized raw provider objects are preserved. Normalized `metricId` values and units must exist in the receiving repository's metric registry; an unmapped provider value belongs only in `rawTelemetry`. Registry aggregation is retained, so cumulative session counters are never rewritten as additive step deltas. A numeric zero is a value. `unavailable`, `unsupported`, and `unknown` measurements omit `value`; they are never encoded as zero. Calculated cost requires versioned pricing provenance. Estimated values require explicit confidence and remain estimated rather than appearing provider-reported.
 
 ## Reconciliation and retry
 
@@ -65,3 +65,49 @@ Accepted context, events, optional execution telemetry, completion queue project
 Rejected envelopes are retained under `.praxis/rejected/` with machine-readable finding codes and produce no partial canonical state. Exit codes are: `0` applied/already applied, `1` pending recovery, `2` rejected input.
 
 Run one reconciler per checkout. Independently installed Praxis instances remain local authorities; central publication is optional, and an unavailable registry never blocks reconciliation.
+
+## Input documents
+
+Unprocessed human or agent material goes in `.praxis/inbox/documents/` (the
+legacy `input-documents/` is read too). It is source material, never
+canonical state; classification is advisory. The lifecycle is plain files,
+so an agent without a runtime can see it, and the native commands enforce it:
+
+```bash
+./praxis inbox claim .praxis/inbox/documents/brief.md        # -> INPUT-<id>
+git add -A .praxis && git commit -m "Claim brief.md" && git push   # others see the claim
+# derive canonical records, attributing lineage to the input:
+./praxis provenance record --id RQ-... --operation created --derived-from INPUT-<id>
+./praxis inbox derive INPUT-<id> --kind requirement --id RQ-... --summary "..." --locator "## Scope"
+git add -A && git commit -m "Derive RQ-... from brief.md" && git push
+./praxis inbox complete INPUT-<id>                           # refused until the derivations are committed
+```
+
+| Location | Meaning |
+| --- | --- |
+| `.praxis/inbox/documents/<file>` | pending |
+| `.praxis/processing/<claim-id>/claim.json`, `source/<file>` | claimed; `claim.json` is `praxis.inbox-claim/1` with the source path, SHA-256, size, claimant, execution and derivations |
+| `.praxis/processed/<claim-id>/` | completed, with its source and derivations |
+| `.praxis/rejected/documents/<claim-id>/` | rejected, with the reason |
+
+An input stays unprocessed until every derived change is durably reconciled:
+`complete` refuses while a derived path or artifact is missing, not
+committed in HEAD, or (for an artifact) does not name the claim in
+`derived_from`. Completing with nothing derived needs `--no-derivations
+REASON`. Every operation writes its intent to `claim.json` before moving
+anything, copies before it removes, and verifies the SHA-256 at both ends, so
+a crash at any point leaves the input intact in at least one place;
+`./praxis inbox recover` (run first by every mutating command) finishes the
+interrupted step. The claim ID is derived from the inbox path and content, so
+repeating a claim returns the existing one.
+
+A compiled verification plan (`indy-init.verification-plan/1`) is an input
+document like any other. After `inbox claim`, `./praxis inbox admit-plan
+INPUT-<id>` verifies its identity (claimed SHA-256, recomputed
+`planIdentity.digest`, id formats, scope counts), writes the unchanged plan
+and a `praxis.verification-plan-handoff/1` record under `verification-plans/`,
+and records both as derivations. Ordering the plan's work is Ordo's
+responsibility: the handoff carries the exact `sde verification schedule`
+command and the digest Ordo must find. Commit both files, then `inbox
+complete`.
+

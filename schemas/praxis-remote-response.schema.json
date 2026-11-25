@@ -73,6 +73,30 @@
             "string",
             "null"
           ]
+        },
+        "identity": {
+          "description": "Protocol 1.4: the repository this executor governs, or null when its identity is not established.",
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "provider": {
+              "type": "string"
+            },
+            "repositoryId": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "repository": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
         }
       },
       "additionalProperties": false
@@ -171,7 +195,8 @@
                 "rate-limited",
                 "timeout",
                 "cancelled",
-                "internal"
+                "internal",
+                "incompatible-state"
               ]
             },
             "decidedBy": {
@@ -233,6 +258,38 @@
         }
       },
       "additionalProperties": false
+    },
+    "workItems": {
+      "description": "Protocol 1.4: the canonical identities of the work items the request named.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "repositoryId",
+          "repository",
+          "localId"
+        ],
+        "properties": {
+          "repositoryId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repository": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider": {
+            "type": "string"
+          },
+          "localId": {
+            "type": "string"
+          }
+        }
+      }
     }
   },
   "additionalProperties": false,

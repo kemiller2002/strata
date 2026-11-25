@@ -35,7 +35,7 @@
             "dokimos": {"enum": ["required", "optional", "off"]},
             "dokimosBaseline": {"type": "string", "minLength": 1, "description": "Pins the Dokimos profile: the accepted baseline path the report must have been measured against."},
             "ordoBoundary": {"enum": ["required", "optional", "off"]},
-            "requiredFacets": {"type": "array", "items": {"enum": ["implementation-complete", "behavior-verified", "architecture-verified", "release-ready"]}, "uniqueItems": true},
+            "requiredFacets": {"type": "array", "items": {"enum": ["implementation-complete", "behavior-verified", "architecture-verified", "release-ready", "design-debt-declared", "verification-matrix-satisfied"]}, "uniqueItems": true},
             "workTypes": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
           },
           "additionalProperties": false
