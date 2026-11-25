@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "anthropic/claude-code",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-10-09T00:05:17.000Z",
+  "updatedAt": "2026-11-25T15:55:44Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -3079,6 +3079,89 @@
       },
       "completedAt": "2026-10-09T00:05:17.000Z",
       "conclusion": "Limen upgraded 0.7.1 -> 0.9.0; limen verify --strict and the repository checks pass locally"
+    },
+    {
+      "id": "WI-0115",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Cli/Strata.Cli.fsproj"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/Strata.Tests.fsproj"
+        }
+      ],
+      "updatedAt": "2026-11-25T12:56:04.000Z",
+      "telemetryExecutionIds": [
+        "EXE-20261125T121730064Z-caca186d"
+      ],
+      "latestCheckpoint": {
+        "id": "96a9130d24530d5f61bf9a5e",
+        "recordedAt": "2026-11-25T12:55:58.000Z",
+        "executionId": "EXE-20261125T121730064Z-caca186d",
+        "repository": "strata",
+        "branch": "claude/vigila-implementation-jdeps1",
+        "commit": "0bce99d6d8e01d3843183ad22313b0e98d1c80f3",
+        "remote": {
+          "name": "origin",
+          "url": "https://github.com/kemiller2002/strata"
+        },
+        "remoteBranch": "claude/vigila-implementation-jdeps1",
+        "remoteCommit": "0bce99d6d8e01d3843183ad22313b0e98d1c80f3",
+        "summary": "Retargeted EchelonFoundry.Aegis.Core to 2.0.1 with foundations.json, conformance test and docs; SDK 8.0.428 build clean, CI check scripts OK, 822/822 live-PostgreSQL tests pass",
+        "nextAction": "Complete WI-0115, rebuild registries, validate, push",
+        "verification": {
+          "status": "verified",
+          "mechanism": "git-remote-observation"
+        }
+      },
+      "blockReason": "Aegis 2.0.0 packaging defect: nuspec requires FSharp.Core >= 11.0.101, so restore fails NU1605 against the FSharp.Core 10.1.400 pin on SDK 8.0.428; waiting for Aegis 2.0.1 to retarget",
+      "completedAt": "2026-11-25T12:56:04.000Z"
+    },
+    {
+      "id": "WI-0116",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "src/Strata.Cli/Strata.Cli.fsproj"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/FoundationsConformanceTests.fs"
+        }
+      ],
+      "updatedAt": "2026-11-25T15:55:44Z",
+      "telemetryExecutionIds": [
+        "EXE-20261125T155330576Z-bf702679"
+      ],
+      "latestCheckpoint": {
+        "id": "1685be47455a079f5a02ff07",
+        "recordedAt": "2026-11-25T15:55:42Z",
+        "executionId": "EXE-20261125T155330576Z-bf702679",
+        "repository": "strata",
+        "branch": "claude/vigila-implementation-jdeps1",
+        "commit": "0ce347ca5f8315211b70a0ed9e0b3846a7f43cae",
+        "remote": {
+          "name": "origin",
+          "url": "https://github.com/kemiller2002/strata"
+        },
+        "remoteBranch": "claude/vigila-implementation-jdeps1",
+        "remoteCommit": "0ce347ca5f8315211b70a0ed9e0b3846a7f43cae",
+        "summary": "Aegis pinned to 2.0.2 in the CLI, foundations.json, conformance tests and docs; build, checks, 822 tests (live PostgreSQL) and foundations verify pass",
+        "nextAction": "Complete WI-0116, rebuild registry, validate, push Praxis state",
+        "verification": {
+          "status": "verified",
+          "mechanism": "git-remote-observation"
+        }
+      },
+      "completedAt": "2026-11-25T15:55:44Z"
     }
   ]
 }
