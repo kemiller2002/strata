@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 119,
+  "nextSeq": 120,
   "items": [
     {
       "id": "WI-0001",
@@ -2038,6 +2038,27 @@
       "attachments": [],
       "createdAt": "2026-11-26T00:38:35.412Z",
       "updatedAt": "2026-11-26T00:41:48Z",
+      "createdBy": "unknown",
+      "createdByActor": {
+        "kind": "agent",
+        "id": "anthropic/claude-code",
+        "provider": "anthropic",
+        "model": "unknown",
+        "runtime": "claude-code"
+      },
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0119",
+      "title": "Move echelon-foundations workflow Praxis pin from a95dbf2 to the v3.26.0 release commit 7427d15",
+      "description": null,
+      "tags": [],
+      "priority": "medium",
+      "status": "complete",
+      "attachments": [],
+      "createdAt": "2026-11-26T03:18:26.064Z",
+      "updatedAt": "2026-11-26T03:20:21Z",
       "createdBy": "unknown",
       "createdByActor": {
         "kind": "agent",

@@ -4,7 +4,7 @@
   "repository": "strata",
   "actor": "anthropic/claude-code",
   "startedAt": "2026-09-11T12:16:16.430Z",
-  "updatedAt": "2026-11-26T00:41:48Z",
+  "updatedAt": "2026-11-26T03:20:21Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -3244,6 +3244,47 @@
         }
       },
       "completedAt": "2026-11-26T00:41:48Z"
+    },
+    {
+      "id": "WI-0119",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": ".github/workflows/echelon-foundations.yml"
+        },
+        {
+          "type": "tests",
+          "path": "tests/Strata.Tests/FoundationsConformanceTests.fs"
+        }
+      ],
+      "updatedAt": "2026-11-26T03:20:21Z",
+      "telemetryExecutionIds": [
+        "EXE-20261126T031833186Z-2be64b9a"
+      ],
+      "latestCheckpoint": {
+        "id": "f6a740e0f13e32dbe4403d14",
+        "recordedAt": "2026-11-26T03:18:45Z",
+        "executionId": "EXE-20261126T031833186Z-2be64b9a",
+        "repository": "strata",
+        "branch": "claude/vigila-implementation-jdeps1",
+        "commit": "1ec5b8530212dbcf0e345c3297b374fa1643d8d2",
+        "remote": {
+          "name": "origin",
+          "url": "https://github.com/kemiller2002/strata"
+        },
+        "remoteBranch": "claude/vigila-implementation-jdeps1",
+        "remoteCommit": "1ec5b8530212dbcf0e345c3297b374fa1643d8d2",
+        "summary": "foundations workflow pinned to Praxis v3.26.0 commit 7427d15; pushed",
+        "nextAction": "complete WI-0119, open draft PR",
+        "verification": {
+          "status": "verified",
+          "mechanism": "git-remote-observation"
+        }
+      },
+      "completedAt": "2026-11-26T03:20:21Z"
     }
   ]
 }
