@@ -127,4 +127,4 @@
 | WI-0116 | Upgrade Aegis 2.0.1 -> 2.0.2 (detached capture no longer blocks) | complete |  | medium |
 | WI-0117 | Upgrade to echelon-current 1.42.0 (Praxis 3.25.0, Ordo 1.20.0) | complete |  | medium |
 | WI-0118 | Upgrade to echelon-current 1.43.0 (Praxis 3.25.0 -> 3.26.0) | complete |  | medium |
-| WI-0119 | Move echelon-foundations workflow Praxis pin from a95dbf2 to the v3.26.0 release commit 7427d15 | ready |  | medium |
+| WI-0119 | Move echelon-foundations workflow Praxis pin from a95dbf2 to the v3.26.0 release commit 7427d15 | complete |  | medium |
