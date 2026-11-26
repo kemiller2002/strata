@@ -9,6 +9,6 @@ permissions:
 
 jobs:
   foundations:
-    uses: kemiller2002/praxis/.github/workflows/foundations-verify.yml@a95dbf238e561eaac4b38ca7011efc1a496cf1c6
+    uses: kemiller2002/praxis/.github/workflows/foundations-verify.yml@7427d1500cebfca5dfaa2b309ffb56f485be854d
     with:
-      praxis_ref: a95dbf238e561eaac4b38ca7011efc1a496cf1c6
+      praxis_ref: 7427d1500cebfca5dfaa2b309ffb56f485be854d
