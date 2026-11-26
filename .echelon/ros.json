@@ -2,14 +2,14 @@
   "schemaVersion": 1,
   "tool": "ros",
   "package": "@echelon-foundry/repository-operating-system",
-  "installedVersion": "3.25.0",
+  "installedVersion": "3.26.0",
   "configurationVersion": 1,
   "profile": "greenfield",
   "managedArtifacts": [
     {
       "path": ".echelon/toolchain.json",
       "ownership": "shared",
-      "sha256": "e61298060b79854aed995ee7257254d35a1f4071289cada22066e9260efc1a4d"
+      "sha256": "3ac8378f7d1e576527f8c86d73f24f8f7db3c8e10946884d56d7284729a90dbc"
     },
     {
       "path": ".editorconfig",
@@ -149,12 +149,12 @@
     {
       "path": "docs/development-telemetry.md",
       "ownership": "tool-owned",
-      "sha256": "619e56266fc9f5834d530531ff7e3c4e7b5487404e97bd1a1fbeb1916040c59c"
+      "sha256": "20d9963340a4e84324f194e9137aaae036b2901eb362bd2e24931f34cca4b4a2"
     },
     {
       "path": "docs/fallback-reconciliation.md",
       "ownership": "tool-owned",
-      "sha256": "cd8b12aeca89d95397a42e6bd68f75ada96aaf6575deeb2279eb61a6ca00d2a9"
+      "sha256": "a46c5b26570db4d97a3aa0a43073374aa3b80461a647d4feefd4c05edc627617"
     },
     {
       "path": "docs/ordo-observation.md",
@@ -169,7 +169,7 @@
     {
       "path": "docs/remote-protocol.md",
       "ownership": "tool-owned",
-      "sha256": "504a0ce2ed13eee21307b686f78eb47ac11f2cd984774553e3ea8c1235b7b08d"
+      "sha256": "63ccb4709b53435e318efef02c0542041bfd9b75ec23a040b0173642afc9473c"
     },
     {
       "path": "docs/work-adapter-contract.md",
@@ -179,7 +179,7 @@
     {
       "path": "docs/work-protocol.md",
       "ownership": "tool-owned",
-      "sha256": "ac171a29724c7f1cd6606df031d68602a5d26c206a6f384aa5658b69859eb0d1"
+      "sha256": "99586494359880e329a38d0f19944c645ef5aa80e6a24e485e194d28e777fc04"
     },
     {
       "path": "framework/REP-SPECIFICATION.md",

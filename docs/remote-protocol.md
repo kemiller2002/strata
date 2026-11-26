@@ -4,15 +4,15 @@ This page specifies the typed request/response contract that lets an agent
 with **no local .NET or Praxis runtime** ask a trusted executor to run an
 explicit Praxis operation.
 
-- **Why:** [`RQ-ROS-2026-A021`](https://github.com/kemiller2002/praxis/blob/v3.25.0/research/requirements/RQ-ROS-2026-A021--remote-execution-first-class-capability.md),
+- **Why:** [`RQ-ROS-2026-A021`](https://github.com/kemiller2002/praxis/blob/v3.26.0/research/requirements/RQ-ROS-2026-A021--remote-execution-first-class-capability.md),
   which adopts issue #90.
-- **How it was designed:** [`DF-ROS-2026-A041`](https://github.com/kemiller2002/praxis/blob/v3.25.0/research/decisions/DF-ROS-2026-A041--remote-execution-protocol-and-adapter-architecture.md).
+- **How it was designed:** [`DF-ROS-2026-A041`](https://github.com/kemiller2002/praxis/blob/v3.26.0/research/decisions/DF-ROS-2026-A041--remote-execution-protocol-and-adapter-architecture.md).
 - **Schemas:** [`schemas/praxis-remote-request.schema.json`](../schemas/praxis-remote-request.schema.json)
   and [`schemas/praxis-remote-response.schema.json`](../schemas/praxis-remote-response.schema.json).
 - **Typed model:** `Praxis.Domain.Remote` (`src/Praxis.Domain/Remote/Protocol.fs`).
 - **JSON contract:** `Praxis.Contracts.Remote.RemoteJson`.
 - **Operating it** (installation, permissions, upgrades, troubleshooting):
-  [`remote-execution-operations.md`](https://github.com/kemiller2002/praxis/blob/v3.25.0/docs/remote-execution-operations.md).
+  [`remote-execution-operations.md`](https://github.com/kemiller2002/praxis/blob/v3.26.0/docs/remote-execution-operations.md).
 
 > **Status.**
 >
@@ -165,7 +165,7 @@ start-ups without weakening any guarantee.
     not succeed.
 
 **Durable checkpoints (version 1.3,
-[`DF-ROS-2026-A042`](https://github.com/kemiller2002/praxis/blob/v3.25.0/research/decisions/DF-ROS-2026-A042--durable-work-checkpoints-and-executor-continuation.md)).**
+[`DF-ROS-2026-A042`](https://github.com/kemiller2002/praxis/blob/v3.26.0/research/decisions/DF-ROS-2026-A042--durable-work-checkpoints-and-executor-continuation.md)).**
 
 - **`work.checkpoint`** is recorded in the requester's own execution. The
   request never asserts a commit: the executor is checked out at
@@ -191,7 +191,7 @@ start-ups without weakening any guarantee.
   `{"repositoryId": "github:1309152643", "repository": "kemiller2002/praxis", "localId": "WI-0042"}`
   instead of a bare ID. A reference without `repositoryId` must name its
   `provider` and is a legacy, locator-only reference. See
-  [`identity.md`](https://github.com/kemiller2002/praxis/blob/v3.25.0/docs/identity.md).
+  [`identity.md`](https://github.com/kemiller2002/praxis/blob/v3.26.0/docs/identity.md).
 - A bare ID still means the executing repository, so 1.0-1.3 requests behave
   exactly as before and fingerprint byte-for-byte as before: every journalled
   request still replays. A structured reference adds its repository to the
@@ -479,9 +479,9 @@ repository, never from guessing.
 
 The adapter is made of three files:
 
-- [`.github/workflows/praxis-remote.yml`](https://github.com/kemiller2002/praxis/blob/v3.25.0/.github/workflows/praxis-remote.yml)
-- [`.github/actions/praxis-remote`](https://github.com/kemiller2002/praxis/blob/v3.25.0/.github/actions/praxis-remote/action.yml)
-- [`.github/actions/praxis-setup`](https://github.com/kemiller2002/praxis/blob/v3.25.0/.github/actions/praxis-setup/action.yml)
+- [`.github/workflows/praxis-remote.yml`](https://github.com/kemiller2002/praxis/blob/v3.26.0/.github/workflows/praxis-remote.yml)
+- [`.github/actions/praxis-remote`](https://github.com/kemiller2002/praxis/blob/v3.26.0/.github/actions/praxis-remote/action.yml)
+- [`.github/actions/praxis-setup`](https://github.com/kemiller2002/praxis/blob/v3.26.0/.github/actions/praxis-setup/action.yml)
 
 Together they form a thin host. They bootstrap the pinned, verified Praxis
 release, let Praxis decide, and persist exactly what Praxis reports. They

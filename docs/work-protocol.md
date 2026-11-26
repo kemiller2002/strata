@@ -68,7 +68,7 @@ changes exist on a branch whose name is not the ID of a work item in the work
 context, so each work item runs on a branch named for its ID (DER-01 of
 `requirements/PRAXIS-DUAL-ENTRY-RECONCILIATION.md`). Pull-request CI uses
 `GITHUB_HEAD_REF`; a detached HEAD with meaningful work fails. See
-[`identity.md`](https://github.com/kemiller2002/praxis/blob/v3.25.0/docs/identity.md#branch-policy-der-01).
+[`identity.md`](https://github.com/kemiller2002/praxis/blob/v3.26.0/docs/identity.md#branch-policy-der-01).
 
 ## Quality evidence at completion
 
@@ -326,7 +326,7 @@ worked on its own ref. Integration follows this policy (`RQ-ROS-2026-A036`):
 3. **Implement independently** on the stream's ref, within its ownership.
 4. **Verify locally.** Run the stream's required tests, then record a
    verified completion (`work complete-verified`, see
-   [`work-claims.md`](https://github.com/kemiller2002/praxis/blob/v3.25.0/docs/work-claims.md)).
+   [`work-claims.md`](https://github.com/kemiller2002/praxis/blob/v3.26.0/docs/work-claims.md)).
 5. **Integrate in dependency order.** Producers merge before consumers.
    Before each merge, check the stream against the target and its siblings.
 6. **Run targeted integration tests** for the interfaces the merge touched,
@@ -338,7 +338,7 @@ worked on its own ref. Integration follows this policy (`RQ-ROS-2026-A036`):
 
 The contract is the `integration` member of `ros.json`
 (`praxis.integration-contract/1`, schema
-[`schemas/praxis-integration-contract.schema.json`](https://github.com/kemiller2002/praxis/blob/v3.25.0/schemas/praxis-integration-contract.schema.json)):
+[`schemas/praxis-integration-contract.schema.json`](https://github.com/kemiller2002/praxis/blob/v3.26.0/schemas/praxis-integration-contract.schema.json)):
 
 ```json
 {
@@ -856,7 +856,7 @@ conflict in Git. Do not take one side's queue, which drops the other
 branch's rows, and do not hand-edit them: run `./praxis work history merge`
 (preview) and `--apply`, which merges the queue by row ID together with the
 conflicted native history and regenerates `queue.md`. See
-[native history reconciliation](https://github.com/kemiller2002/praxis/blob/v3.25.0/docs/work-history-merge.md#backlog-queue).
+[native history reconciliation](https://github.com/kemiller2002/praxis/blob/v3.26.0/docs/work-history-merge.md#backlog-queue).
 
 The backlog is **not** a second work-item authority. `work start` requires
 `ready`, then delegates directly to the existing `begin` transition above --

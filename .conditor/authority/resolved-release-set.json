@@ -2,8 +2,8 @@
   "schema": "echelon.resolved-release-set/v1",
   "profile": {
     "id": "echelon-current",
-    "version": "1.42.0",
-    "sha256": "7f4b25b0a1730a4f4b7c74301aa3d71e454311ad92a4364265d9dc6c03243b84"
+    "version": "1.43.0",
+    "sha256": "4b4f2c6b865a5ef83c0bc30adb1f752332dc8c7fda0551d7f52fa1bd05d68c3e"
   },
   "platform": "linux-x64",
   "resolver": {
@@ -11,42 +11,42 @@
     "version": "0.1.0"
   },
   "catalogSnapshot": {
-    "sha256": "459db46f1669dabf8374e13dd685ebdd8cd25aa620242f2d1a607d033736ad7c"
+    "sha256": "1f584946d69819dfa1983260b7a13cd3c819dd3a42bf1618a5ec18cdc11c82d4"
   },
   "components": [
     {
       "systemId": "praxis",
       "role": "host-tool",
       "required": true,
-      "version": "3.25.0",
+      "version": "3.26.0",
       "repository": "kemiller2002/praxis",
-      "tag": "v3.25.0",
-      "commit": "12bf9951253fc15e6973c2d3f5b88076f4556245",
+      "tag": "v3.26.0",
+      "commit": "7427d1500cebfca5dfaa2b309ffb56f485be854d",
       "releaseStage": "stable",
       "lifecycleState": "active",
       "distributionClass": "self-contained-native-cli",
       "executable": "praxis",
       "releaseManifest": {
         "schema": "echelon.release/v2",
-        "sha256": "b42b9cf7cf2b3a436f7419c03fccc32d123abe0594839889fe8b6372cfb46a41"
+        "sha256": "87754d1831a82a742b63804705eb3c03c9acda34f7c69d9a1760ba9107efc299"
       },
       "distribution": {
         "mechanism": "github-release",
         "package": null,
-        "url": "https://github.com/kemiller2002/praxis/releases/tag/v3.25.0"
+        "url": "https://github.com/kemiller2002/praxis/releases/tag/v3.26.0"
       },
       "artifacts": [
         {
           "name": "praxis-linux-x64.tar.gz",
           "purpose": "executable",
           "platform": "linux-x64",
-          "sha256": "98e2ecaccac3f0502d755569bf2dddef852947b43a7989c570fcfff25f82d0c8"
+          "sha256": "d417b99188d56d4d47eb672154fc53de7a0e7e53df2180c7fc1de3f5bece7fdb"
         },
         {
           "name": "native-checksums.txt",
           "purpose": "checksums",
           "platform": null,
-          "sha256": "c109ef21729f176cbd44f998cadc9bc92a6c0f1ee4ed386dd61f937d4f8b7dc4"
+          "sha256": "303e758bbbf2f9a210ff119986119bf222c292ee411e9de844194105929bed16"
         }
       ]
     },
@@ -482,47 +482,47 @@
       "systemId": "arca",
       "role": "project-binding",
       "required": false,
-      "version": "0.7.0",
+      "version": "0.7.1",
       "repository": "kemiller2002/arca",
-      "tag": "v0.7.0",
-      "commit": "7e1f90d6b461af68439a4289f46ee5e6efa5921d",
+      "tag": "v0.7.1",
+      "commit": "0004c7d4d9ee823a3ae5b05b5d671141fb3dd807",
       "releaseStage": "stable",
       "lifecycleState": "active",
       "distributionClass": "nuget-library",
       "executable": null,
       "releaseManifest": {
         "schema": "echelon.release/v2",
-        "sha256": "dca9f0ebd2ab0edc1c2a7a5e902359df45d3a8b664d25b779a6f48cd4189b600"
+        "sha256": "2816bf4728ccd150b48593f5b496c46d9e25be97406f696fe65c62e27e16a27a"
       },
       "distribution": {
         "mechanism": "github-release",
         "package": null,
-        "url": "https://github.com/kemiller2002/arca/releases/tag/v0.7.0"
+        "url": "https://github.com/kemiller2002/arca/releases/tag/v0.7.1"
       },
       "artifacts": [
         {
-          "name": "EchelonFoundry.Arca.Core.0.7.0.nupkg",
+          "name": "EchelonFoundry.Arca.Core.0.7.1.nupkg",
           "purpose": "package",
           "platform": null,
-          "sha256": "931a1f29c1df1f815104a58daa85cca59d38f68fff6598bd20c0327edafd7622"
+          "sha256": "25f88d29d38b33cb46f50478e73db76906dc9e7cf7fbf74233efb2e6f24ce81b"
         },
         {
-          "name": "EchelonFoundry.Arca.GitHub.0.7.0.nupkg",
+          "name": "EchelonFoundry.Arca.GitHub.0.7.1.nupkg",
           "purpose": "package",
           "platform": null,
-          "sha256": "9f8ef324119e25cba1c3d9dfcfac9c457db31b78ac7f30ddc2eef1499b20bc94"
+          "sha256": "3cfbff0479925a76f449b97af933a8fe75d8a815c86ec44e818ac1d3732efb6f"
         },
         {
-          "name": "EchelonFoundry.Arca.Limen.0.7.0.nupkg",
+          "name": "EchelonFoundry.Arca.Limen.0.7.1.nupkg",
           "purpose": "package",
           "platform": null,
-          "sha256": "966966a23dc85e02bbb69f8dd82525af23336e38daaf542305980f8d853c15e7"
+          "sha256": "9253b88c80f350e3f87ca7585c95211489ea8af6029a25b2bf04e0a47bc2bdbf"
         },
         {
           "name": "checksums.txt",
           "purpose": "checksums",
           "platform": null,
-          "sha256": "0d5f20005137405b6e9e6dd699dfa098d7cefc310d53497846749c56bb860590"
+          "sha256": "bcf37d008cda4488a3805dc1aaad0dbf2df6a8dee1ae294dcb214f91d97c8494"
         }
       ]
     },
@@ -732,7 +732,7 @@
       "host": {
         "systemId": "praxis",
         "range": "\u003E=3.17.0",
-        "selected": "3.25.0"
+        "selected": "3.26.0"
       },
       "requires": {
         "systemId": "dokimos",
