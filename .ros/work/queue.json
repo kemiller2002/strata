@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "strata",
-  "nextSeq": 118,
+  "nextSeq": 119,
   "items": [
     {
       "id": "WI-0001",
@@ -2017,6 +2017,27 @@
       "attachments": [],
       "createdAt": "2026-11-25T17:50:04.024Z",
       "updatedAt": "2026-11-25T17:54:32.000Z",
+      "createdBy": "unknown",
+      "createdByActor": {
+        "kind": "agent",
+        "id": "anthropic/claude-code",
+        "provider": "anthropic",
+        "model": "unknown",
+        "runtime": "claude-code"
+      },
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0118",
+      "title": "Upgrade to echelon-current 1.43.0 (Praxis 3.25.0 -> 3.26.0)",
+      "description": null,
+      "tags": [],
+      "priority": "medium",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-11-26T00:38:35.412Z",
+      "updatedAt": "2026-11-26T00:38:35Z",
       "createdBy": "unknown",
       "createdByActor": {
         "kind": "agent",
